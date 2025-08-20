@@ -1,34 +1,43 @@
 """
 Dashboard Logger Class
 """
-import sqlite3, os, uuid
+import uuid
+import sqlalchemy as db
+
+from .ConnectionString import ConnectionString
+
 
 class DashboardLogger:
-    def __init__(self, CONFIGURATION_PATH):
-        self.loggerdb = sqlite3.connect(os.path.join(CONFIGURATION_PATH, 'db', 'wgdashboard_log.db'),
-                                        isolation_level=None,
-                                        check_same_thread=False)
-        self.loggerdb.row_factory = sqlite3.Row
-        self.__createLogDatabase()
+    def __init__(self):
+        self.engine = db.create_engine(ConnectionString("wgdashboard_log"))
+        self.metadata = db.MetaData()
+        self.dashboardLoggerTable = db.Table('DashboardLog', self.metadata,
+                                             
+                                             db.Column('LogID', db.String(255), nullable=False, primary_key=True),
+                                             db.Column('LogDate',
+                                                       (db.DATETIME if 'sqlite:///' in ConnectionString("wgdashboard") else db.TIMESTAMP),
+                                                       server_default=db.func.now()),
+                                             db.Column('URL', db.String(255)),
+                                             db.Column('IP', db.String(255)),
+                                             
+                                             db.Column('Status', db.String(255), nullable=False),
+                                             db.Column('Message', db.Text), extend_existing=True,
+                                             )
+        self.metadata.create_all(self.engine)
         self.log(Message="WGDashboard started")
-    def __createLogDatabase(self):
-        with self.loggerdb:
-            loggerdbCursor = self.loggerdb.cursor()
-            existingTable = loggerdbCursor.execute("SELECT name from sqlite_master where type='table'").fetchall()
-            existingTable = [t['name'] for t in existingTable]
-            if "DashboardLog" not in existingTable:
-                loggerdbCursor.execute(
-                    "CREATE TABLE DashboardLog (LogID VARCHAR NOT NULL, LogDate DATETIME DEFAULT (strftime('%Y-%m-%d %H:%M:%S','now', 'localtime')), URL VARCHAR, IP VARCHAR, Status VARCHAR, Message VARCHAR, PRIMARY KEY (LogID))")
-            if self.loggerdb.in_transaction:
-                self.loggerdb.commit()
 
     def log(self, URL: str = "", IP: str = "", Status: str = "true", Message: str = "") -> bool:
         try:
-            loggerdbCursor = self.loggerdb.cursor()
-            loggerdbCursor.execute(
-                "INSERT INTO DashboardLog (LogID, URL, IP, Status, Message) VALUES (?, ?, ?, ?, ?);", (str(uuid.uuid4()), URL, IP, Status, Message,))
-            loggerdbCursor.close()
-            self.loggerdb.commit()
+            with self.engine.begin() as conn:
+                conn.execute(
+                    self.dashboardLoggerTable.insert().values(
+                        LogID=str(uuid.uuid4()),
+                        URL=URL,
+                        IP=IP,
+                        Status=Status,
+                        Message=Message
+                    )
+                )
             return True
         except Exception as e:
             print(f"[WGDashboard] Access Log Error: {str(e)}")

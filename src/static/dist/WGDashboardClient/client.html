@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="">
+	<head>
+		<meta charset="UTF-8">
+		<link rel="icon" href="/static/dist/WGDashboardClient/img/Logo-2-128x128.png">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>WGDashboard Client</title>
+        <style>
+            *{
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            }
+            #preloader{
+                width: 100vw; height: 100vh; display: flex
+            }
+            #preloader_placeholder{
+                width: 50px; height: 50px; background-color: #000; margin: auto;
+                animation: 3s ease-in-out fadeInPreloader infinite;
+            }
+            @keyframes fadeInPreloader {
+                0%{
+                    opacity: 0;
+                }
+                50%{
+                    opacity: 1;
+                }
+                100%{
+                    opacity: 0;
+                }
+            }
+        </style>
+		<script type="module" crossorigin src="/static/dist/WGDashboardClient/assets/index-Dnx8i95a.js"></script>
+		<link rel="stylesheet" crossorigin href="/static/dist/WGDashboardClient/assets/index-2OJLsfIF.css">
+	</head>
+	<body>
+		<div id="app">
+            <div id="preloader">
+                <div id="preloader_placeholder">
+                    <img style="width: 100%" src="/static/dist/WGDashboardClient/img/Logo-2-128x128.png" alt="WGDashboard Client" />
+                </div>
+            </div>
+        </div>
+	</body>
+</html>

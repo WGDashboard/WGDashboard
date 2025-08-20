@@ -40,25 +40,25 @@ const router = createRouter({
 				},
 				{
 					name: "Settings",
-					path: '/settings',
+					path: 'settings',
 					component: () => import('@/views/settings.vue'),
 					meta: {
 						title: "Settings"
 					}
 				},
 				{
-					path: '/ping',
+					path: 'ping',
 					name: "Ping",
 					component: () => import('@/views/ping.vue'),
 				},
 				{
-					path: '/traceroute',
+					path: 'traceroute',
 					name: "Traceroute",
 					component: () => import('@/views/traceroute.vue'),
 				},
 				{
 					name: "New Configuration",
-					path: '/new_configuration',
+					path: 'new_configuration',
 					component: () => import('@/views/newConfiguration.vue'),
 					meta: {
 						title: "New Configuration"
@@ -66,7 +66,7 @@ const router = createRouter({
 				},
 				{
 					name: "Restore Configuration",
-					path: '/restore_configuration',
+					path: 'restore_configuration',
 					component: () => import('@/views/restoreConfiguration.vue'),
 					meta: {
 						title: "Restore Configuration"
@@ -74,15 +74,33 @@ const router = createRouter({
 				},
 				{
 					name: "System Status",
-					path: '/system_status',
+					path: 'system_status',
 					component: () => import("@/views/systemStatus.vue"),
 					meta: {
 						title: "System Status"
 					}
 				},
 				{
+					name: "Clients",
+					path: 'clients',
+					component: () => import("@/views/clients.vue"),
+					meta: {
+						title: "Clients"
+					},
+					children: [
+						{
+							name: "Client Viewer",
+							path: ':id',
+							component: () => import('@/components/clientComponents/clientViewer.vue'),
+							meta: {
+								title: "Clients"
+							},
+						}
+					]
+				},
+				{
 					name: "Configuration",
-					path: '/configuration/:id',
+					path: 'configuration/:id',
 					component: () => import('@/views/configuration.vue'),
 					meta: {
 						title: "Configuration"
@@ -140,11 +158,9 @@ router.beforeEach(async (to, from, next) => {
 	const dashboardConfigurationStore = DashboardConfigurationStore();
 
 	if (to.meta.title){
-		if (to.params.id){
-			document.title = to.params.id + " | WGDashboard";
-		}else{
-			document.title = to.meta.title + " | WGDashboard";
-		}
+		document.title = to.meta.title + " | WGDashboard";
+	}else if(to.params.id){
+		document.title = to.params.id + " | WGDashboard";
 	}else{
 		document.title = "WGDashboard"
 	}
@@ -160,7 +176,6 @@ router.beforeEach(async (to, from, next) => {
 				}
 				dashboardConfigurationStore.Redirect = undefined;
 				next()
-				
 			}else{
 				dashboardConfigurationStore.Redirect = to;
 				next("/signin")

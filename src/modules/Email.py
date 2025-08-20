@@ -33,7 +33,7 @@ class EmailSender:
         return self.DashboardConfig.GetConfig("Email", "send_from")[1]
 
     def ready(self):
-        return len(self.Server()) > 0 and len(self.Port()) > 0 and len(self.Encryption()) > 0 and len(self.Username()) > 0 and len(self.Password()) > 0 and len(self.SendFrom())
+        return all([self.Server(), self.Port(), self.Encryption(), self.Username(), self.Password(), self.SendFrom()])
 
     def send(self, receiver, subject, body, includeAttachment = False, attachmentName = ""):
         if self.ready():

@@ -1,6 +1,6 @@
 <script setup>
 import LocaleText from "@/components/text/localeText.vue";
-import {onMounted, reactive, ref, useTemplateRef, watch} from "vue";
+import {reactive, ref, watch} from "vue";
 import {WireguardConfigurationsStore} from "@/stores/WireguardConfigurationsStore.js";
 import {fetchPost} from "@/utilities/fetch.js";
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
@@ -10,6 +10,8 @@ import EditRawConfigurationFile
 	from "@/components/configurationComponents/editConfigurationComponents/editRawConfigurationFile.vue";
 import DeleteConfiguration from "@/components/configurationComponents/deleteConfiguration.vue";
 import ConfigurationBackupRestore from "@/components/configurationComponents/configurationBackupRestore.vue";
+import EditPeerSettingsOverride
+	from "@/components/configurationComponents/editConfigurationComponents/editPeerSettingsOverride.vue";
 const props = defineProps({
 	configurationInfo: Object
 })
@@ -114,7 +116,6 @@ const deleteConfigurationModal = ref(false)
 									@close="updateConfigurationName = false"
 									:configuration-name="data.Name"
 									v-if="updateConfigurationName"></UpdateConfigurationName>
-
 								<template v-else>
 									<hr>
 									<div class="d-flex align-items-center gap-3">
@@ -211,18 +212,15 @@ const deleteConfigurationModal = ref(false)
 												</div>
 											</div>
 										</div>
-										
 									</div>
-									
-									
-									<div class="d-flex align-items-center gap-2 mt-4">
-										<button class="btn bg-secondary-subtle border-secondary-subtle text-secondary-emphasis rounded-3 shadow ms-auto"
+									<div class="d-flex align-items-center gap-2 mt-1">
+										<button class="btn btn-sm bg-secondary-subtle border-secondary-subtle text-secondary-emphasis rounded-3 shadow ms-auto"
 										        @click="resetForm()"
 										        :disabled="!dataChanged || saving">
 											<i class="bi bi-arrow-clockwise me-2"></i>
 											<LocaleText t="Reset"></LocaleText>
 										</button>
-										<button class="btn bg-primary-subtle border-primary-subtle text-primary-emphasis rounded-3 shadow"
+										<button class="btn btn-sm bg-primary-subtle border-primary-subtle text-primary-emphasis rounded-3 shadow"
 										        :disabled="!dataChanged || saving"
 										        @click="saveForm()"
 										>
@@ -230,6 +228,8 @@ const deleteConfigurationModal = ref(false)
 											<LocaleText t="Save"></LocaleText>
 										</button>
 									</div>
+									<hr>
+									<EditPeerSettingsOverride :configuration="configurationInfo"></EditPeerSettingsOverride>
 									<hr>
 									<h5 class="mb-3">
 										<LocaleText t="Danger Zone"></LocaleText>
@@ -255,7 +255,6 @@ const deleteConfigurationModal = ref(false)
 											<LocaleText t="Delete Configuration"></LocaleText>
 										</button>
 									</div>
-
 								</template>
 							</div>
 						</div>

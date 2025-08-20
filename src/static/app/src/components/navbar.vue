@@ -33,8 +33,9 @@ export default {
 			return undefined
 		}
 	},
-	mounted() {
-		fetchGet("/api/getDashboardUpdate", {}, (res) => {
+	async mounted() {
+		await this.wireguardConfigurationsStore.getConfigurations();
+		await fetchGet("/api/getDashboardUpdate", {}, (res) => {
 			if (res.status){
 				if (res.data){
 					this.updateAvailable = true
@@ -46,12 +47,15 @@ export default {
 				console.log(`Failed to get update: ${res.message}`)
 			}
 		})
+		this.wireguardConfigurationsStore.ConfigurationListInterval = setInterval(() => {
+			this.wireguardConfigurationsStore.getConfigurations()
+		}, 10000)
 	}
 }
 </script>
 
 <template>
-	<div class="col-md-3 col-lg-2 d-md-block p-2 navbar-container"
+	<div class="col-md-3 col-lg-2 d-md-block p-2 navbar-container bg-transparent"
 	     :class="{active: this.dashboardConfigurationStore.ShowNavBar}"
 	     :data-bs-theme="dashboardConfigurationStore.Configuration.Server.dashboard_theme"
 	>
@@ -74,9 +78,16 @@ export default {
 						</RouterLink></li>
 					<li class="nav-item">
 						<RouterLink class="nav-link rounded-3" to="/settings" 
-						            exact-active-class="active">
+						            active-class="active">
 							<i class="bi bi-gear me-2"></i>
 							<LocaleText t="Settings"></LocaleText>	
+						</RouterLink>
+					</li>
+					<li class="nav-item">
+						<RouterLink class="nav-link rounded-3" to="/clients"
+						            active-class="active">
+							<i class="bi bi-people me-2"></i>
+							<LocaleText t="Clients"></LocaleText>
 						</RouterLink>
 					</li>
 					<li class="nav-item">
@@ -91,7 +102,7 @@ export default {
 					<LocaleText t="WireGuard Configurations"></LocaleText>
 				</h6>
 				<ul class="nav flex-column px-2 gap-1">
-					<li class="nav-item" v-for="c in this.wireguardConfigurationsStore.Configurations">
+					<li class="nav-item" v-for="c in this.wireguardConfigurationsStore.sortConfigurations">
 						<RouterLink :to="'/configuration/'+c.Name + '/peers'" class="nav-link nav-conf-link rounded-3"
 						            active-class="active"
 						            >

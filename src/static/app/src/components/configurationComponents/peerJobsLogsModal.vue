@@ -37,7 +37,10 @@ export default {
 		getLogs(){
 			return this.data
 				.filter(x => {
-					return (this.showSuccessJob && x.Status === "1") || (this.showFailedJob && x.Status === "0")
+					
+					return (this.showSuccessJob && 
+						["1", "true"].includes(x.Status)) || (this.showFailedJob && 
+						["0", "false"].includes(x.Status))
 				})
 		},
 		showLogs(){

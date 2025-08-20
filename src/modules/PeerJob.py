@@ -23,8 +23,8 @@ class PeerJob:
             "Field": self.Field,
             "Operator": self.Operator,
             "Value": self.Value,
-            "CreationDate": self.CreationDate,
-            "ExpireDate": self.ExpireDate,
+            "CreationDate": self.CreationDate.strftime("%Y-%m-%d %H:%M:%S"),
+            "ExpireDate": (self.ExpireDate.strftime("%Y-%m-%d %H:%M:%S") if self.ExpireDate is not None else None),
             "Action": self.Action
         }
 

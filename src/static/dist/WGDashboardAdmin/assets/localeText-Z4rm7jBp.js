@@ -1,0 +1,1 @@
+import{_ as e,G as t,c as o,t as a,f as c}from"./index-BStNSDFl.js";const s={name:"localeText",props:{t:""},computed:{getLocaleText(){return t(this.t)}}};function n(r,p,l,_,i,x){return c(),o("span",null,a(this.getLocaleText),1)}const m=e(s,[["render",n]]);export{m as L};

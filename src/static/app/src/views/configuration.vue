@@ -9,7 +9,7 @@ export default {
 		<RouterView v-slot="{ Component, route }">
 			<Transition name="fade2" mode="out-in">
 				<Suspense>
-					<Component :is="Component" :key="route.path"></Component>
+					<Component :is="Component" :key="route.path" class="z-1"></Component>
 				</Suspense>
 			</Transition>
 		</RouterView>

@@ -1,7 +1,7 @@
 <script setup>
 import dayjs from "dayjs";
 import {computed, ref} from "vue";
-import {fetchGet, fetchPost} from "@/utilities/fetch.js";
+import {fetchGet, fetchPost, getUrl} from "@/utilities/fetch.js";
 import {useRoute} from "vue-router";
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
 import LocaleText from "@/components/text/localeText.vue";
@@ -51,7 +51,7 @@ const downloadBackup = () => {
 		backupFileName: props.b.filename
 	}, (res) => {
 		if (res.status){
-			window.open(`/fileDownload?file=${res.data}`, '_blank')
+			window.open(getUrl(`/fileDownload?file=${res.data}`), '_blank')
 		}
 	})
 }

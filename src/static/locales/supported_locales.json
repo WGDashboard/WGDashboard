@@ -1,0 +1,128 @@
+[
+    {
+        "lang_id": "en-US",
+        "lang_name": "English (United States)",
+        "lang_name_localized": "English (United States)"
+    },
+    {
+        "lang_id": "ar-SA",
+        "lang_name": "Arabic (Saudi Arabia)",
+        "lang_name_localized": "العربية (السعودية)"
+    },
+    {
+        "lang_id": "be-BY",
+        "lang_name": "Belarusian (Belarus)",
+        "lang_name_localized": "Беларуская (Беларусь)"
+    },
+    {
+        "lang_id": "ca-ES",
+        "lang_name": "Catalan (Spain)",
+        "lang_name_localized": "Català (Espanya)"
+    },
+    {
+        "lang_id": "cs-CZ",
+        "lang_name": "Czech (Czech Republic)",
+        "lang_name_localized": "Česky (Česká republika)"
+    },
+    {
+        "lang_id": "de-DE",
+        "lang_name": "German (Germany)",
+        "lang_name_localized": "Deutsch (Deutschland)"
+    },
+    {
+        "lang_id": "es-ES",
+        "lang_name": "Spanish (Spain)",
+        "lang_name_localized": "Español (España)"
+    },
+    {
+        "lang_id": "fa-IR",
+        "lang_name": "Persian (Iran)",
+        "lang_name_localized": "فارسی (ایران)"
+    },
+    {
+        "lang_id": "fr-CA",
+        "lang_name": "French (Canada)",
+        "lang_name_localized": "Français (Canada)"
+    },
+    {
+        "flag": "🇫🇷",
+        "lang_id": "fr-FR",
+        "lang_name": "French (France)",
+        "lang_name_localized": "Français (France)"
+    },
+    {
+        "lang_id": "hu-HU",
+        "lang_name": "Hungarian (Hungary)",
+        "lang_name_localized": "Magyar (Magyarország)"
+    },
+    {
+        "lang_id": "id-ID",
+        "lang_name": "Indonesian (Indonesia)",
+        "lang_name_localized": "Bahasa Indonesia (Indonesia)"
+    },
+    {
+        "lang_id": "it-IT",
+        "lang_name": "Italian (Italy)",
+        "lang_name_localized": "Italiano (Italia)"
+    },
+    {
+        "lang_id": "ja-JP",
+        "lang_name": "Japanese (Japan)",
+        "lang_name_localized": "日本語 (日本)"
+    },
+    {
+        "lang_id": "ko-KR",
+        "lang_name": "Korean (South Korea)",
+        "lang_name_localized": "한국어 (대한민국)"
+    },
+    {
+        "lang_id": "nl-NL",
+        "lang_name": "Dutch (Netherlands)",
+        "lang_name_localized": "Nederlands (Nederland)"
+    },
+    {
+        "lang_id": "pl-PL",
+        "lang_name": "Polish (Poland)",
+        "lang_name_localized": "Polski (Polska)"
+    },
+    {
+        "lang_id": "pt-BR",
+        "lang_name": "Portuguese (Brazil)",
+        "lang_name_localized": "Português (Brasil)"
+    },
+    {
+        "lang_id": "ru-RU",
+        "lang_name": "Russian (Russia)",
+        "lang_name_localized": "Русский (Россия)"
+    },
+    {
+        "lang_id": "sv-SE",
+        "lang_name": "Swedish (Sweden)",
+        "lang_name_localized": "Svenska (Sverige)"
+    },
+    {
+        "lang_id": "th-TH",
+        "lang_name": "Thai (Thailand)",
+        "lang_name_localized": "ภาษาไทย (ประเทศไทย)"
+    },
+    {
+        "lang_id": "tr-TR",
+        "lang_name": "Turkish (Turkey)",
+        "lang_name_localized": "Türkçe (Türkiye)"
+    },
+    {
+        "lang_id": "uk-UA",
+        "lang_name": "Ukrainian (Ukraine)",
+        "lang_name_localized": "Українська (Україна)"
+    },
+    {
+        "lang_id": "zh-CN",
+        "lang_name": "Chinese (Simplified, China)",
+        "lang_name_localized": "中文（简体，中国）"
+    },
+    {
+        "lang_id": "zh-HK",
+        "lang_name": "Chinese (Traditional, Hong Kong)",
+        "lang_name_localized": "中文（繁體，香港）"
+    }
+]

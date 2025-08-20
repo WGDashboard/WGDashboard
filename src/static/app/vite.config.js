@@ -3,7 +3,6 @@ import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import {proxy} from "./proxy.js";
 import vue from '@vitejs/plugin-vue'
-import {v1} from "uuid";
 
 export default defineConfig(({mode}) => {
 	if (mode === 'electron'){
@@ -33,7 +32,7 @@ export default defineConfig(({mode}) => {
 	}
 
 	return {
-		base: "/static/app/dist",
+		base: "/static/dist/WGDashboardAdmin",
 		plugins: [
 			vue(),
 		],
@@ -51,7 +50,7 @@ export default defineConfig(({mode}) => {
 		},
 		build: {
 			target: "es2022",
-			outDir: 'dist',
+			outDir: '../dist/WGDashboardAdmin',
 			rollupOptions: {
 				output: {
 					entryFileNames: `assets/[name]-[hash].js`,

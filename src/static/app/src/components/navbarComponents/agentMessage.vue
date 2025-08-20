@@ -1,6 +1,5 @@
 <script setup>
 import {computed, onMounted} from "vue";
-import {marked} from "marked";
 
 const props = defineProps({
 	message: {

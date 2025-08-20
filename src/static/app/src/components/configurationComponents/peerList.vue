@@ -11,7 +11,7 @@ import PeerSearch from "@/components/configurationComponents/peerSearch.vue";
 import Peer from "@/components/configurationComponents/peer.vue";
 import PeerListModals from "@/components/configurationComponents/peerListComponents/peerListModals.vue";
 import PeerIntersectionObserver from "@/components/configurationComponents/peerIntersectionObserver.vue";
-
+import ConfigurationDescription from "@/components/configurationComponents/configurationDescription.vue";
 
 // Async Components
 const PeerSearchBar = defineAsyncComponent(() => import("@/components/configurationComponents/peerSearchBar.vue"))
@@ -70,10 +70,12 @@ const configurationModals = ref({
 	},
 	editRawConfigurationFile: {
 		modalOpen: false
+	},
+	assignPeer: {
+		modalOpen: false
 	}
 })
 const peerSearchBar = ref(false)
-
 // Fetch Peer =====================================
 const fetchPeerList = async () => {
 	await fetchGet("/api/getWireguardConfigurationInfo", {
@@ -107,6 +109,7 @@ setFetchPeerListInterval()
 onBeforeUnmount(() => {
 	clearInterval(fetchPeerListInterval.value);
 	fetchPeerListInterval.value = undefined;
+	wireguardConfigurationStore.Filter.HiddenTags = []
 })
 
 watch(() => {
@@ -152,13 +155,28 @@ const configurationSummary = computed(() => {
 
 const showPeersCount = ref(10)
 const showPeersThreshold = 20;
+const hiddenPeers = computed(() => {
+	return wireguardConfigurationStore.Filter.HiddenTags.map(tag => {
+		return configurationInfo.value.Info.PeerGroups[tag].Peers
+	}).flat()
+})
+const taggedPeers = computed(() => {
+	return Object.values(configurationInfo.value.Info.PeerGroups).map(x => x.Peers).flat()
+})
+
 const searchPeers = computed(() => {
 	const result = wireguardConfigurationStore.searchString ?
 		configurationPeers.value.filter(x => {
-			return x.name.includes(wireguardConfigurationStore.searchString) ||
+			return (x.name.includes(wireguardConfigurationStore.searchString) ||
 				x.id.includes(wireguardConfigurationStore.searchString) ||
-				x.allowed_ip.includes(wireguardConfigurationStore.searchString)
-		}) : configurationPeers.value;
+				x.allowed_ip.includes(wireguardConfigurationStore.searchString))
+				&& !hiddenPeers.value.includes(x.id)
+				&& (
+					wireguardConfigurationStore.Filter.ShowAllPeersWhenHiddenTags || (!wireguardConfigurationStore.Filter.ShowAllPeersWhenHiddenTags && taggedPeers.value.includes(x.id))
+				)
+		}) : configurationPeers.value.filter(x => !hiddenPeers.value.includes(x.id) && (
+			wireguardConfigurationStore.Filter.ShowAllPeersWhenHiddenTags || (!wireguardConfigurationStore.Filter.ShowAllPeersWhenHiddenTags && taggedPeers.value.includes(x.id))
+		));
 
 	if (dashboardStore.Configuration.Server.dashboard_sort === "restricted"){
 		return result.sort((a, b) => {
@@ -186,11 +204,28 @@ const searchPeers = computed(() => {
 		return 0;
 	}).slice(0, showPeersCount.value)
 })
+
+const dropup = (index) => {
+	return searchPeers.value.length - (index + 1) <= 3
+}
+
+watch(() => route.query.id, (newValue) => {
+	if (newValue){
+		wireguardConfigurationStore.searchString = newValue
+	}else{
+		wireguardConfigurationStore.searchString = undefined
+	}
+}, {
+	immediate: true
+})
+
+
+
 </script>
 
 <template>
 <div class="container-fluid" >
-	<div class="d-flex align-items-sm-center flex-column flex-sm-row gap-3">
+	<div class="d-flex align-items-sm-start flex-column flex-sm-row gap-3">
 		<div>
 			<div class="text-muted d-flex align-items-center gap-2">
 				<h5 class="mb-0">
@@ -223,7 +258,6 @@ const searchPeers = computed(() => {
 						       @change="toggleConfiguration()"
 						       v-model="configurationInfo.Status">
 					</div>
-
 				</div>
 			</div>
 			<div class="d-flex gap-2">
@@ -244,6 +278,7 @@ const searchPeers = computed(() => {
 		</div>
 	</div>
 	<hr>
+	<ConfigurationDescription :configuration="configurationInfo"></ConfigurationDescription>
 	<div class="row mt-3 gy-2 gx-2 mb-2">
 		<div class="col-12 col-lg-3">
 			<div class="card rounded-3 bg-transparent  h-100">
@@ -337,10 +372,10 @@ const searchPeers = computed(() => {
 		:configurationInfo="configurationInfo"
 	></PeerDataUsageCharts>
 	<hr>
-	<div style="margin-bottom: 80px">
+	<div style="margin-bottom: 10rem">
 		<PeerSearch
 			v-if="configurationPeers.length > 0"
-			@search="peerSearchBar = true"
+			@search="peerSearchBar = !peerSearchBar"
 			@jobsAll="configurationModals.peerScheduleJobsAll.modalOpen = true"
 			@jobLogs="configurationModals.peerScheduleJobsLogs.modalOpen = true"
 			@editConfiguration="configurationModals.editConfiguration.modalOpen = true"
@@ -353,21 +388,28 @@ const searchPeers = computed(() => {
 			<div class="col-12"
 			     :class="{'col-lg-6 col-xl-4': dashboardStore.Configuration.Server.dashboard_peer_list_display === 'grid'}"
 			     :key="peer.id"
-			     v-for="peer in searchPeers">
+			     v-for="(peer, order) in searchPeers">
 				<Peer :Peer="peer"
+					  :searchPeersLength="searchPeers.length"
+					  :order="order"
+					  :ConfigurationInfo="configurationInfo"
 				      @share="configurationModals.peerShare.modalOpen = true; configurationModalSelectedPeer = peer"
 				      @refresh="fetchPeerList()"
 				      @jobs="configurationModals.peerScheduleJobs.modalOpen = true; configurationModalSelectedPeer = peer"
 				      @setting="configurationModals.peerSetting.modalOpen = true; configurationModalSelectedPeer = peer"
 				      @qrcode="configurationModalSelectedPeer = peer; configurationModals.peerQRCode.modalOpen = true;"
 				      @configurationFile="configurationModalSelectedPeer = peer; configurationModals.peerConfigurationFile.modalOpen = true;"
+				      @assign="configurationModalSelectedPeer = peer; configurationModals.assignPeer.modalOpen = true;"
 				></Peer>
 			</div>
 		</TransitionGroup>
 		
 	</div>
-	<Transition name="slideUp">
-		<PeerSearchBar @close="peerSearchBar = false" v-if="peerSearchBar"></PeerSearchBar>
+	<Transition name="slide-fade">
+		<PeerSearchBar
+			v-if="peerSearchBar"
+			:ConfigurationInfo="configurationInfo"
+			@close="peerSearchBar = false"></PeerSearchBar>
 	</Transition>
 	<PeerListModals 
 		:configurationModals="configurationModals"

@@ -2,7 +2,7 @@
 import {computed, onMounted, reactive, ref, watch} from "vue";
 import LocaleText from "@/components/text/localeText.vue";
 import {WireguardConfigurationsStore} from "@/stores/WireguardConfigurationsStore.js";
-import {parse} from "cidr-tools";
+import {parseCidr} from "cidr-tools";
 import {fetchPost} from "@/utilities/fetch.js";
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
 import {useRouter} from "vue-router";
@@ -63,7 +63,7 @@ const validateListenPort = computed(() => {
 
 const validateAddress = computed(() => {
 	try{
-		parse(newConfiguration.Address)
+		parseCidr(newConfiguration.Address)
 		return true
 	}catch (e){
 		return false
@@ -92,7 +92,7 @@ onMounted(() => {
 const availableIPAddress = computed(() => {
 	let p;
 	try{
-		p = parse(newConfiguration.Address);
+		p = parseCidr(newConfiguration.Address);
 	}catch (e){
 		return 0;
 	}

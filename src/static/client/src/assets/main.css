@@ -1,0 +1,143 @@
+@import "bootstrap/dist/css/bootstrap.css";
+@import "bootstrap-icons/font/bootstrap-icons.css";
+
+@font-face {
+    font-family: 'Plus Jakarta Sans';
+    font-style: normal;
+    font-weight: 200 800;
+    src: url(./fonts/Plus_Jakarta_Sans/PlusJakartaSans-VariableFont_wght.ttf) format('ttf');
+}
+@font-face {
+    font-family: 'Plus Jakarta Sans';
+    font-style: italic;
+    font-weight: 200 800;
+    src: url(./fonts/Plus_Jakarta_Sans/PlusJakartaSans-Italic-VariableFont_wght.ttf) format('ttf');
+}
+
+*{
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol" !important;
+}
+
+@property --brandColor1 {
+    syntax: '<color>';
+    initial-value: #009dff;
+    inherits: false;
+}
+
+@property --brandColor2 {
+    syntax: '<color>';
+    initial-value: #F94647;
+    inherits: false;
+}
+
+@property --distance1{
+    syntax: '<percentage>';
+    initial-value: 0%;
+    inherits: false;
+}
+
+@property --degree{
+    syntax: '<angle>';
+    initial-value: 234deg;
+    inherits: false;
+}
+
+.btn-brand{
+    /*background: rgb(23,139,255);*/
+    background: linear-gradient(var(--degree), var(--brandColor1) var(--distance1), var(--brandColor2) 100%);
+    border: 0 !important;
+    transition: --brandColor1 0.3s, --brandColor2 0.3s !important;
+}
+
+.btn-brand:hover{
+    --brandColor1: rgb(0, 142, 216);
+    --brandColor2: rgba(249, 70, 71)
+}
+
+::-webkit-scrollbar {
+    display: none;
+}
+
+.slide-right-enter-active,
+.slide-right-leave-active {
+    transition: all 0.3s cubic-bezier(0.82, 0.58, 0.17, 1);
+}
+.slide-right-enter-from,
+.slide-right-leave-to{
+    opacity: 0;
+}
+
+.slide-right-enter-from{
+    transform: translateX(-20px);
+}
+.slide-right-leave-to{
+    transform: translateX(20px);
+}
+
+.app-enter-active,
+.app-leave-active {
+    transition: all 0.4s cubic-bezier(0.82, 0.58, 0.17, 1);
+}
+.app-enter-from,
+.app-leave-to{
+    opacity: 0;
+    filter: blur(8px);
+}
+
+.app-enter-from{
+    transform: scale(1.03);
+}
+
+.app-leave-to{
+    transform: scale(0.97);
+}
+
+.btn-outline-body{
+    color: #000000;
+    border-color: #000000 !important;
+    background-color: transparent;
+}
+
+[data-bs-theme=dark] .btn-outline-body{
+    color: #ffffff;
+    border-color: #ffffff !important;
+    background-color: transparent;
+}
+
+.btn-body{
+    border-color: #000000 !important;
+    color: #ffffff !important;
+    background-color: #000000;
+}
+
+.btn-body:hover{
+    border-color: #373737 !important;
+    color: #ffffff !important;
+    background-color: #373737 !important;
+}
+
+[data-bs-theme=dark] .btn-body{
+    border-color: #ffffff !important;
+    color: #000000 !important;
+    background-color: #ffffff;
+}
+
+[data-bs-theme=dark] .btn-body:hover{
+    border-color: #e8e8e8 !important;
+    color: #000000 !important;
+    background-color: #e8e8e8 !important;
+}
+
+.form-control{
+    border-width: 0;
+}
+
+.amneziawgBg{
+    background: rgb(145,199,193);
+    background: linear-gradient(90deg, rgba(145,199,193,1) 0%, rgba(107,95,161,1) 50%, rgba(227,142,65,1) 100%);
+}
+
+.wireguardBg{
+    background: rgb(125,32,32);
+    background: linear-gradient(90deg, rgba(125,32,32,1) 0%, rgba(255,56,56,1) 100%);
+}

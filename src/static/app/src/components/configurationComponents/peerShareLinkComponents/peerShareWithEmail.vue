@@ -38,7 +38,7 @@ const sendEmail = async () => {
 }
 
 
-const emits = defineEmits(['fullscreen'])
+const emits = defineEmits(['fullscreen', 'hide'])
 watch(livePreview, () => {
 	emits('fullscreen', livePreview.value)
 })
@@ -47,9 +47,14 @@ watch(livePreview, () => {
 
 <template>
 	<div v-if="emailIsReady">
-		<h6 class="mb-3">
-			<LocaleText t="Share with Email"></LocaleText>
-		</h6>
+		<div class="d-flex mb-3 align-items-center">
+			<a role="button" class="d-flex text-decoration-none text-body text-muted" @click="emits('hide')">
+				<i class="bi bi-chevron-left me-2"></i> Back
+			</a>
+			<h6 class="mb-0 ms-auto">
+				<LocaleText t="Share with Email"></LocaleText>
+			</h6>
+		</div>
 		<form class="d-flex gap-3 flex-column"
 			@submit="(e) => {e.preventDefault(); sendEmail()}"
 		>

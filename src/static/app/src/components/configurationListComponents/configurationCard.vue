@@ -57,6 +57,12 @@ export default {
 					<small>
 						<ProtocolBadge :protocol="c.Protocol" :mini="true"></ProtocolBadge>
 					</small>
+					<small v-if="c.Info.Description">
+						<span class="badge text-bg-info rounded-3 shadow">
+							<i class="bi bi-pencil-fill me-2"></i>
+							{{ c.Info.Description }}
+						</span>
+					</small>
 				</h6>
 				<h6 class="mb-0 ms-auto">
 					<i class="bi bi-chevron-right"></i>

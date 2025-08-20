@@ -1,7 +1,6 @@
 <script>
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
 import PeersDefaultSettingsInput from "@/components/settingsComponent/peersDefaultSettingsInput.vue";
-import {ipV46RegexCheck} from "@/utilities/ipCheck.js";
 import AccountSettingsInputUsername from "@/components/settingsComponent/accountSettingsInputUsername.vue";
 import AccountSettingsInputPassword from "@/components/settingsComponent/accountSettingsInputPassword.vue";
 import DashboardSettingsInputWireguardConfigurationPath
@@ -20,7 +19,6 @@ import DashboardEmailSettings from "@/components/settingsComponent/dashboardEmai
 
 export default {
 	name: "settings",
-	methods: {ipV46RegexCheck},
 	components: {
 		DashboardEmailSettings,
 		DashboardSettingsWireguardConfigurationAutostart,

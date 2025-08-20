@@ -4,16 +4,19 @@ import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.
 import LocaleText from "@/components/text/localeText.vue";
 import PeerSettingsDropdownTool
 	from "@/components/configurationComponents/peerSettingsDropdownComponents/peerSettingsDropdownTool.vue";
+import PeerTagSelectDropdown
+	from "@/components/configurationComponents/peerSettingsDropdownComponents/peerTagSelectDropdown.vue";
+import {onMounted} from "vue";
 
 export default {
 	name: "peerSettingsDropdown",
-	components: {PeerSettingsDropdownTool, LocaleText},
+	components: {PeerTagSelectDropdown, PeerSettingsDropdownTool, LocaleText},
 	setup(){
 		const dashboardStore = DashboardConfigurationStore()
 		return {dashboardStore}
 	},
 	props: {
-		Peer: Object
+		Peer: Object, ConfigurationInfo: Object, dropup: Boolean
 	},
 	data(){
 		return{
@@ -21,7 +24,11 @@ export default {
 			restrictBtnDisabled: false,
 			allowAccessBtnDisabled: false,
 			confirmDelete: false,
+			height: 0
 		}
+	},
+	mounted() {
+		this.height = document.querySelector("#peerDropdown").clientHeight
 	},
 	methods: {
 		downloadPeer(){
@@ -82,14 +89,16 @@ export default {
 				this.$emit("refresh")
 				this.allowAccessBtnDisabled = false
 			})
-		}
+		},
+
 	}
 }
 </script>
 
 <template>
-	<ul class="dropdown-menu mt-2 shadow-lg d-block rounded-3" style="max-width: 200px">
-		
+	<ul
+		:class="{'dropup': dropup}"
+		class="dropdown-menu mt-2 shadow-lg d-block rounded-3" id="peerDropdown" style="max-width: 200px">
 		<template v-if="!this.Peer.restricted">
 			<template v-if="!this.confirmDelete">
 				<template v-if="this.Peer.status === 'running'">
@@ -147,6 +156,25 @@ export default {
 						<i class="me-auto bi bi-app-indicator"></i> <LocaleText t="Schedule Jobs"></LocaleText>
 					</a>
 				</li>
+				<li>
+					<a class="dropdown-item d-flex" role="button"
+					   @click="this.$emit('assign')"
+					>
+						<i class="me-auto bi bi-diagram-2"></i> <LocaleText t="Assign Peer"></LocaleText>
+					</a>
+				</li>
+				<li class="dropdown dropstart">
+					<a class="dropdown-item d-flex " role="button"
+					   data-bs-auto-close="outside"
+					   data-bs-toggle="dropdown"
+
+					>
+						<i class="me-auto bi bi-tag"></i> <LocaleText t="Tag Peer"></LocaleText>
+					</a>
+					<PeerTagSelectDropdown
+						@update="this.$emit('refresh')"
+						:Peer="Peer" :ConfigurationInfo="ConfigurationInfo"></PeerTagSelectDropdown>
+				</li>
 				<li><hr class="dropdown-divider"></li>
 				<li>
 					<a class="dropdown-item d-flex text-warning"
@@ -196,6 +224,7 @@ export default {
 		<template v-else>
 			<li>
 				<a class="dropdown-item d-flex text-warning"
+
 				   @click="this.allowAccessPeer()"
 				   :class="{disabled: this.allowAccessBtnDisabled}"
 				   role="button">
@@ -210,8 +239,12 @@ export default {
 
 <style scoped>
 .dropdown-menu{
-	right: 1rem;
+	right: 0;
 	min-width: 200px;
+}
+
+.dropdown-menu.dropup{
+	bottom: 100%;
 }
 
 .dropdown-item.disabled, .dropdown-item:disabled{

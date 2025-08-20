@@ -22,7 +22,8 @@ export default {
 		return {
 			dataCopy: undefined,
 			loading: false,
-			fullscreen: false
+			fullscreen: false,
+			shareWithEmail: false
 		}
 	},
 	setup(){
@@ -133,42 +134,53 @@ export default {
 							</button>
 						</div>
 						<div v-else>
-							<div class="d-flex gap-2 mb-4">
-								<i class="bi bi-link-45deg"></i>
-								<a :href="this.getUrl" 
-								   class="text-decoration-none" target="_blank">
-									{{ getUrl }}
-								</a>
+							<div v-if="!shareWithEmail">
+								<div class="d-flex gap-2 mb-4">
+									<i class="bi bi-link-45deg"></i>
+									<a :href="this.getUrl"
+									   class="text-decoration-none" target="_blank">
+										{{ getUrl }}
+									</a>
+								</div>
+								<div class="d-flex flex-column gap-2 mb-3">
+									<small>
+										<i class="bi bi-calendar me-2"></i>
+										<LocaleText t="Expire At"></LocaleText>
+									</small>
+									<VueDatePicker
+										:is24="true"
+										:min-date="new Date()"
+										:model-value="this.dataCopy.ExpireDate"
+										@update:model-value="this.parseTime" time-picker-inline
+										format="yyyy-MM-dd HH:mm:ss"
+										preview-format="yyyy-MM-dd HH:mm:ss"
+
+										:dark="this.store.Configuration.Server.dashboard_theme === 'dark'"
+									/>
+								</div>
+								<div class="d-flex gap-2 flex-column flex-sm-row">
+									<button
+										style="flex: 1 1 0"
+										@click="this.stopSharing()"
+										:disabled="this.loading"
+										class="w-100 btn bg-danger-subtle text-danger-emphasis border-1 border-danger-subtle rounded-3 shadow-sm">
+									<span :class="{'animate__animated animate__flash animate__infinite animate__slower': this.loading}">
+										<i class="bi bi-send-slash-fill me-2" ></i>
+									</span>
+										<LocaleText t="Stop Sharing..." v-if="this.loading"></LocaleText>
+										<LocaleText t="Stop Sharing" v-else></LocaleText>
+									</button>
+									<button
+										style="flex: 1 1 0"
+										@click="shareWithEmail = true"
+										class="btn bg-primary-subtle text-primary-emphasis border-primary-subtle rounded-3">
+										<i class="bi bi-envelope me-2"></i><LocaleText t="Share with Email"></LocaleText>
+									</button>
+								</div>
 							</div>
-							<div class="d-flex flex-column gap-2 mb-3">
-								<small>
-									<i class="bi bi-calendar me-2"></i>
-									<LocaleText t="Expire At"></LocaleText>
-								</small>
-								<VueDatePicker
-									:is24="true"
-									:min-date="new Date()"
-									:model-value="this.dataCopy.ExpireDate"
-									@update:model-value="this.parseTime" time-picker-inline
-								               format="yyyy-MM-dd HH:mm:ss"
-								               preview-format="yyyy-MM-dd HH:mm:ss"
-								               
-								               :dark="this.store.Configuration.Server.dashboard_theme === 'dark'"
-								/>
-							</div>
-							<button
-								@click="this.stopSharing()"
-								:disabled="this.loading"
-								class="w-100 btn bg-danger-subtle text-danger-emphasis border-1 border-danger-subtle rounded-3 shadow-sm">
-								<span :class="{'animate__animated animate__flash animate__infinite animate__slower': this.loading}">
-									<i class="bi bi-send-slash-fill me-2" ></i>
-								</span>
-								<LocaleText t="Stop Sharing..." v-if="this.loading"></LocaleText>
-								<LocaleText t="Stop Sharing" v-else></LocaleText>
-							</button>
-							<hr>
-							<Suspense>
+							<Suspense v-else>
 								<PeerShareWithEmail 
+									@hide="shareWithEmail = false"
 									@fullscreen="(f) => { this.fullscreen = f; }"
 									:selectedPeer="selectedPeer" :dataCopy="dataCopy"></PeerShareWithEmail>
 								<template #fallback>

@@ -28,43 +28,10 @@ export default {
 			searchKey: ""
 		}
 	},
-	async mounted() {
-		if (!window.localStorage.getItem('ConfigurationListSort')){
-			window.localStorage.setItem('ConfigurationListSort', JSON.stringify(this.currentSort))
-		}else{
-			this.currentSort = JSON.parse(window.localStorage.getItem('ConfigurationListSort'))
-		}
-
-		if (!window.localStorage.getItem('ConfigurationListDisplay')){
-			window.localStorage.setItem('ConfigurationListDisplay', this.currentDisplay)
-		}else{
-			this.currentDisplay = window.localStorage.getItem('ConfigurationListDisplay')
-		}
-		
-		
-		await this.wireguardConfigurationsStore.getConfigurations();
-		this.configurationLoaded = true;
-		
-		this.wireguardConfigurationsStore.ConfigurationListInterval = setInterval(() => {
-			this.wireguardConfigurationsStore.getConfigurations()
-		}, 10000)
-	},
-	beforeUnmount() {
-		clearInterval(this.wireguardConfigurationsStore.ConfigurationListInterval)
-	},
 	computed: {
 		configurations(){
-			return [...this.wireguardConfigurationsStore.Configurations]
+			return this.wireguardConfigurationsStore.sortConfigurations
 				.filter(x => x.Name.toLowerCase().includes(this.searchKey) || x.PublicKey.includes(this.searchKey) || !this.searchKey)
-				.sort((a, b) => {
-				if (this.currentSort.order === 'desc') {
-					return this.dotNotation(a, this.currentSort.key) < this.dotNotation(b, this.currentSort.key) ? 
-						1 : this.dotNotation(a, this.currentSort.key) > this.dotNotation(b, this.currentSort.key) ? -1 : 0;
-				} else {
-					return this.dotNotation(a, this.currentSort.key) > this.dotNotation(b, this.currentSort.key) ? 
-						1 : this.dotNotation(a, this.currentSort.key) < this.dotNotation(b, this.currentSort.key) ? -1 : 0;
-				}
-			})
 		}
 	},
 	methods: {
@@ -76,18 +43,16 @@ export default {
 			return result
 		},
 		updateSort(key){
-			if (this.currentSort.key === key){
-				if (this.currentSort.order === 'asc') this.currentSort.order = 'desc'
-				else this.currentSort.order = 'asc'
+			if (this.wireguardConfigurationsStore.CurrentSort.key === key){
+				this.wireguardConfigurationsStore.CurrentSort.order =
+					this.wireguardConfigurationsStore.CurrentSort.order === 'asc' ? 'desc' : 'asc'
 			}else{
-				this.currentSort.key = key
+				this.wireguardConfigurationsStore.CurrentSort.key = key
 			}
-			window.localStorage.setItem('ConfigurationListSort', JSON.stringify(this.currentSort))
 		},
 		updateDisplay(key){
-			if (this.currentDisplay !== key){
-				this.currentDisplay = key
-				window.localStorage.setItem('ConfigurationListDisplay', this.currentDisplay)
+			if (this.wireguardConfigurationsStore.CurrentDisplay !== key){
+				this.wireguardConfigurationsStore.CurrentDisplay = key
 			}
 		}
 	}
@@ -113,7 +78,7 @@ export default {
 				
 			</div>
 			<Transition name="fade">
-				<div class="text-body filter mb-3 d-flex gap-2 flex-column flex-md-row" v-if="this.configurationLoaded">
+				<div class="text-body filter mb-3 d-flex gap-2 flex-column flex-md-row" v-if="this.wireguardConfigurationsStore.ConfigurationLoaded">
 					<div class="d-flex align-items-center gap-3 align-items-center mb-3 mb-md-0">
 						<small class="text-muted">
 							<LocaleText t="Sort By"></LocaleText>
@@ -121,12 +86,12 @@ export default {
 						<div class="d-flex ms-auto ms-lg-0">
 							<a role="button"
 							   @click="updateSort(sv)"
-							   :class="{'bg-primary-subtle text-primary-emphasis': this.currentSort.key === sv}"
-							   class="px-2 py-1 rounded-3" v-for="(s, sv) in this.sort">
+							   :class="{'bg-primary-subtle text-primary-emphasis': this.wireguardConfigurationsStore.CurrentSort.key === sv}"
+							   class="px-2 py-1 rounded-3" v-for="(s, sv) in this.wireguardConfigurationsStore.SortOptions">
 								<small>
 									<i class="bi me-2"
-									   :class="[this.currentSort.order === 'asc' ? 'bi-sort-up' : 'bi-sort-down']"
-									   v-if="this.currentSort.key === sv"></i>{{s}}
+									   :class="[this.wireguardConfigurationsStore.CurrentSort.order === 'asc' ? 'bi-sort-up' : 'bi-sort-down']"
+									   v-if="this.wireguardConfigurationsStore.CurrentSort.key === sv"></i>{{s}}
 								</small>
 							</a>
 						</div>
@@ -139,7 +104,7 @@ export default {
 							<a role="button"
 							   @click="updateDisplay(x.name)"
 							   v-for="x in [{name: 'List', key: 'list'}, {name: 'Grid', key: 'grid'}]"
-							   :class="{'bg-primary-subtle text-primary-emphasis': this.currentDisplay === x.name}"
+							   :class="{'bg-primary-subtle text-primary-emphasis': this.wireguardConfigurationsStore.CurrentDisplay === x.name}"
 							   class="px-2 py-1 rounded-3">
 								<small>
 									<i class="bi me-2" :class="'bi-' + x.key"></i> <LocaleText :t="x.name"></LocaleText>
@@ -163,14 +128,14 @@ export default {
 				<TransitionGroup name="fade">
 					<p class="text-muted col-12"
 					   key="noConfiguration"
-					   v-if="this.configurationLoaded && this.wireguardConfigurationsStore.Configurations.length === 0">
+					   v-if="this.wireguardConfigurationsStore.ConfigurationLoaded && this.wireguardConfigurationsStore.Configurations.length === 0">
 						<LocaleText t="You don't have any WireGuard configurations yet. Please check the configuration folder or change it in Settings. By default the folder is /etc/wireguard."></LocaleText>
 					</p>
 					<ConfigurationCard
-						:display="this.currentDisplay"
+						:display="this.wireguardConfigurationsStore.CurrentDisplay"
 						v-for="(c, index) in configurations"
 						:delay="index*0.03 + 's'"
-						v-else-if="this.configurationLoaded"
+						v-else-if="this.wireguardConfigurationsStore.ConfigurationLoaded"
 						:key="c.Name" :c="c"></ConfigurationCard>
 				</TransitionGroup>
 			</div>

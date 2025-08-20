@@ -4,19 +4,19 @@ import {fetchGet, fetchPost} from "@/utilities/fetch.js";
 import {WireguardConfigurationsStore} from "@/stores/WireguardConfigurationsStore.js";
 import LocaleText from "@/components/text/localeText.vue";
 import {GetLocale} from "@/utilities/locale.js";
+import PeerTag from "@/components/configurationComponents/peerTag.vue";
 
 
 export default {
 	name: "peerSearch",
-	components: {LocaleText},
+	components: {PeerTag, LocaleText},
 	setup(){
 		const store = DashboardConfigurationStore();
 		const wireguardConfigurationStore = WireguardConfigurationsStore()
 		return {store, wireguardConfigurationStore}
 	},
 	props: {
-		
-		configuration: Object
+		configuration: Object, displayTags: Array
 	},
 	data(){
 		return {
@@ -39,22 +39,11 @@ export default {
 			searchString: "",
 			searchStringTimeout: undefined,
 			showDisplaySettings: false,
-			showMoreSettings: false
+			showMoreSettings: false,
+			tagManager: false
 		}
 	},
 	methods: {
-		debounce(){
-			if (!this.searchStringTimeout){
-				this.searchStringTimeout = setTimeout(() => {
-					this.wireguardConfigurationStore.searchString = this.searchString;
-				}, 300)
-			}else{
-				clearTimeout(this.searchStringTimeout)
-				this.searchStringTimeout = setTimeout(() => {
-					this.wireguardConfigurationStore.searchString = this.searchString;
-				}, 300)
-			}
-		},
 		updateSort(sort){
 			fetchPost("/api/updateDashboardConfigurationItem", {
 				section: "Server",
@@ -168,6 +157,22 @@ export default {
 						</button>
 					</li>
 				</ul>
+			</div>
+			<div class="position-relative">
+				<button
+					@click="tagManager = !tagManager"
+					class="btn btn-sm w-100 text-primary-emphasis bg-primary-subtle rounded-3 border-1 border-primary-subtle  position-relative">
+
+					<i class="bi me-2 bi-tag"></i>
+					<LocaleText t="Tags"></LocaleText>
+
+				</button>
+				<Transition name="slide-fade">
+					<PeerTag
+						@update="args => configuration.Info.PeerGroups = args"
+						@close="this.tagManager = false"
+						:configuration="configuration" v-if="this.tagManager"></PeerTag>
+				</Transition>
 			</div>
 			
 			<button class="btn btn-sm text-primary-emphasis bg-primary-subtle rounded-3 border-1 border-primary-subtle ms-lg-auto"

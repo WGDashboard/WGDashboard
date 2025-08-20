@@ -8,3 +8,10 @@ icmplib
 gunicorn
 requests
 tcconfig
+sqlalchemy
+sqlalchemy_utils
+psycopg
+mysqlclient
+tzlocal
+python-jose
+pydantic

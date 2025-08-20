@@ -7,6 +7,7 @@ date = datetime.today().strftime('%Y_%m_%d_%H_%M_%S')
 
 def post_worker_init(worker):
     dashboard.startThreads()
+    dashboard.DashboardPlugins.startThreads()
 
 worker_class = 'gthread'
 workers = 1
@@ -16,7 +17,7 @@ daemon = True
 pidfile = './gunicorn.pid'
 wsgi_app = "dashboard:app"
 accesslog = f"./log/access_{date}.log"
-log_level = "debug"
+loglevel = "info"
 capture_output = True
 errorlog = f"./log/error_{date}.log"
 pythonpath = "., ./modules"

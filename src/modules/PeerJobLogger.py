@@ -1,53 +1,59 @@
 """
 Peer Job Logger
 """
-import sqlite3, os, uuid
+import uuid
+import sqlalchemy as db
+
+from .ConnectionString import ConnectionString
 from .Log import Log
 
 class PeerJobLogger:
-    def __init__(self, CONFIGURATION_PATH, AllPeerJobs):
-        self.loggerdb = sqlite3.connect(os.path.join(CONFIGURATION_PATH, 'db', 'wgdashboard_log.db'),
-                                        check_same_thread=False)
-        self.loggerdb.row_factory = sqlite3.Row
+    def __init__(self, AllPeerJobs, DashboardConfig):
+        self.engine = db.create_engine(ConnectionString("wgdashboard_log"))                
+        self.metadata = db.MetaData()
+        self.jobLogTable = db.Table('JobLog', self.metadata,
+                                    db.Column('LogID', db.String(255), nullable=False, primary_key=True),
+                                    db.Column('JobID', db.String(255), nullable=False),
+                                    db.Column('LogDate', (db.DATETIME if DashboardConfig.GetConfig("Database", "type")[1] == 'sqlite' else db.TIMESTAMP), 
+                                              server_default=db.func.now()),
+                                    db.Column('Status', db.String(255), nullable=False),
+                                    db.Column('Message', db.Text)
+                                    )
         self.logs: list[Log] = []
-        self.__createLogDatabase()
+        self.metadata.create_all(self.engine)
         self.AllPeerJobs = AllPeerJobs
-    def __createLogDatabase(self):
-        with self.loggerdb:
-            loggerdbCursor = self.loggerdb.cursor()
-
-            existingTable = loggerdbCursor.execute("SELECT name from sqlite_master where type='table'").fetchall()
-            existingTable = [t['name'] for t in existingTable]
-
-            if "JobLog" not in existingTable:
-                loggerdbCursor.execute("CREATE TABLE JobLog (LogID VARCHAR NOT NULL, JobID NOT NULL, LogDate DATETIME DEFAULT (strftime('%Y-%m-%d %H:%M:%S','now', 'localtime')), Status VARCHAR NOT NULL, Message VARCHAR, PRIMARY KEY (LogID))")
-                if self.loggerdb.in_transaction:
-                    self.loggerdb.commit()
     def log(self, JobID: str, Status: bool = True, Message: str = "") -> bool:
         try:
-            with self.loggerdb:
-                loggerdbCursor = self.loggerdb.cursor()
-                loggerdbCursor.execute(f"INSERT INTO JobLog (LogID, JobID, Status, Message) VALUES (?, ?, ?, ?)",
-                                       (str(uuid.uuid4()), JobID, Status, Message,))
-                if self.loggerdb.in_transaction:
-                    self.loggerdb.commit()
+            with self.engine.begin() as conn:
+                conn.execute(
+                    self.jobLogTable.insert().values(
+                        {
+                            "LogID": str(uuid.uuid4()), 
+                            "JobID": JobID, 
+                            "Status": Status, 
+                            "Message": Message
+                        }
+                    )
+                )
         except Exception as e:
             print(f"[WGDashboard] Peer Job Log Error: {str(e)}")
             return False
         return True
 
-    def getLogs(self, all: bool = False, configName = None) -> list[Log]:
+    def getLogs(self, configName = None) -> list[Log]:
         logs: list[Log] = []
         try:
             allJobs = self.AllPeerJobs.getAllJobs(configName)
-            allJobsID = ", ".join([f"'{x.JobID}'" for x in allJobs])
-            with self.loggerdb:
-                loggerdbCursor = self.loggerdb.cursor()
-                table = loggerdbCursor.execute(f"SELECT * FROM JobLog WHERE JobID IN ({allJobsID}) ORDER BY LogDate DESC").fetchall()
-                self.logs.clear()
+            allJobsID = [x.JobID for x in allJobs]
+            stmt = self.jobLogTable.select().where(self.jobLogTable.columns.JobID.in_(
+                allJobsID
+            ))
+            with self.engine.connect() as conn:
+                table = conn.execute(stmt).fetchall()
                 for l in table:
                     logs.append(
-                        Log(l["LogID"], l["JobID"], l["LogDate"], l["Status"], l["Message"]))
+                        Log(l.LogID, l.JobID, l.LogDate.strftime("%Y-%m-%d %H:%M:%S"), l.Status, l.Message))
         except Exception as e:
+            print(e)
             return logs
         return logs

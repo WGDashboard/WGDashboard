@@ -1,39 +1,58 @@
+import logging
 import random, shutil, sqlite3, configparser, hashlib, ipaddress, json, os, secrets, subprocess
-import time, re, urllib.error, uuid, bcrypt, psutil, pyotp, threading
+import time, re, uuid, bcrypt, psutil, pyotp, threading
+import traceback
 from uuid import uuid4
 from zipfile import ZipFile
 from datetime import datetime, timedelta
-from typing import Any
+
+import sqlalchemy
 from jinja2 import Template
 from flask import Flask, request, render_template, session, send_file
-from json import JSONEncoder
 from flask_cors import CORS
 from icmplib import ping, traceroute
 from flask.json.provider import DefaultJSONProvider
 from itertools import islice
-from Utilities import (
-    RegexMatch, GetRemoteEndpoint, StringToBoolean,
+
+from sqlalchemy import RowMapping
+
+from modules.Utilities import (
+    RegexMatch, StringToBoolean,
     ValidateIPAddressesWithRange, ValidateDNSAddress,
     GenerateWireguardPublicKey, GenerateWireguardPrivateKey
 )
 from packaging import version
 from modules.Email import EmailSender
-from modules.Log import Log
 from modules.DashboardLogger import DashboardLogger
-from modules.PeerJobLogger import PeerJobLogger
 from modules.PeerJob import PeerJob
 from modules.SystemStatus import SystemStatus
+from modules.PeerShareLinks import PeerShareLinks
+from modules.PeerJobs import PeerJobs
+from modules.DashboardConfig import DashboardConfig
+from modules.WireguardConfiguration import WireguardConfiguration
+from modules.AmneziaWireguardConfiguration import AmneziaWireguardConfiguration
+
+from client import createClientBlueprint
+
+from logging.config import dictConfig
+
+from modules.DashboardClients import DashboardClients
+from modules.DashboardPlugins import DashboardPlugins
+
+dictConfig({
+    'version': 1,
+    'formatters': {'default': {
+        'format': '[%(asctime)s] [%(levelname)s] in [%(module)s] %(message)s',
+    }},
+    'root': {
+        'level': 'INFO'
+    }
+})
+
 SystemStatus = SystemStatus()
 
-DASHBOARD_VERSION = 'v4.2.5'
-
 CONFIGURATION_PATH = os.getenv('CONFIGURATION_PATH', '.')
-DB_PATH = os.path.join(CONFIGURATION_PATH, 'db')
-if not os.path.isdir(DB_PATH):
-    os.mkdir(DB_PATH)
-DASHBOARD_CONF = os.path.join(CONFIGURATION_PATH, 'wg-dashboard.ini')
-UPDATE = None
-app = Flask("WGDashboard", template_folder=os.path.abspath("./static/app/dist"))
+app = Flask("WGDashboard", template_folder=os.path.abspath("./static/dist/WGDashboardAdmin"))
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 5206928
 app.secret_key = secrets.token_urlsafe(32)
 
@@ -44,6 +63,8 @@ class CustomJsonEncoder(DefaultJSONProvider):
     def default(self, o):
         if callable(getattr(o, "toJson", None)):
             return o.toJson()
+        if type(o) is RowMapping:
+            return dict(o)
         return super().default(self)
 app.json = CustomJsonEncoder(app)
 
@@ -59,1949 +80,6 @@ def ResponseObject(status=True, message=None, data=None, status_code = 200) -> F
     response.status_code = status_code
     response.content_type = "application/json"
     return response       
-
-"""
-Peer Jobs
-"""
-class PeerJobs:
-    def __init__(self):
-        self.Jobs: list[PeerJob] = []
-        self.jobdb = sqlite3.connect(os.path.join(CONFIGURATION_PATH, 'db', 'wgdashboard_job.db'),
-                                     check_same_thread=False)
-        self.jobdb.row_factory = sqlite3.Row
-        self.__createPeerJobsDatabase()
-        self.__getJobs()
-
-    def __getJobs(self):
-        self.Jobs.clear()
-        with self.jobdb:
-            jobdbCursor = self.jobdb.cursor()
-            jobs = jobdbCursor.execute("SELECT * FROM PeerJobs WHERE ExpireDate IS NULL").fetchall()
-            for job in jobs:
-                self.Jobs.append(PeerJob(
-                    job['JobID'], job['Configuration'], job['Peer'], job['Field'], job['Operator'], job['Value'],
-                    job['CreationDate'], job['ExpireDate'], job['Action']))
-    
-    def getAllJobs(self, configuration: str = None):
-        if configuration is not None:
-            with self.jobdb:
-                jobdbCursor = self.jobdb.cursor()
-                jobs = jobdbCursor.execute(
-                    f"SELECT * FROM PeerJobs WHERE Configuration = ?", (configuration, )).fetchall()
-                j = []
-                for job in jobs:
-                    j.append(PeerJob(
-                        job['JobID'], job['Configuration'], job['Peer'], job['Field'], job['Operator'], job['Value'],
-                        job['CreationDate'], job['ExpireDate'], job['Action']))
-                return j
-        return []
-
-    def __createPeerJobsDatabase(self):
-        with self.jobdb:
-            jobdbCursor = self.jobdb.cursor()
-        
-            existingTable = jobdbCursor.execute("SELECT name from sqlite_master where type='table'").fetchall()
-            existingTable = [t['name'] for t in existingTable]
-    
-            if "PeerJobs" not in existingTable:
-                jobdbCursor.execute('''
-                CREATE TABLE PeerJobs (JobID VARCHAR NOT NULL, Configuration VARCHAR NOT NULL, Peer VARCHAR NOT NULL,
-                Field VARCHAR NOT NULL, Operator VARCHAR NOT NULL, Value VARCHAR NOT NULL, CreationDate DATETIME,
-                ExpireDate DATETIME, Action VARCHAR NOT NULL, PRIMARY KEY (JobID))
-                ''')
-                self.jobdb.commit()
-
-    def toJson(self):
-        return [x.toJson() for x in self.Jobs]
-
-    def searchJob(self, Configuration: str, Peer: str):
-        return list(filter(lambda x: x.Configuration == Configuration and x.Peer == Peer, self.Jobs))
-    
-    def searchJobById(self, JobID):
-        return list(filter(lambda x: x.JobID == JobID, self.Jobs))
-    
-    def saveJob(self, Job: PeerJob) -> tuple[bool, list] | tuple[bool, str]:
-        try:
-            with self.jobdb:
-                jobdbCursor = self.jobdb.cursor()
-                if len(self.searchJobById(Job.JobID)) == 0:
-                    jobdbCursor.execute('''
-                    INSERT INTO PeerJobs VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%S','now'), NULL, ?)
-                    ''', (Job.JobID, Job.Configuration, Job.Peer, Job.Field, Job.Operator, Job.Value, Job.Action,))
-                    JobLogger.log(Job.JobID, Message=f"Job is created if {Job.Field} {Job.Operator} {Job.Value} then {Job.Action}")
-                else:
-                    currentJob = jobdbCursor.execute('SELECT * FROM PeerJobs WHERE JobID = ?', (Job.JobID, )).fetchone()
-                    if currentJob is not None:
-                        jobdbCursor.execute('''
-                            UPDATE PeerJobs SET Field = ?, Operator = ?, Value = ?, Action = ? WHERE JobID = ?
-                            ''', (Job.Field, Job.Operator, Job.Value, Job.Action, Job.JobID))
-                        JobLogger.log(Job.JobID, 
-                                      Message=f"Job is updated from if {currentJob['Field']} {currentJob['Operator']} {currentJob['value']} then {currentJob['Action']}; to if {Job.Field} {Job.Operator} {Job.Value} then {Job.Action}")
-                
-                self.jobdb.commit()
-                self.__getJobs()
-            return True, list(
-                filter(lambda x: x.Configuration == Job.Configuration and x.Peer == Job.Peer and x.JobID == Job.JobID,
-                       self.Jobs))
-        except Exception as e:
-            return False, str(e)
-
-    def deleteJob(self, Job: PeerJob) -> tuple[bool, list] | tuple[bool, str]:
-        try:
-            if (len(str(Job.CreationDate))) == 0:
-                return False, "Job does not exist"
-            with self.jobdb:
-                jobdbCursor = self.jobdb.cursor()
-                jobdbCursor.execute('''
-                    UPDATE PeerJobs SET ExpireDate = strftime('%Y-%m-%d %H:%M:%S','now') WHERE JobID = ?
-                ''', (Job.JobID,))
-                self.jobdb.commit()
-            JobLogger.log(Job.JobID, Message=f"Job is removed due to being deleted or finshed.")
-            self.__getJobs()
-            return True, list(
-                filter(lambda x: x.Configuration == Job.Configuration and x.Peer == Job.Peer and x.JobID == Job.JobID,
-                       self.Jobs))
-        except Exception as e:
-            return False, str(e)
-        
-    def updateJobConfigurationName(self, ConfigurationName: str, NewConfigurationName: str) -> tuple[bool, str] | tuple[bool, None]:
-        try:
-            with self.jobdb:
-                jobdbCursor = self.jobdb.cursor()
-                jobdbCursor.execute('''
-                        UPDATE PeerJobs SET Configuration = ? WHERE Configuration = ?
-                    ''', (NewConfigurationName, ConfigurationName, ))
-                self.jobdb.commit()
-            self.__getJobs()
-            return True, None
-        except Exception as e:
-            return False, str(e)
-        
-    
-    def runJob(self):
-        needToDelete = []
-        self.__getJobs()
-        for job in self.Jobs:
-            c = WireguardConfigurations.get(job.Configuration)
-            if c is not None:
-                f, fp = c.searchPeer(job.Peer)
-                if f:
-                    if job.Field in ["total_receive", "total_sent", "total_data"]:
-                        s = job.Field.split("_")[1]
-                        x: float = getattr(fp, f"total_{s}") + getattr(fp, f"cumu_{s}")
-                        y: float = float(job.Value)
-                    else:
-                        x: datetime = datetime.now()
-                        y: datetime = datetime.strptime(job.Value, "%Y-%m-%d %H:%M:%S")
-                    runAction: bool = self.__runJob_Compare(x, y, job.Operator)
-                    if runAction:
-                        s = False
-                        if job.Action == "restrict":
-                            s = c.restrictPeers([fp.id]).get_json()
-                        elif job.Action == "delete":
-                            s = c.deletePeers([fp.id]).get_json()
-                
-                        if s['status'] is True:
-                            JobLogger.log(job.JobID, s["status"], 
-                                          f"Peer {fp.id} from {c.Name} is successfully {job.Action}ed."
-                            )
-                            needToDelete.append(job)
-                        else:
-                            JobLogger.log(job.JobID, s["status"],
-                                          f"Peer {fp.id} from {c.Name} failed {job.Action}ed."
-                            )
-                else:
-                    JobLogger.log(job.JobID, False,
-                      f"Somehow can't find this peer {job.Peer} from {c.Name} failed {job.Action}ed."
-                    )
-            else:
-                JobLogger.log(job.JobID, False,
-                  f"Somehow can't find this peer {job.Peer} from {job.Configuration} failed {job.Action}ed."
-                )
-        for j in needToDelete:
-            self.deleteJob(j)
-
-    def __runJob_Compare(self, x: float | datetime, y: float | datetime, operator: str):
-        if operator == "eq":
-            return x == y
-        if operator == "neq":
-            return x != y
-        if operator == "lgt":
-            return x > y
-        if operator == "lst":
-            return x < y
-        
-"""
-Peer Share Link
-"""
-class PeerShareLink:
-    def __init__(self, ShareID:str, Configuration: str, Peer: str, ExpireDate: datetime, ShareDate: datetime):
-        self.ShareID = ShareID
-        self.Peer = Peer
-        self.Configuration = Configuration
-        self.ShareDate = ShareDate
-        self.ExpireDate = ExpireDate
-        
-    
-    def toJson(self):
-        return {
-            "ShareID": self.ShareID,
-            "Peer": self.Peer,
-            "Configuration": self.Configuration,
-            "ExpireDate": self.ExpireDate
-        }
-
-"""
-Peer Share Links
-"""
-class PeerShareLinks:
-    def __init__(self):
-        self.Links: list[PeerShareLink] = []
-        existingTables = sqlSelect("SELECT name FROM sqlite_master WHERE type='table' and name = 'PeerShareLinks'").fetchall()
-        if len(existingTables) == 0:
-            sqlUpdate(
-                """
-                    CREATE TABLE PeerShareLinks (
-                        ShareID VARCHAR NOT NULL PRIMARY KEY, Configuration VARCHAR NOT NULL, Peer VARCHAR NOT NULL,
-                        ExpireDate DATETIME,
-                        SharedDate DATETIME DEFAULT (datetime('now', 'localtime'))
-                    )
-                """
-            )
-        self.__getSharedLinks()
-    def __getSharedLinks(self):
-        self.Links.clear()
-        allLinks = sqlSelect("SELECT * FROM PeerShareLinks WHERE ExpireDate IS NULL OR ExpireDate > datetime('now', 'localtime')").fetchall()
-        for link in allLinks:
-            self.Links.append(PeerShareLink(*link))
-    
-    def getLink(self, Configuration: str, Peer: str) -> list[PeerShareLink]:
-        return list(filter(lambda x : x.Configuration == Configuration and x.Peer == Peer, self.Links))
-    
-    def getLinkByID(self, ShareID: str) -> list[PeerShareLink]:
-        self.__getSharedLinks()
-        return list(filter(lambda x : x.ShareID == ShareID, self.Links))
-    
-    def addLink(self, Configuration: str, Peer: str, ExpireDate: datetime = None) -> tuple[bool, str]:
-        try:
-            newShareID = str(uuid.uuid4())
-            if len(self.getLink(Configuration, Peer)) > 0:
-                sqlUpdate("UPDATE PeerShareLinks SET ExpireDate = datetime('now', 'localtime') WHERE Configuration = ? AND Peer = ?", (Configuration, Peer, ))
-            sqlUpdate("INSERT INTO PeerShareLinks (ShareID, Configuration, Peer, ExpireDate) VALUES (?, ?, ?, ?)", (newShareID, Configuration, Peer, ExpireDate, ))
-            self.__getSharedLinks()
-        except Exception as e:
-            return False, str(e)
-        return True, newShareID
-    
-    def updateLinkExpireDate(self, ShareID, ExpireDate: datetime = None) -> tuple[bool, str]:
-        sqlUpdate("UPDATE PeerShareLinks SET ExpireDate = ? WHERE ShareID = ?;", (ExpireDate, ShareID, ))
-        self.__getSharedLinks()
-        return True, ""
-
-"""
-WireGuard Configuration
-""" 
-class WireguardConfiguration:
-    class InvalidConfigurationFileException(Exception):
-        def __init__(self, m):
-            self.message = m
-
-        def __str__(self):
-            return self.message
-
-    def __init__(self, name: str = None, data: dict = None, backup: dict = None, startup: bool = False, wg: bool = True):
-        
-        
-        self.__parser: configparser.ConfigParser = configparser.RawConfigParser(strict=False)
-        self.__parser.optionxform = str
-        self.__configFileModifiedTime = None
-        
-        self.Status: bool = False
-        self.Name: str = ""
-        self.PrivateKey: str = ""
-        self.PublicKey: str = ""
-        
-        self.ListenPort: str = ""
-        self.Address: str = ""
-        self.DNS: str = ""
-        self.Table: str = ""
-        self.MTU: str = ""
-        self.PreUp: str = ""
-        self.PostUp: str = ""
-        self.PreDown: str = ""
-        self.PostDown: str = ""
-        self.SaveConfig: bool = True
-        self.Name = name
-        self.Protocol = "wg" if wg else "awg"
-        self.configPath = os.path.join(self.__getProtocolPath(), f'{self.Name}.conf') if wg else os.path.join(DashboardConfig.GetConfig("Server", "awg_conf_path")[1], f'{self.Name}.conf')
-        
-        if name is not None:
-            if data is not None and "Backup" in data.keys():
-                db = self.__importDatabase(
-                    os.path.join(
-                        self.__getProtocolPath(),
-                        'WGDashboard_Backup',
-                        data["Backup"].replace(".conf", ".sql")))
-            else:
-                self.createDatabase()
-            
-            self.__parseConfigurationFile()
-            self.__initPeersList()
-            
-        else:
-            self.Name = data["ConfigurationName"]
-            self.configPath = os.path.join(self.__getProtocolPath(), f'{self.Name}.conf')
-            
-            for i in dir(self):
-                if str(i) in data.keys():
-                    if isinstance(getattr(self, i), bool):
-                        setattr(self, i, StringToBoolean(data[i]))
-                    else:
-                        setattr(self, i, str(data[i]))
-            
-            self.__parser["Interface"] = {
-                "PrivateKey": self.PrivateKey,
-                "Address": self.Address,
-                "ListenPort": self.ListenPort,
-                "PreUp": f"{self.PreUp}",
-                "PreDown": f"{self.PreDown}",
-                "PostUp": f"{self.PostUp}",
-                "PostDown": f"{self.PostDown}",
-                "SaveConfig": "true"
-            }
-            
-            if self.Protocol == 'awg':
-                self.__parser["Interface"]["Jc"] = self.Jc
-                self.__parser["Interface"]["Jc"] = self.Jc 
-                self.__parser["Interface"]["Jmin"] = self.Jmin
-                self.__parser["Interface"]["Jmax"] = self.Jmax
-                self.__parser["Interface"]["S1"] = self.S1 
-                self.__parser["Interface"]["S2"] = self.S2 
-                self.__parser["Interface"]["H1"] = self.H1 
-                self.__parser["Interface"]["H2"] = self.H2 
-                self.__parser["Interface"]["H3"] = self.H3 
-                self.__parser["Interface"]["H4"] = self.H4 
-                
-            if "Backup" not in data.keys():
-                self.createDatabase()
-                with open(self.configPath, "w+") as configFile:
-                    self.__parser.write(configFile)
-                    print(f"[WGDashboard] Configuration file {self.configPath} created")
-                self.__initPeersList()
-
-        if not os.path.exists(os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup')):
-            os.mkdir(os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup'))
-        
-        print(f"[WGDashboard] Initialized Configuration: {name}")    
-        if self.getAutostartStatus() and not self.getStatus() and startup:
-            self.toggleConfiguration()
-            print(f"[WGDashboard] Autostart Configuration: {name}")
-                           
-    def __getProtocolPath(self):
-        return DashboardConfig.GetConfig("Server", "wg_conf_path")[1] if self.Protocol == "wg" \
-            else DashboardConfig.GetConfig("Server", "awg_conf_path")[1]
-    
-    def __initPeersList(self):
-        self.Peers: list[Peer] = []
-        self.getPeersList()
-        self.getRestrictedPeersList()
-        
-    def getRawConfigurationFile(self):
-        return open(self.configPath, 'r').read()
-    
-    def updateRawConfigurationFile(self, newRawConfiguration):
-        backupStatus, backup = self.backupConfigurationFile()
-        if not backupStatus:
-            return False, "Cannot create backup"
-    
-        if self.Status:
-            self.toggleConfiguration()
-        
-        with open(self.configPath, 'w') as f:
-            f.write(newRawConfiguration)
-        
-        status, err = self.toggleConfiguration()
-        if not status:
-            restoreStatus = self.restoreBackup(backup['filename'])
-            print(f"Restore status: {restoreStatus}")
-            self.toggleConfiguration()
-            return False, err
-        return True, None
-            
-    def __parseConfigurationFile(self):
-        with open(self.configPath, 'r') as f:
-            original = [l.rstrip("\n") for l in f.readlines()]
-            try:
-                start = original.index("[Interface]")
-                # Clean
-                for i in range(start, len(original)):
-                    if original[i] == "[Peer]":
-                        break
-                    split = re.split(r'\s*=\s*', original[i], 1)
-                    if len(split) == 2:
-                        key = split[0]
-                        if key in dir(self):
-                            if isinstance(getattr(self, key), bool):
-                                setattr(self, key, False)
-                            else:
-                                setattr(self, key, "")
-
-                # Set
-                for i in range(start, len(original)):
-                    if original[i] == "[Peer]":
-                        break
-                    split = re.split(r'\s*=\s*', original[i], 1)
-                    if len(split) == 2:
-                        key = split[0]
-                        value = split[1]
-                        if key in dir(self):
-                            if isinstance(getattr(self, key), bool):
-                                setattr(self, key, StringToBoolean(value))
-                            else:
-                                if len(getattr(self, key)) > 0:
-                                    if key not in ["PostUp", "PostDown", "PreUp", "PreDown"]:
-                                        setattr(self, key, f"{getattr(self, key)}, {value}")
-                                    else:
-                                        setattr(self, key, f"{getattr(self, key)}; {value}")
-                                else:
-                                    setattr(self, key, value)  
-            except ValueError as e:
-                raise self.InvalidConfigurationFileException(
-                        "[Interface] section not found in " + self.configPath)
-            if self.PrivateKey:
-                self.PublicKey = self.__getPublicKey()
-            self.Status = self.getStatus()
-    
-    def __dropDatabase(self):
-        existingTables = [self.Name, f'{self.Name}_restrict_access', f'{self.Name}_transfer', f'{self.Name}_deleted']        
-        # existingTables = sqlSelect(f"SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '{self.Name}%'").fetchall()
-        for t in existingTables:
-            sqlUpdate("DROP TABLE '%s'" % t)
-
-        # existingTables = sqlSelect(f"SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '{self.Name}%'").fetchall()
-
-    def createDatabase(self, dbName = None):
-        if dbName is None:
-            dbName = self.Name
-        
-        existingTables = sqlSelect("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-        existingTables = [t['name'] for t in existingTables]
-        if dbName not in existingTables:
-            sqlUpdate(
-                """
-                CREATE TABLE '%s'(
-                    id VARCHAR NOT NULL, private_key VARCHAR NULL, DNS VARCHAR NULL, 
-                    endpoint_allowed_ip VARCHAR NULL, name VARCHAR NULL, total_receive FLOAT NULL, 
-                    total_sent FLOAT NULL, total_data FLOAT NULL, endpoint VARCHAR NULL, 
-                    status VARCHAR NULL, latest_handshake VARCHAR NULL, allowed_ip VARCHAR NULL, 
-                    cumu_receive FLOAT NULL, cumu_sent FLOAT NULL, cumu_data FLOAT NULL, mtu INT NULL, 
-                    keepalive INT NULL, remote_endpoint VARCHAR NULL, preshared_key VARCHAR NULL,
-                    PRIMARY KEY (id)
-                )
-                """ % dbName
-            )
-        if f'{dbName}_restrict_access' not in existingTables:
-            sqlUpdate(
-                """
-                CREATE TABLE '%s_restrict_access' (
-                    id VARCHAR NOT NULL, private_key VARCHAR NULL, DNS VARCHAR NULL, 
-                    endpoint_allowed_ip VARCHAR NULL, name VARCHAR NULL, total_receive FLOAT NULL, 
-                    total_sent FLOAT NULL, total_data FLOAT NULL, endpoint VARCHAR NULL, 
-                    status VARCHAR NULL, latest_handshake VARCHAR NULL, allowed_ip VARCHAR NULL, 
-                    cumu_receive FLOAT NULL, cumu_sent FLOAT NULL, cumu_data FLOAT NULL, mtu INT NULL, 
-                    keepalive INT NULL, remote_endpoint VARCHAR NULL, preshared_key VARCHAR NULL,
-                    PRIMARY KEY (id)
-                )
-                """ % dbName
-            )
-        if f'{dbName}_transfer' not in existingTables:
-            sqlUpdate(
-                """
-                CREATE TABLE '%s_transfer' (
-                    id VARCHAR NOT NULL, total_receive FLOAT NULL,
-                    total_sent FLOAT NULL, total_data FLOAT NULL,
-                    cumu_receive FLOAT NULL, cumu_sent FLOAT NULL, cumu_data FLOAT NULL, time DATETIME
-                )
-                """ % dbName
-            )
-        if f'{dbName}_deleted' not in existingTables:
-            sqlUpdate(
-                """
-                CREATE TABLE '%s_deleted' (
-                    id VARCHAR NOT NULL, private_key VARCHAR NULL, DNS VARCHAR NULL, 
-                    endpoint_allowed_ip VARCHAR NULL, name VARCHAR NULL, total_receive FLOAT NULL, 
-                    total_sent FLOAT NULL, total_data FLOAT NULL, endpoint VARCHAR NULL, 
-                    status VARCHAR NULL, latest_handshake VARCHAR NULL, allowed_ip VARCHAR NULL, 
-                    cumu_receive FLOAT NULL, cumu_sent FLOAT NULL, cumu_data FLOAT NULL, mtu INT NULL, 
-                    keepalive INT NULL, remote_endpoint VARCHAR NULL, preshared_key VARCHAR NULL,
-                    PRIMARY KEY (id)
-                )
-                """ % dbName
-            )
-            
-    def __dumpDatabase(self):
-        for line in sqldb.iterdump():
-            if (line.startswith(f"INSERT INTO \"{self.Name}\"") 
-                    or line.startswith(f'INSERT INTO "{self.Name}_restrict_access"')
-                    or line.startswith(f'INSERT INTO "{self.Name}_transfer"')
-                    or line.startswith(f'INSERT INTO "{self.Name}_deleted"')
-            ):
-                yield line
-                
-    def __importDatabase(self, sqlFilePath) -> bool:
-        self.__dropDatabase()
-        self.createDatabase()
-        if not os.path.exists(sqlFilePath):
-            return False
-        with open(sqlFilePath, 'r') as f:
-            for l in f.readlines():
-                l = l.rstrip("\n")
-                if len(l) > 0:
-                    sqlUpdate(l)
-        return True
-        
-    def __getPublicKey(self) -> str:
-        return GenerateWireguardPublicKey(self.PrivateKey)[1]
-
-    def getStatus(self) -> bool:
-        self.Status = self.Name in psutil.net_if_addrs().keys()
-        return self.Status
-    
-    def getAutostartStatus(self):
-        s, d = DashboardConfig.GetConfig("WireGuardConfiguration", "autostart")
-        return self.Name in d
-
-    def getRestrictedPeers(self):
-        self.RestrictedPeers = []
-        restricted = sqlSelect("SELECT * FROM '%s_restrict_access'" % self.Name).fetchall()
-        for i in restricted:
-            self.RestrictedPeers.append(Peer(i, self))
-            
-    def configurationFileChanged(self) :
-        mt = os.path.getmtime(self.configPath)
-        changed = self.__configFileModifiedTime is None or self.__configFileModifiedTime != mt
-        self.__configFileModifiedTime = mt
-        return changed
-        
-    def getPeers(self):
-        if self.configurationFileChanged():
-            self.Peers = []
-            with open(self.configPath, 'r') as configFile:
-                p = []
-                pCounter = -1
-                content = configFile.read().split('\n')
-                try:
-                    peerStarts = content.index("[Peer]")
-                    content = content[peerStarts:]
-                    for i in content:
-                        if not RegexMatch("#(.*)", i) and not RegexMatch(";(.*)", i):
-                            if i == "[Peer]":
-                                pCounter += 1
-                                p.append({})
-                                p[pCounter]["name"] = ""
-                            else:
-                                if len(i) > 0:
-                                    split = re.split(r'\s*=\s*', i, 1)
-                                    if len(split) == 2:
-                                        p[pCounter][split[0]] = split[1]
-                        
-                        if RegexMatch("#Name# = (.*)", i):
-                            split = re.split(r'\s*=\s*', i, 1)
-                            if len(split) == 2:
-                                p[pCounter]["name"] = split[1]
-                    
-                    for i in p:
-                        if "PublicKey" in i.keys():
-                            checkIfExist = sqlSelect("SELECT * FROM '%s' WHERE id = ?" % self.Name,
-                                                          ((i['PublicKey']),)).fetchone()
-                            if checkIfExist is None:
-                                newPeer = {
-                                    "id": i['PublicKey'],
-                                    "private_key": "",
-                                    "DNS": DashboardConfig.GetConfig("Peers", "peer_global_DNS")[1],
-                                    "endpoint_allowed_ip": DashboardConfig.GetConfig("Peers", "peer_endpoint_allowed_ip")[
-                                        1],
-                                    "name": i.get("name"),
-                                    "total_receive": 0,
-                                    "total_sent": 0,
-                                    "total_data": 0,
-                                    "endpoint": "N/A",
-                                    "status": "stopped",
-                                    "latest_handshake": "N/A",
-                                    "allowed_ip": i.get("AllowedIPs", "N/A"),
-                                    "cumu_receive": 0,
-                                    "cumu_sent": 0,
-                                    "cumu_data": 0,
-                                    "traffic": [],
-                                    "mtu": DashboardConfig.GetConfig("Peers", "peer_mtu")[1],
-                                    "keepalive": DashboardConfig.GetConfig("Peers", "peer_keep_alive")[1],
-                                    "remote_endpoint": DashboardConfig.GetConfig("Peers", "remote_endpoint")[1],
-                                    "preshared_key": i["PresharedKey"] if "PresharedKey" in i.keys() else ""
-                                }
-                                sqlUpdate(
-                                    """
-                                    INSERT INTO '%s'
-                                        VALUES (:id, :private_key, :DNS, :endpoint_allowed_ip, :name, :total_receive, :total_sent, 
-                                        :total_data, :endpoint, :status, :latest_handshake, :allowed_ip, :cumu_receive, :cumu_sent, 
-                                        :cumu_data, :mtu, :keepalive, :remote_endpoint, :preshared_key);
-                                    """ % self.Name
-                                    , newPeer)
-                                self.Peers.append(Peer(newPeer, self))
-                            else:
-                                sqlUpdate("UPDATE '%s' SET allowed_ip = ? WHERE id = ?" % self.Name,
-                                               (i.get("AllowedIPs", "N/A"), i['PublicKey'],))
-                                self.Peers.append(Peer(checkIfExist, self))
-                except Exception as e:
-                    if __name__ == '__main__':
-                        print(f"[WGDashboard] {self.Name} Error: {str(e)}")
-        else:
-            self.Peers.clear()
-            checkIfExist = sqlSelect("SELECT * FROM '%s'" % self.Name).fetchall()
-            for i in checkIfExist:
-                self.Peers.append(Peer(i, self))
-            
-    def addPeers(self, peers: list) -> tuple[bool, dict]:
-        result = {
-            "message": None,
-            "peers": []
-        }
-        try:
-            for i in peers:
-                newPeer = {
-                    "id": i['id'],
-                    "private_key": i['private_key'],
-                    "DNS": i['DNS'],
-                    "endpoint_allowed_ip": i['endpoint_allowed_ip'],
-                    "name": i['name'],
-                    "total_receive": 0,
-                    "total_sent": 0,
-                    "total_data": 0,
-                    "endpoint": "N/A",
-                    "status": "stopped",
-                    "latest_handshake": "N/A",
-                    "allowed_ip": i.get("allowed_ip", "N/A"),
-                    "cumu_receive": 0,
-                    "cumu_sent": 0,
-                    "cumu_data": 0,
-                    "traffic": [],
-                    "mtu": i['mtu'],
-                    "keepalive": i['keepalive'],
-                    "remote_endpoint": DashboardConfig.GetConfig("Peers", "remote_endpoint")[1],
-                    "preshared_key": i["preshared_key"]
-                }
-                sqlUpdate(
-                    """
-                    INSERT INTO '%s'
-                        VALUES (:id, :private_key, :DNS, :endpoint_allowed_ip, :name, :total_receive, :total_sent, 
-                        :total_data, :endpoint, :status, :latest_handshake, :allowed_ip, :cumu_receive, :cumu_sent, 
-                        :cumu_data, :mtu, :keepalive, :remote_endpoint, :preshared_key);
-                    """ % self.Name
-                    , newPeer)
-            for p in peers:
-                presharedKeyExist = len(p['preshared_key']) > 0
-                rd = random.Random()
-                uid = str(uuid.UUID(int=rd.getrandbits(128), version=4))
-                if presharedKeyExist:
-                    with open(uid, "w+") as f:
-                        f.write(p['preshared_key'])
-                
-                subprocess.check_output(f"{self.Protocol} set {self.Name} peer {p['id']} allowed-ips {p['allowed_ip'].replace(' ', '')}{f' preshared-key {uid}' if presharedKeyExist else ''}",
-                                        shell=True, stderr=subprocess.STDOUT)
-                if presharedKeyExist:
-                    os.remove(uid)
-            subprocess.check_output(
-                f"{self.Protocol}-quick save {self.Name}", shell=True, stderr=subprocess.STDOUT)
-            self.getPeersList()
-            for p in peers:
-                p = self.searchPeer(p['id'])
-                if p[0]:
-                    result['peers'].append(p[1])
-            return True, result
-        except Exception as e:
-            result['message'] = str(e)
-            return False, result
-        
-    def searchPeer(self, publicKey):
-        for i in self.Peers:
-            if i.id == publicKey:
-                return True, i
-        return False, None
-
-    def allowAccessPeers(self, listOfPublicKeys):
-        if not self.getStatus():
-            self.toggleConfiguration()
-        
-        for i in listOfPublicKeys:
-            p = sqlSelect("SELECT * FROM '%s_restrict_access' WHERE id = ?" % self.Name, (i,)).fetchone()
-            if p is not None:
-                sqlUpdate("INSERT INTO '%s' SELECT * FROM '%s_restrict_access' WHERE id = ?"
-                               % (self.Name, self.Name,), (p['id'],))
-                sqlUpdate("DELETE FROM '%s_restrict_access' WHERE id = ?"
-                               % self.Name, (p['id'],))
-                
-                presharedKeyExist = len(p['preshared_key']) > 0
-                rd = random.Random()
-                uid = str(uuid.UUID(int=rd.getrandbits(128), version=4))
-                if presharedKeyExist:
-                    with open(uid, "w+") as f:
-                        f.write(p['preshared_key'])
-                        
-                subprocess.check_output(f"{self.Protocol} set {self.Name} peer {p['id']} allowed-ips {p['allowed_ip'].replace(' ', '')}{f' preshared-key {uid}' if presharedKeyExist else ''}",
-                                        shell=True, stderr=subprocess.STDOUT)
-                if presharedKeyExist: os.remove(uid)
-            else:
-                return ResponseObject(False, "Failed to allow access of peer " + i)
-        if not self.__wgSave():
-            return ResponseObject(False, "Failed to save configuration through WireGuard")
-
-        self.getPeers()
-        return ResponseObject(True, "Allow access successfully")
-
-    def restrictPeers(self, listOfPublicKeys):
-        numOfRestrictedPeers = 0
-        numOfFailedToRestrictPeers = 0
-        if not self.getStatus():
-            self.toggleConfiguration()
-        for p in listOfPublicKeys:
-            found, pf = self.searchPeer(p)
-            if found:
-                try:
-                    subprocess.check_output(f"{self.Protocol} set {self.Name} peer {pf.id} remove",
-                                            shell=True, stderr=subprocess.STDOUT)
-                    sqlUpdate("INSERT INTO '%s_restrict_access' SELECT * FROM '%s' WHERE id = ?" %
-                                   (self.Name, self.Name,), (pf.id,))
-                    sqlUpdate("UPDATE '%s_restrict_access' SET status = 'stopped' WHERE id = ?" %
-                                   (self.Name,), (pf.id,))
-                    sqlUpdate("DELETE FROM '%s' WHERE id = ?" % self.Name, (pf.id,))
-                    numOfRestrictedPeers += 1
-                except Exception as e:
-                    numOfFailedToRestrictPeers += 1
-
-        if not self.__wgSave():
-            return ResponseObject(False, "Failed to save configuration through WireGuard")
-
-        self.getPeers()
-
-        if numOfRestrictedPeers == len(listOfPublicKeys):
-            return ResponseObject(True, f"Restricted {numOfRestrictedPeers} peer(s)")
-        return ResponseObject(False,
-                              f"Restricted {numOfRestrictedPeers} peer(s) successfully. Failed to restrict {numOfFailedToRestrictPeers} peer(s)")
-        pass
-
-    def deletePeers(self, listOfPublicKeys):
-        numOfDeletedPeers = 0
-        numOfFailedToDeletePeers = 0
-        if not self.getStatus():
-            self.toggleConfiguration()
-        for p in listOfPublicKeys:
-            found, pf = self.searchPeer(p)
-            if found:
-                try:
-                    subprocess.check_output(f"{self.Protocol} set {self.Name} peer {pf.id} remove",
-                                            shell=True, stderr=subprocess.STDOUT)
-                    sqlUpdate("DELETE FROM '%s' WHERE id = ?" % self.Name, (pf.id,))
-                    numOfDeletedPeers += 1
-                except Exception as e:
-                    numOfFailedToDeletePeers += 1
-
-        if not self.__wgSave():
-            return ResponseObject(False, "Failed to save configuration through WireGuard")
-
-        self.getPeers()
-        
-        if numOfDeletedPeers == 0 and numOfFailedToDeletePeers == 0:
-            return ResponseObject(False, "No peer(s) to delete found", responseCode=404)
-
-        if numOfDeletedPeers == len(listOfPublicKeys):
-            return ResponseObject(True, f"Deleted {numOfDeletedPeers} peer(s)")
-        return ResponseObject(False,
-                              f"Deleted {numOfDeletedPeers} peer(s) successfully. Failed to delete {numOfFailedToDeletePeers} peer(s)")
-
-    def __wgSave(self) -> tuple[bool, str] | tuple[bool, None]:
-        try:
-            subprocess.check_output(f"{self.Protocol}-quick save {self.Name}", shell=True, stderr=subprocess.STDOUT)
-            return True, None
-        except subprocess.CalledProcessError as e:
-            return False, str(e)
-
-    def getPeersLatestHandshake(self):
-        if not self.getStatus():
-            self.toggleConfiguration()
-        try:
-            latestHandshake = subprocess.check_output(f"{self.Protocol} show {self.Name} latest-handshakes",
-                                                      shell=True, stderr=subprocess.STDOUT)
-        except subprocess.CalledProcessError:
-            return "stopped"
-        latestHandshake = latestHandshake.decode("UTF-8").split()
-        count = 0
-        now = datetime.now()
-        time_delta = timedelta(minutes=2)
-        for _ in range(int(len(latestHandshake) / 2)):
-            minus = now - datetime.fromtimestamp(int(latestHandshake[count + 1]))
-            if minus < time_delta:
-                status = "running"
-            else:
-                status = "stopped"
-            if int(latestHandshake[count + 1]) > 0:
-                sqlUpdate("UPDATE '%s' SET latest_handshake = ?, status = ? WHERE id= ?" % self.Name
-                              , (str(minus).split(".", maxsplit=1)[0], status, latestHandshake[count],))
-            else:
-                sqlUpdate("UPDATE '%s' SET latest_handshake = 'No Handshake', status = ? WHERE id= ?" % self.Name
-                              , (status, latestHandshake[count],))
-            count += 2
-    
-    def getPeersTransfer(self):
-        if not self.getStatus():
-            self.toggleConfiguration()
-        try:
-            data_usage = subprocess.check_output(f"{self.Protocol} show {self.Name} transfer",
-                                                 shell=True, stderr=subprocess.STDOUT)
-            data_usage = data_usage.decode("UTF-8").split("\n")
-            data_usage = [p.split("\t") for p in data_usage]
-            for i in range(len(data_usage)):
-                if len(data_usage[i]) == 3:
-                    cur_i = sqlSelect(
-                        "SELECT total_receive, total_sent, cumu_receive, cumu_sent, status FROM '%s' WHERE id= ? "
-                        % self.Name, (data_usage[i][0],)).fetchone()
-                    if cur_i is not None:
-                        cur_i = dict(cur_i)
-                        total_sent = cur_i['total_sent']
-                        total_receive = cur_i['total_receive']
-                        cur_total_sent = float(data_usage[i][2]) / (1024 ** 3)
-                        cur_total_receive = float(data_usage[i][1]) / (1024 ** 3)
-                        cumulative_receive = cur_i['cumu_receive'] + total_receive
-                        cumulative_sent = cur_i['cumu_sent'] + total_sent
-                        if total_sent <= cur_total_sent and total_receive <= cur_total_receive:
-                            total_sent = cur_total_sent
-                            total_receive = cur_total_receive
-                        else:
-                            sqlUpdate(
-                                "UPDATE '%s' SET cumu_receive = ?, cumu_sent = ?, cumu_data = ? WHERE id = ?" %
-                                self.Name, (cumulative_receive, cumulative_sent,
-                                            cumulative_sent + cumulative_receive,
-                                            data_usage[i][0],))
-                            total_sent = 0
-                            total_receive = 0
-                        _, p = self.searchPeer(data_usage[i][0])
-                        if p.total_receive != total_receive or p.total_sent != total_sent:
-                            sqlUpdate(
-                                "UPDATE '%s' SET total_receive = ?, total_sent = ?, total_data = ? WHERE id = ?"
-                                % self.Name, (total_receive, total_sent,
-                                              total_receive + total_sent, data_usage[i][0],))
-        except Exception as e:
-            print(f"[WGDashboard] {self.Name} Error: {str(e)} {str(e.__traceback__)}")
-
-    def getPeersEndpoint(self):
-        if not self.getStatus():
-            self.toggleConfiguration()
-        try:
-            data_usage = subprocess.check_output(f"{self.Protocol} show {self.Name} endpoints",
-                                                 shell=True, stderr=subprocess.STDOUT)
-        except subprocess.CalledProcessError:
-            return "stopped"
-        data_usage = data_usage.decode("UTF-8").split()
-        count = 0
-        for _ in range(int(len(data_usage) / 2)):
-            sqlUpdate("UPDATE '%s' SET endpoint = ? WHERE id = ?" % self.Name
-                          , (data_usage[count + 1], data_usage[count],))
-            count += 2
-
-    def toggleConfiguration(self) -> [bool, str]:
-        self.getStatus()
-        if self.Status:
-            try:
-                check = subprocess.check_output(f"{self.Protocol}-quick down {self.Name}",
-                                                shell=True, stderr=subprocess.STDOUT)
-            except subprocess.CalledProcessError as exc:
-                return False, str(exc.output.strip().decode("utf-8"))
-        else:
-            try:
-                check = subprocess.check_output(f"{self.Protocol}-quick up {self.Name}", shell=True, stderr=subprocess.STDOUT)
-            except subprocess.CalledProcessError as exc:
-                return False, str(exc.output.strip().decode("utf-8"))
-        self.__parseConfigurationFile()
-        self.getStatus()
-        return True, None
-
-    def getPeersList(self):
-        self.getPeers()
-        return self.Peers
-
-    def getRestrictedPeersList(self) -> list:
-        self.getRestrictedPeers()
-        return self.RestrictedPeers
-
-    def toJson(self):
-        self.Status = self.getStatus()
-        return {
-            "Status": self.Status,
-            "Name": self.Name,
-            "PrivateKey": self.PrivateKey,
-            "PublicKey": self.PublicKey,
-            "Address": self.Address,
-            "ListenPort": self.ListenPort,
-            "PreUp": self.PreUp,
-            "PreDown": self.PreDown,
-            "PostUp": self.PostUp,
-            "PostDown": self.PostDown,
-            "SaveConfig": self.SaveConfig,
-            "DataUsage": {
-                "Total": sum(list(map(lambda x: x.cumu_data + x.total_data, self.Peers))),
-                "Sent": sum(list(map(lambda x: x.cumu_sent + x.total_sent, self.Peers))),
-                "Receive": sum(list(map(lambda x: x.cumu_receive + x.total_receive, self.Peers)))
-            },
-            "ConnectedPeers": len(list(filter(lambda x: x.status == "running", self.Peers))),
-            "TotalPeers": len(self.Peers),
-            "Protocol": self.Protocol,
-            "Table": self.Table,
-        }
-    
-    def backupConfigurationFile(self) -> tuple[bool, dict[str, str]]:
-        if not os.path.exists(os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup')):
-            os.mkdir(os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup'))
-        time = datetime.now().strftime("%Y%m%d%H%M%S")
-        shutil.copy(
-            self.configPath,
-            os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', f'{self.Name}_{time}.conf')
-        )
-        with open(os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', f'{self.Name}_{time}.sql'), 'w+') as f:
-            for l in self.__dumpDatabase():
-                f.write(l + "\n")
-        
-        return True, {
-            "filename": f'{self.Name}_{time}.conf',
-            "backupDate": datetime.now().strftime("%Y%m%d%H%M%S")
-        }
-                     
-    def getBackups(self, databaseContent: bool = False) -> list[dict[str: str, str: str, str: str]]:
-        backups = []
-        
-        directory = os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup')
-        files = [(file, os.path.getctime(os.path.join(directory, file)))
-                 for file in os.listdir(directory) if os.path.isfile(os.path.join(directory, file))]
-        files.sort(key=lambda x: x[1], reverse=True)
-        
-        for f, ct in files:
-            if RegexMatch(f"^({self.Name})_(.*)\\.(conf)$", f):
-                s = re.search(f"^({self.Name})_(.*)\\.(conf)$", f)
-                date = s.group(2)
-                d = {
-                    "filename": f,
-                    "backupDate": date,
-                    "content": open(os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', f), 'r').read()
-                }
-                if f.replace(".conf", ".sql") in list(os.listdir(directory)):
-                    d['database'] = True
-                    if databaseContent:
-                        d['databaseContent'] = open(os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', f.replace(".conf", ".sql")), 'r').read()
-                backups.append(d)
-        
-        return backups
-    
-    def restoreBackup(self, backupFileName: str) -> bool:
-        backups = list(map(lambda x : x['filename'], self.getBackups()))
-        if backupFileName not in backups:
-            return False
-        if self.Status:
-            self.toggleConfiguration()
-        target = os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', backupFileName)
-        targetSQL = os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', backupFileName.replace(".conf", ".sql"))
-        if not os.path.exists(target):
-            return False
-        targetContent = open(target, 'r').read()
-        try:
-            with open(self.configPath, 'w') as f:
-                f.write(targetContent)
-        except Exception as e:
-            return False
-        self.__parseConfigurationFile()
-        self.__dropDatabase()
-        self.__importDatabase(targetSQL)
-        self.__initPeersList()
-        return True
-    
-    def deleteBackup(self, backupFileName: str) -> bool:
-        backups = list(map(lambda x : x['filename'], self.getBackups()))
-        if backupFileName not in backups:
-            return False
-        try:
-            os.remove(os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', backupFileName))
-        except Exception as e:
-            return False
-        return True
-    
-    def downloadBackup(self, backupFileName: str) -> tuple[bool, str] | tuple[bool, None]:
-        backup = list(filter(lambda x : x['filename'] == backupFileName, self.getBackups()))
-        if len(backup) == 0:
-            return False, None
-        zip = f'{str(uuid.UUID(int=random.Random().getrandbits(128), version=4))}.zip'
-        with ZipFile(os.path.join('download', zip), 'w') as zipF:
-            zipF.write(
-                os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', backup[0]['filename']),
-                os.path.basename(os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', backup[0]['filename']))
-            )
-            if backup[0]['database']:
-                zipF.write(
-                    os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', backup[0]['filename'].replace('.conf', '.sql')),
-                    os.path.basename(os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', backup[0]['filename'].replace('.conf', '.sql')))
-                )
-        
-        return True, zip
-
-    def updateConfigurationSettings(self, newData: dict) -> tuple[bool, str]:
-        if self.Status:
-            self.toggleConfiguration()
-        original = []
-        dataChanged = False
-        with open(self.configPath, 'r') as f:
-            original = [l.rstrip("\n") for l in f.readlines()]
-            allowEdit = ["Address", "PreUp", "PostUp", "PreDown", "PostDown", "ListenPort", "Table"]
-            if self.Protocol == 'awg':
-                allowEdit += ["Jc", "Jmin", "Jmax", "S1", "S2", "H1", "H2", "H3", "H4"]
-            start = original.index("[Interface]")
-            try:
-                end = original.index("[Peer]")
-            except ValueError as e:
-                end = len(original)
-            new = ["[Interface]"]
-            peerFound = False
-            for line in range(start, end):
-                split = re.split(r'\s*=\s*', original[line], 1)
-                if len(split) == 2:
-                    if split[0] not in allowEdit:
-                        new.append(original[line])
-            for key in allowEdit:
-                new.insert(1, f"{key} = {str(newData[key]).strip()}")
-            new.append("")
-            for line in range(end, len(original)):
-                new.append(original[line])            
-            self.backupConfigurationFile()
-            with open(self.configPath, 'w') as f:
-                f.write("\n".join(new))
-                
-        status, msg = self.toggleConfiguration()        
-        if not status:
-            return False, msg
-        for i in allowEdit:
-            if isinstance(getattr(self, i), bool):
-                setattr(self, i, _strToBool(newData[i]))
-            else:
-                setattr(self, i, str(newData[i]))
-        return True, ""
-    
-    def deleteConfiguration(self):
-        if self.getStatus():
-            self.toggleConfiguration()
-        os.remove(self.configPath)
-        self.__dropDatabase()
-        return True
-    
-    def renameConfiguration(self, newConfigurationName) -> tuple[bool, str]:
-        if newConfigurationName in WireguardConfigurations.keys():
-            return False, "Configuration name already exist"
-        try:
-            if self.getStatus():
-                self.toggleConfiguration()
-            self.createDatabase(newConfigurationName)
-            sqlUpdate(f'INSERT INTO "{newConfigurationName}" SELECT * FROM "{self.Name}"')
-            sqlUpdate(f'INSERT INTO "{newConfigurationName}_restrict_access" SELECT * FROM "{self.Name}_restrict_access"')
-            sqlUpdate(f'INSERT INTO "{newConfigurationName}_deleted" SELECT * FROM "{self.Name}_deleted"')
-            sqlUpdate(f'INSERT INTO "{newConfigurationName}_transfer" SELECT * FROM "{self.Name}_transfer"')
-            AllPeerJobs.updateJobConfigurationName(self.Name, newConfigurationName)
-            shutil.copy(
-                self.configPath,
-                os.path.join(self.__getProtocolPath(), f'{newConfigurationName}.conf')
-            )
-            self.deleteConfiguration()
-        except Exception as e:
-            return False, str(e)
-        return True, None
-    
-    def getNumberOfAvailableIP(self):
-        if len(self.Address) < 0:
-            return False, None
-        existedAddress = set()
-        availableAddress = {}
-        for p in self.Peers + self.getRestrictedPeersList():
-            peerAllowedIP = p.allowed_ip.split(',')
-            for pip in peerAllowedIP:
-                ppip = pip.strip().split('/')
-                if len(ppip) == 2:
-                    try:
-                        check = ipaddress.ip_network(ppip[0])
-                        existedAddress.add(check)
-                    except Exception as e:
-                        print(f"[WGDashboard] Error: {self.Name} peer {p.id} have invalid ip")
-        configurationAddresses = self.Address.split(',')
-        for ca in configurationAddresses:
-            ca = ca.strip()
-            caSplit = ca.split('/')
-            try:
-                if len(caSplit) == 2:
-                    network = ipaddress.ip_network(ca, False)
-                    existedAddress.add(ipaddress.ip_network(caSplit[0]))
-                    availableAddress[ca] = network.num_addresses
-                    for p in existedAddress:
-                        if p.version == network.version and p.subnet_of(network):
-                            availableAddress[ca] -= 1                    
-            except Exception as e:
-                print(e)
-                print(f"[WGDashboard] Error: Failed to parse IP address {ca} from {self.Name}")
-        return True, availableAddress
-    
-    def getAvailableIP(self, threshold = 255):
-        if len(self.Address) < 0:
-            return False, None
-        existedAddress = set()
-        availableAddress = {}
-        for p in self.Peers + self.getRestrictedPeersList():
-            peerAllowedIP = p.allowed_ip.split(',')
-            for pip in peerAllowedIP:
-                ppip = pip.strip().split('/')
-                if len(ppip) == 2:
-                    try:
-                        check = ipaddress.ip_network(ppip[0])
-                        existedAddress.add(check.compressed)
-                    except Exception as e:
-                        print(f"[WGDashboard] Error: {self.Name} peer {p.id} have invalid ip")
-        configurationAddresses = self.Address.split(',')
-        for ca in configurationAddresses:
-            ca = ca.strip()
-            caSplit = ca.split('/')
-            try:
-                if len(caSplit) == 2:
-                    network = ipaddress.ip_network(ca, False)
-                    existedAddress.add(ipaddress.ip_network(caSplit[0]).compressed)
-                    if threshold == -1:
-                        availableAddress[ca] = filter(lambda ip : ip not in existedAddress,
-                                map(lambda iph : ipaddress.ip_network(iph).compressed, network.hosts()))
-                    else:
-                        availableAddress[ca] = list(islice(filter(lambda ip : ip not in existedAddress,
-                                map(lambda iph : ipaddress.ip_network(iph).compressed, network.hosts())), threshold))
-            except Exception as e:
-                print(e)
-                print(f"[WGDashboard] Error: Failed to parse IP address {ca} from {self.Name}")
-        print("Generated IP")
-        return True, availableAddress
-
-    def getRealtimeTrafficUsage(self):
-        stats = psutil.net_io_counters(pernic=True, nowrap=True)
-        if self.Name in stats.keys():
-            stat = stats[self.Name]
-            recv1 = stat.bytes_recv
-            sent1 = stat.bytes_sent
-            time.sleep(1)
-            stats = psutil.net_io_counters(pernic=True, nowrap=True)
-            if self.Name in stats.keys():
-                stat = stats[self.Name]
-                recv2 = stat.bytes_recv
-                sent2 = stat.bytes_sent
-                net_in = round((recv2 - recv1) / 1024 / 1024, 3)
-                net_out = round((sent2 - sent1) / 1024 / 1024, 3)
-                return {
-                    "sent": net_out,
-                    "recv": net_in
-                }
-            else:
-                return { "sent": 0, "recv": 0 }
-        else:
-            return { "sent": 0, "recv": 0 }
-            
-"""
-AmneziaWG Configuration
-"""
-class AmneziaWireguardConfiguration(WireguardConfiguration):
-    def __init__(self, name: str = None, data: dict = None, backup: dict = None, startup: bool = False):
-        self.Jc = ""
-        self.Jmin = ""
-        self.Jmax = ""
-        self.S1 = ""
-        self.S2 = ""
-        self.H1 = ""
-        self.H2 = ""
-        self.H3 = ""
-        self.H4 = ""
-        
-        super().__init__(name, data, backup, startup, wg=False)
-
-    def toJson(self):
-        self.Status = self.getStatus()
-        return {
-            "Status": self.Status,
-            "Name": self.Name,
-            "PrivateKey": self.PrivateKey,
-            "PublicKey": self.PublicKey,
-            "Address": self.Address,
-            "ListenPort": self.ListenPort,
-            "PreUp": self.PreUp,
-            "PreDown": self.PreDown,
-            "PostUp": self.PostUp,
-            "PostDown": self.PostDown,
-            "SaveConfig": self.SaveConfig,
-            "DataUsage": {
-                "Total": sum(list(map(lambda x: x.cumu_data + x.total_data, self.Peers))),
-                "Sent": sum(list(map(lambda x: x.cumu_sent + x.total_sent, self.Peers))),
-                "Receive": sum(list(map(lambda x: x.cumu_receive + x.total_receive, self.Peers)))
-            },
-            "ConnectedPeers": len(list(filter(lambda x: x.status == "running", self.Peers))),
-            "TotalPeers": len(self.Peers),
-            "Table": self.Table,
-            "Protocol": self.Protocol,
-            "Jc": self.Jc,
-            "Jmin": self.Jmin,
-            "Jmax": self.Jmax,
-            "S1": self.S1,
-            "S2": self.S2,
-            "H1": self.H1,
-            "H2": self.H2,
-            "H3": self.H3,
-            "H4": self.H4
-        }
-
-    def createDatabase(self, dbName = None):
-        if dbName is None:
-            dbName = self.Name
-
-        existingTables = sqlSelect("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-        existingTables = [t['name'] for t in existingTables]
-        if dbName not in existingTables:
-            sqlUpdate(
-                """
-                CREATE TABLE '%s'(
-                    id VARCHAR NOT NULL, private_key VARCHAR NULL, DNS VARCHAR NULL, advanced_security VARCHAR NULL,
-                    endpoint_allowed_ip VARCHAR NULL, name VARCHAR NULL, total_receive FLOAT NULL, 
-                    total_sent FLOAT NULL, total_data FLOAT NULL, endpoint VARCHAR NULL, 
-                    status VARCHAR NULL, latest_handshake VARCHAR NULL, allowed_ip VARCHAR NULL, 
-                    cumu_receive FLOAT NULL, cumu_sent FLOAT NULL, cumu_data FLOAT NULL, mtu INT NULL, 
-                    keepalive INT NULL, remote_endpoint VARCHAR NULL, preshared_key VARCHAR NULL,
-                    PRIMARY KEY (id)
-                )
-                """ % dbName
-            )
-
-        if f'{dbName}_restrict_access' not in existingTables:
-            sqlUpdate(
-                """
-                CREATE TABLE '%s_restrict_access' (
-                    id VARCHAR NOT NULL, private_key VARCHAR NULL, DNS VARCHAR NULL, advanced_security VARCHAR NULL, 
-                    endpoint_allowed_ip VARCHAR NULL, name VARCHAR NULL, total_receive FLOAT NULL, 
-                    total_sent FLOAT NULL, total_data FLOAT NULL, endpoint VARCHAR NULL, 
-                    status VARCHAR NULL, latest_handshake VARCHAR NULL, allowed_ip VARCHAR NULL, 
-                    cumu_receive FLOAT NULL, cumu_sent FLOAT NULL, cumu_data FLOAT NULL, mtu INT NULL, 
-                    keepalive INT NULL, remote_endpoint VARCHAR NULL, preshared_key VARCHAR NULL,
-                    PRIMARY KEY (id)
-                )
-                """ % dbName
-            )
-        if f'{dbName}_transfer' not in existingTables:
-            sqlUpdate(
-                """
-                CREATE TABLE '%s_transfer' (
-                    id VARCHAR NOT NULL, total_receive FLOAT NULL,
-                    total_sent FLOAT NULL, total_data FLOAT NULL,
-                    cumu_receive FLOAT NULL, cumu_sent FLOAT NULL, cumu_data FLOAT NULL, time DATETIME
-                )
-                """ % dbName
-            )
-        if f'{dbName}_deleted' not in existingTables:
-            sqlUpdate(
-                """
-                CREATE TABLE '%s_deleted' (
-                    id VARCHAR NOT NULL, private_key VARCHAR NULL, DNS VARCHAR NULL, advanced_security VARCHAR NULL,
-                    endpoint_allowed_ip VARCHAR NULL, name VARCHAR NULL, total_receive FLOAT NULL, 
-                    total_sent FLOAT NULL, total_data FLOAT NULL, endpoint VARCHAR NULL, 
-                    status VARCHAR NULL, latest_handshake VARCHAR NULL, allowed_ip VARCHAR NULL, 
-                    cumu_receive FLOAT NULL, cumu_sent FLOAT NULL, cumu_data FLOAT NULL, mtu INT NULL, 
-                    keepalive INT NULL, remote_endpoint VARCHAR NULL, preshared_key VARCHAR NULL,
-                    PRIMARY KEY (id)
-                )
-                """ % dbName
-            )
-
-    def getPeers(self):
-        if self.configurationFileChanged():
-            self.Peers = []
-            with open(self.configPath, 'r') as configFile:
-                p = []
-                pCounter = -1
-                content = configFile.read().split('\n')
-                try:
-                    peerStarts = content.index("[Peer]")
-                    content = content[peerStarts:]
-                    for i in content:
-                        if not RegexMatch("#(.*)", i) and not RegexMatch(";(.*)", i):
-                            if i == "[Peer]":
-                                pCounter += 1
-                                p.append({})
-                                p[pCounter]["name"] = ""
-                            else:
-                                if len(i) > 0:
-                                    split = re.split(r'\s*=\s*', i, 1)
-                                    if len(split) == 2:
-                                        p[pCounter][split[0]] = split[1]
-
-                        if RegexMatch("#Name# = (.*)", i):
-                            split = re.split(r'\s*=\s*', i, 1)
-                            if len(split) == 2:
-                                p[pCounter]["name"] = split[1]
-
-                    for i in p:
-                        if "PublicKey" in i.keys():
-                            checkIfExist = sqlSelect("SELECT * FROM '%s' WHERE id = ?" % self.Name,
-                                                     ((i['PublicKey']),)).fetchone()
-                            if checkIfExist is None:
-                                newPeer = {
-                                    "id": i['PublicKey'],
-                                    "advanced_security": i.get('AdvancedSecurity', 'off'),
-                                    "private_key": "",
-                                    "DNS": DashboardConfig.GetConfig("Peers", "peer_global_DNS")[1],
-                                    "endpoint_allowed_ip": DashboardConfig.GetConfig("Peers", "peer_endpoint_allowed_ip")[
-                                        1],
-                                    "name": i.get("name"),
-                                    "total_receive": 0,
-                                    "total_sent": 0,
-                                    "total_data": 0,
-                                    "endpoint": "N/A",
-                                    "status": "stopped",
-                                    "latest_handshake": "N/A",
-                                    "allowed_ip": i.get("AllowedIPs", "N/A"),
-                                    "cumu_receive": 0,
-                                    "cumu_sent": 0,
-                                    "cumu_data": 0,
-                                    "traffic": [],
-                                    "mtu": DashboardConfig.GetConfig("Peers", "peer_mtu")[1],
-                                    "keepalive": DashboardConfig.GetConfig("Peers", "peer_keep_alive")[1],
-                                    "remote_endpoint": DashboardConfig.GetConfig("Peers", "remote_endpoint")[1],
-                                    "preshared_key": i["PresharedKey"] if "PresharedKey" in i.keys() else ""
-                                }
-                                sqlUpdate(
-                                    """
-                                    INSERT INTO '%s'
-                                        VALUES (:id, :private_key, :DNS, :advanced_security, :endpoint_allowed_ip, :name, :total_receive, :total_sent, 
-                                        :total_data, :endpoint, :status, :latest_handshake, :allowed_ip, :cumu_receive, :cumu_sent, 
-                                        :cumu_data, :mtu, :keepalive, :remote_endpoint, :preshared_key);
-                                    """ % self.Name
-                                    , newPeer)
-                                self.Peers.append(AmneziaWGPeer(newPeer, self))
-                            else:
-                                sqlUpdate("UPDATE '%s' SET allowed_ip = ? WHERE id = ?" % self.Name,
-                                          (i.get("AllowedIPs", "N/A"), i['PublicKey'],))
-                                self.Peers.append(AmneziaWGPeer(checkIfExist, self))
-                except Exception as e:
-                    if __name__ == '__main__':
-                        print(f"[WGDashboard] {self.Name} Error: {str(e)}")
-        else:
-            self.Peers.clear()
-            checkIfExist = sqlSelect("SELECT * FROM '%s'" % self.Name).fetchall()
-            for i in checkIfExist:
-                self.Peers.append(AmneziaWGPeer(i, self))
-
-    def addPeers(self, peers: list) -> tuple[bool, dict]:
-        result = {
-            "message": None,
-            "peers": []
-        }
-        try:
-            for i in peers:
-                newPeer = {
-                    "id": i['id'],
-                    "private_key": i['private_key'],
-                    "DNS": i['DNS'],
-                    "endpoint_allowed_ip": i['endpoint_allowed_ip'],
-                    "name": i['name'],
-                    "total_receive": 0,
-                    "total_sent": 0,
-                    "total_data": 0,
-                    "endpoint": "N/A",
-                    "status": "stopped",
-                    "latest_handshake": "N/A",
-                    "allowed_ip": i.get("allowed_ip", "N/A"),
-                    "cumu_receive": 0,
-                    "cumu_sent": 0,
-                    "cumu_data": 0,
-                    "traffic": [],
-                    "mtu": i['mtu'],
-                    "keepalive": i['keepalive'],
-                    "remote_endpoint": DashboardConfig.GetConfig("Peers", "remote_endpoint")[1],
-                    "preshared_key": i["preshared_key"],
-                    "advanced_security": i['advanced_security']
-                }
-                sqlUpdate(
-                    """
-                    INSERT INTO '%s'
-                        VALUES (:id, :private_key, :DNS, :advanced_security, :endpoint_allowed_ip, :name, :total_receive, :total_sent, 
-                        :total_data, :endpoint, :status, :latest_handshake, :allowed_ip, :cumu_receive, :cumu_sent, 
-                        :cumu_data, :mtu, :keepalive, :remote_endpoint, :preshared_key);
-                    """ % self.Name
-                    , newPeer)
-            for p in peers:
-                presharedKeyExist = len(p['preshared_key']) > 0
-                rd = random.Random()
-                uid = str(uuid.UUID(int=rd.getrandbits(128), version=4))
-                if presharedKeyExist:
-                    with open(uid, "w+") as f:
-                        f.write(p['preshared_key'])
-
-                subprocess.check_output(
-                    f"{self.Protocol} set {self.Name} peer {p['id']} allowed-ips {p['allowed_ip'].replace(' ', '')}{f' preshared-key {uid}' if presharedKeyExist else ''}",
-                                        shell=True, stderr=subprocess.STDOUT)
-                if presharedKeyExist:
-                    os.remove(uid)
-            subprocess.check_output(
-                f"{self.Protocol}-quick save {self.Name}", shell=True, stderr=subprocess.STDOUT)
-            self.getPeersList()
-            for p in peers:
-                p = self.searchPeer(p['id'])
-                if p[0]:
-                    result['peers'].append(p[1])
-            return True, result
-        except Exception as e:
-            result['message'] = str(e)
-            return False, result
-
-    def getRestrictedPeers(self):
-        self.RestrictedPeers = []
-        restricted = sqlSelect("SELECT * FROM '%s_restrict_access'" % self.Name).fetchall()
-        for i in restricted:
-            self.RestrictedPeers.append(AmneziaWGPeer(i, self))
-    
-"""
-Peer
-"""      
-class Peer:
-    def __init__(self, tableData, configuration: WireguardConfiguration):
-        self.configuration = configuration
-        self.id = tableData["id"]
-        self.private_key = tableData["private_key"]
-        self.DNS = tableData["DNS"]
-        self.endpoint_allowed_ip = tableData["endpoint_allowed_ip"]
-        self.name = tableData["name"]
-        self.total_receive = tableData["total_receive"]
-        self.total_sent = tableData["total_sent"]
-        self.total_data = tableData["total_data"]
-        self.endpoint = tableData["endpoint"]
-        self.status = tableData["status"]
-        self.latest_handshake = tableData["latest_handshake"]
-        self.allowed_ip = tableData["allowed_ip"]
-        self.cumu_receive = tableData["cumu_receive"]
-        self.cumu_sent = tableData["cumu_sent"]
-        self.cumu_data = tableData["cumu_data"]
-        self.mtu = tableData["mtu"]
-        self.keepalive = tableData["keepalive"]
-        self.remote_endpoint = tableData["remote_endpoint"]
-        self.preshared_key = tableData["preshared_key"]
-        self.jobs: list[PeerJob] = []
-        self.ShareLink: list[PeerShareLink] = []
-        self.getJobs()
-        self.getShareLink()
-
-    def toJson(self):
-        self.getJobs()
-        self.getShareLink()
-        return self.__dict__
-
-    def __repr__(self):
-        return str(self.toJson())
-
-    def updatePeer(self, name: str, private_key: str,
-                   preshared_key: str,
-                   dns_addresses: str, allowed_ip: str, endpoint_allowed_ip: str, mtu: int,
-                   keepalive: int) -> ResponseObject:
-        if not self.configuration.getStatus():
-            self.configuration.toggleConfiguration()
-
-        existingAllowedIps = [item for row in list(
-            map(lambda x: [q.strip() for q in x.split(',')],
-                map(lambda y: y.allowed_ip,
-                    list(filter(lambda k: k.id != self.id, self.configuration.getPeersList()))))) for item in row]
-
-        if allowed_ip in existingAllowedIps:
-            return ResponseObject(False, "Allowed IP already taken by another peer")
-        if not ValidateIPAddressesWithRange(endpoint_allowed_ip):
-            return ResponseObject(False, f"Endpoint Allowed IPs format is incorrect")
-        if len(dns_addresses) > 0 and not ValidateDNSAddress(dns_addresses):
-            return ResponseObject(False, f"DNS format is incorrect")
-        if mtu < 0 or mtu > 1460:
-            return ResponseObject(False, "MTU format is not correct")
-        if keepalive < 0:
-            return ResponseObject(False, "Persistent Keepalive format is not correct")
-        if len(private_key) > 0:
-            pubKey = GenerateWireguardPublicKey(private_key)
-            if not pubKey[0] or pubKey[1] != self.id:
-                return ResponseObject(False, "Private key does not match with the public key")
-        try:
-            rd = random.Random()
-            uid = str(uuid.UUID(int=rd.getrandbits(128), version=4))
-            pskExist = len(preshared_key) > 0
-            
-            if pskExist:
-                with open(uid, "w+") as f:
-                    f.write(preshared_key)
-            newAllowedIPs = allowed_ip.replace(" ", "")
-            updateAllowedIp = subprocess.check_output(
-                f"{self.configuration.Protocol} set {self.configuration.Name} peer {self.id} allowed-ips {newAllowedIPs} {f'preshared-key {uid}' if pskExist else 'preshared-key /dev/null'}",
-                shell=True, stderr=subprocess.STDOUT)
-            
-            if pskExist: os.remove(uid)     
-            if len(updateAllowedIp.decode().strip("\n")) != 0:
-                return ResponseObject(False,
-                                      "Update peer failed when updating Allowed IPs")
-            saveConfig = subprocess.check_output(f"{self.configuration.Protocol}-quick save {self.configuration.Name}",
-                                                 shell=True, stderr=subprocess.STDOUT)
-            if f"wg showconf {self.configuration.Name}" not in saveConfig.decode().strip('\n'):
-                return ResponseObject(False,
-                                      "Update peer failed when saving the configuration")
-            sqlUpdate(
-                '''UPDATE '%s' SET name = ?, private_key = ?, DNS = ?, endpoint_allowed_ip = ?, mtu = ?, 
-                keepalive = ?, preshared_key = ? WHERE id = ?''' % self.configuration.Name,
-                (name, private_key, dns_addresses, endpoint_allowed_ip, mtu,
-                 keepalive, preshared_key, self.id,)
-            )
-            return ResponseObject()
-        except subprocess.CalledProcessError as exc:
-            return ResponseObject(False, exc.output.decode("UTF-8").strip())
-
-    def downloadPeer(self) -> dict[str, str]:
-        filename = self.name
-        if len(filename) == 0:
-            filename = "UntitledPeer"
-        filename = "".join(filename.split(' '))
-        filename = f"{filename}"
-        illegal_filename = [".", ",", "/", "?", "<", ">", "\\", ":", "*", '|' '\"', "com1", "com2", "com3",
-                            "com4", "com5", "com6", "com7", "com8", "com9", "lpt1", "lpt2", "lpt3", "lpt4",
-                            "lpt5", "lpt6", "lpt7", "lpt8", "lpt9", "con", "nul", "prn"]
-        for i in illegal_filename:
-            filename = filename.replace(i, "")
-        
-        finalFilename = ""
-        for i in filename:
-            if re.match("^[a-zA-Z0-9_=+.-]$", i):
-                finalFilename += i
-
-        peerConfiguration = f'''[Interface]
-PrivateKey = {self.private_key}
-Address = {self.allowed_ip}
-MTU = {str(self.mtu)}
-'''
-        if len(self.DNS) > 0:
-            peerConfiguration += f"DNS = {self.DNS}\n"
-        
-        peerConfiguration += f'''
-[Peer]
-PublicKey = {self.configuration.PublicKey}
-AllowedIPs = {self.endpoint_allowed_ip}
-Endpoint = {DashboardConfig.GetConfig("Peers", "remote_endpoint")[1]}:{self.configuration.ListenPort}
-PersistentKeepalive = {str(self.keepalive)}
-'''
-        if len(self.preshared_key) > 0:
-            peerConfiguration += f"PresharedKey = {self.preshared_key}\n"
-        return {
-            "fileName": finalFilename,
-            "file": peerConfiguration
-        }
-
-    def getJobs(self):
-        self.jobs = AllPeerJobs.searchJob(self.configuration.Name, self.id)
-
-    def getShareLink(self):
-        self.ShareLink = AllPeerShareLinks.getLink(self.configuration.Name, self.id)
-        
-    def resetDataUsage(self, type):
-        try:
-            if type == "total":
-                sqlUpdate("UPDATE '%s' SET total_data = 0, cumu_data = 0, total_receive = 0, cumu_receive = 0, total_sent = 0, cumu_sent = 0  WHERE id = ?" % self.configuration.Name, (self.id, ))
-                self.total_data = 0
-                self.total_receive = 0
-                self.total_sent = 0
-                self.cumu_data = 0
-                self.cumu_sent = 0
-                self.cumu_receive = 0
-            elif type == "receive":
-                sqlUpdate("UPDATE '%s' SET total_receive = 0, cumu_receive = 0 WHERE id = ?" % self.configuration.Name, (self.id, ))
-                self.cumu_receive = 0
-                self.total_receive = 0
-            elif type == "sent":
-                sqlUpdate("UPDATE '%s' SET total_sent = 0, cumu_sent = 0 WHERE id = ?" % self.configuration.Name, (self.id, ))
-                self.cumu_sent = 0
-                self.total_sent = 0
-            else:
-                return False
-        except Exception as e:
-            print(e)
-            return False
-        
-        return True
-    
-class AmneziaWGPeer(Peer):
-    def __init__(self, tableData, configuration: AmneziaWireguardConfiguration):
-        self.advanced_security = tableData["advanced_security"]
-        super().__init__(tableData, configuration)
-
-    def downloadPeer(self) -> dict[str, str]:
-        filename = self.name
-        if len(filename) == 0:
-            filename = "UntitledPeer"
-        filename = "".join(filename.split(' '))
-        filename = f"{filename}_{self.configuration.Name}"
-        illegal_filename = [".", ",", "/", "?", "<", ">", "\\", ":", "*", '|' '\"', "com1", "com2", "com3",
-                            "com4", "com5", "com6", "com7", "com8", "com9", "lpt1", "lpt2", "lpt3", "lpt4",
-                            "lpt5", "lpt6", "lpt7", "lpt8", "lpt9", "con", "nul", "prn"]
-        for i in illegal_filename:
-            filename = filename.replace(i, "")
-
-        finalFilename = ""
-        for i in filename:
-            if re.match("^[a-zA-Z0-9_=+.-]$", i):
-                finalFilename += i
-
-        peerConfiguration = f'''[Interface]
-PrivateKey = {self.private_key}
-Address = {self.allowed_ip}
-MTU = {str(self.mtu)}
-Jc = {self.configuration.Jc}
-Jmin = {self.configuration.Jmin}
-Jmax = {self.configuration.Jmax}
-S1 = {self.configuration.S1}
-S2 = {self.configuration.S2}
-H1 = {self.configuration.H1}
-H2 = {self.configuration.H2}
-H3 = {self.configuration.H3}
-H4 = {self.configuration.H4}
-'''
-        if len(self.DNS) > 0:
-            peerConfiguration += f"DNS = {self.DNS}\n"
-        peerConfiguration += f'''
-[Peer]
-PublicKey = {self.configuration.PublicKey}
-AllowedIPs = {self.endpoint_allowed_ip}
-Endpoint = {DashboardConfig.GetConfig("Peers", "remote_endpoint")[1]}:{self.configuration.ListenPort}
-PersistentKeepalive = {str(self.keepalive)}
-'''
-        if len(self.preshared_key) > 0:
-            peerConfiguration += f"PresharedKey = {self.preshared_key}\n"
-        return {
-            "fileName": finalFilename,
-            "file": peerConfiguration
-        }
-
-    def updatePeer(self, name: str, private_key: str,
-                   preshared_key: str,
-                   dns_addresses: str, allowed_ip: str, endpoint_allowed_ip: str, mtu: int,
-                   keepalive: int, advanced_security: str) -> ResponseObject:
-        if not self.configuration.getStatus():
-            self.configuration.toggleConfiguration()
-
-        existingAllowedIps = [item for row in list(
-            map(lambda x: [q.strip() for q in x.split(',')],
-                map(lambda y: y.allowed_ip,
-                    list(filter(lambda k: k.id != self.id, self.configuration.getPeersList()))))) for item in row]
-
-        if allowed_ip in existingAllowedIps:
-            return ResponseObject(False, "Allowed IP already taken by another peer")
-        if not ValidateIPAddressesWithRange(endpoint_allowed_ip):
-            return ResponseObject(False, f"Endpoint Allowed IPs format is incorrect")
-        if len(dns_addresses) > 0 and not ValidateDNSAddress(dns_addresses):
-            return ResponseObject(False, f"DNS format is incorrect")
-        if mtu < 0 or mtu > 1460:
-            return ResponseObject(False, "MTU format is not correct")
-        if keepalive < 0:
-            return ResponseObject(False, "Persistent Keepalive format is not correct")
-        if advanced_security != "on" and advanced_security != "off":
-            return ResponseObject(False, "Advanced Security can only be on or off")
-        if len(private_key) > 0:
-            pubKey = GenerateWireguardPublicKey(private_key)
-            if not pubKey[0] or pubKey[1] != self.id:
-                return ResponseObject(False, "Private key does not match with the public key")
-        try:
-            rd = random.Random()
-            uid = str(uuid.UUID(int=rd.getrandbits(128), version=4))
-            pskExist = len(preshared_key) > 0
-
-            if pskExist:
-                with open(uid, "w+") as f:
-                    f.write(preshared_key)
-            newAllowedIPs = allowed_ip.replace(" ", "")
-            updateAllowedIp = subprocess.check_output(
-                f"{self.configuration.Protocol} set {self.configuration.Name} peer {self.id} allowed-ips {newAllowedIPs} {f'preshared-key {uid}' if pskExist else 'preshared-key /dev/null'}",
-                shell=True, stderr=subprocess.STDOUT)
-
-            if pskExist: os.remove(uid)
-
-            if len(updateAllowedIp.decode().strip("\n")) != 0:
-                return ResponseObject(False,
-                                      "Update peer failed when updating Allowed IPs")
-            saveConfig = subprocess.check_output(f"{self.configuration.Protocol}-quick save {self.configuration.Name}",
-                                                 shell=True, stderr=subprocess.STDOUT)
-            if f"wg showconf {self.configuration.Name}" not in saveConfig.decode().strip('\n'):
-                return ResponseObject(False,
-                                      "Update peer failed when saving the configuration")
-            sqlUpdate(
-                '''UPDATE '%s' SET name = ?, private_key = ?, DNS = ?, endpoint_allowed_ip = ?, mtu = ?, 
-                keepalive = ?, preshared_key = ?, advanced_security = ?  WHERE id = ?''' % self.configuration.Name,
-                (name, private_key, dns_addresses, endpoint_allowed_ip, mtu,
-                 keepalive, preshared_key, advanced_security, self.id,)
-            )
-            return ResponseObject()
-        except subprocess.CalledProcessError as exc:
-            return ResponseObject(False, exc.output.decode("UTF-8").strip())
-    
-"""
-Dashboard API Key
-"""
-class DashboardAPIKey:
-    def __init__(self, Key: str, CreatedAt: str, ExpiredAt: str):
-        self.Key = Key
-        self.CreatedAt = CreatedAt
-        self.ExpiredAt = ExpiredAt
-    
-    def toJson(self):
-        return self.__dict__
-
-"""
-Dashboard Configuration
-"""
-class DashboardConfig:
-
-    def __init__(self):
-        if not os.path.exists(DASHBOARD_CONF):
-            open(DASHBOARD_CONF, "x")
-        self.__config = configparser.RawConfigParser(strict=False)
-        self.__config.read_file(open(DASHBOARD_CONF, "r+"))
-        self.hiddenAttribute = ["totp_key", "auth_req"]
-        self.__default = {
-            "Account": {
-                "username": "admin",
-                "password": "admin",
-                "enable_totp": "false",
-                "totp_verified": "false",
-                "totp_key": pyotp.random_base32()
-            },
-            "Server": {
-                "wg_conf_path": "/etc/wireguard",
-                "awg_conf_path": "/etc/amnezia/amneziawg",
-                "app_prefix": "",
-                "app_ip": "0.0.0.0",
-                "app_port": "10086",
-                "auth_req": "true",
-                "version": DASHBOARD_VERSION,
-                "dashboard_refresh_interval": "60000",
-                "dashboard_peer_list_display": "grid",
-                "dashboard_sort": "status",
-                "dashboard_theme": "dark",
-                "dashboard_api_key": "false",
-                "dashboard_language": "en"
-            },
-            "Peers": {
-                "peer_global_DNS": "1.1.1.1",
-                "peer_endpoint_allowed_ip": "0.0.0.0/0",
-                "peer_display_mode": "grid",
-                "remote_endpoint": GetRemoteEndpoint(),
-                "peer_MTU": "1420",
-                "peer_keep_alive": "21"
-            },
-            "Other": {
-                "welcome_session": "true"
-            },
-            "Database":{
-                "type": "sqlite"
-            },
-            "Email":{
-                "server": "",
-                "port": "",
-                "encryption": "",
-                "username": "",
-                "email_password": "",
-                "send_from": "",
-                "email_template": ""
-            },
-            "WireGuardConfiguration": {
-                "autostart": ""
-            }
-        }
-
-        for section, keys in self.__default.items():
-            for key, value in keys.items():
-                exist, currentData = self.GetConfig(section, key)
-                if not exist:
-                    self.SetConfig(section, key, value, True)
-        self.__createAPIKeyTable()
-        self.DashboardAPIKeys = self.__getAPIKeys()
-        self.APIAccessed = False
-        self.SetConfig("Server", "version", DASHBOARD_VERSION)
-    
-    def __createAPIKeyTable(self):
-        existingTable = sqlSelect("SELECT name FROM sqlite_master WHERE type='table' AND name = 'DashboardAPIKeys'").fetchall()
-        if len(existingTable) == 0:
-            sqlUpdate("CREATE TABLE DashboardAPIKeys (Key VARCHAR NOT NULL PRIMARY KEY, CreatedAt DATETIME NOT NULL DEFAULT (datetime('now', 'localtime')), ExpiredAt VARCHAR)")
-    
-    def __getAPIKeys(self) -> list[DashboardAPIKey]:
-        keys = sqlSelect("SELECT * FROM DashboardAPIKeys WHERE ExpiredAt IS NULL OR ExpiredAt > datetime('now', 'localtime') ORDER BY CreatedAt DESC").fetchall()
-        fKeys = []
-        for k in keys:
-            
-            fKeys.append(DashboardAPIKey(*k))
-        return fKeys
-    
-    def createAPIKeys(self, ExpiredAt = None):
-        newKey = secrets.token_urlsafe(32)
-        sqlUpdate('INSERT INTO DashboardAPIKeys (Key, ExpiredAt) VALUES (?, ?)', (newKey, ExpiredAt,))
-        
-        self.DashboardAPIKeys = self.__getAPIKeys()
-        
-    def deleteAPIKey(self, key):
-        sqlUpdate("UPDATE DashboardAPIKeys SET ExpiredAt = datetime('now', 'localtime') WHERE Key = ?", (key, ))
-        self.DashboardAPIKeys = self.__getAPIKeys()
-    
-    def __configValidation(self, section : str, key: str, value: Any) -> [bool, str]:
-        if (type(value) is str and len(value) == 0 
-                and section not in ['Email', 'WireGuardConfiguration'] and 
-                (section == 'Peer' and key == 'peer_global_dns')):
-            return False, "Field cannot be empty!"
-        if section == "Peers" and key == "peer_global_dns" and len(value) > 0:
-            return ValidateDNSAddress(value)
-        if section == "Peers" and key == "peer_endpoint_allowed_ip":
-            value = value.split(",")
-            for i in value:
-                i = i.strip()
-                try:
-                    ipaddress.ip_network(i, strict=False)
-                except Exception as e:
-                    return False, str(e)
-        if section == "Server" and key == "wg_conf_path":
-            if not os.path.exists(value):
-                return False, f"{value} is not a valid path"
-        if section == "Account" and key == "password":
-            if self.GetConfig("Account", "password")[0]:
-                if not self.__checkPassword(
-                        value["currentPassword"], self.GetConfig("Account", "password")[1].encode("utf-8")):
-                    return False, "Current password does not match."
-                if value["newPassword"] != value["repeatNewPassword"]:
-                    return False, "New passwords does not match"
-        return True, ""
-
-    def generatePassword(self, plainTextPassword: str):
-        return bcrypt.hashpw(plainTextPassword.encode("utf-8"), bcrypt.gensalt())
-
-    def __checkPassword(self, plainTextPassword: str, hashedPassword: bytes):
-        return bcrypt.checkpw(plainTextPassword.encode("utf-8"), hashedPassword)
-
-    def SetConfig(self, section: str, key: str, value: any, init: bool = False) -> [bool, str]:
-        if key in self.hiddenAttribute and not init:
-            return False, None
-
-        if not init:
-            valid, msg = self.__configValidation(section, key, value)
-            if not valid:
-                return False, msg
-
-        if section == "Account" and key == "password":
-            if not init:
-                value = self.generatePassword(value["newPassword"]).decode("utf-8")
-            else:
-                value = self.generatePassword(value).decode("utf-8")
-                
-        if section == "Email" and key == "email_template":
-            value = value.encode('unicode_escape').decode('utf-8')
-
-        if section == "Server" and key == "wg_conf_path":
-            if not os.path.exists(value):
-                return False, "Path does not exist"
-
-        if section not in self.__config:
-            if init:
-                self.__config[section] = {}
-            else:
-                return False, "Section does not exist"
-        
-        if ((key not in self.__config[section].keys() and init) or 
-                (key in self.__config[section].keys())):
-            if type(value) is bool:
-                if value:
-                    self.__config[section][key] = "true"
-                else:
-                    self.__config[section][key] = "false"
-            elif type(value) in [int, float]:
-                self.__config[section][key] = str(value)
-            elif type(value) is list:
-                self.__config[section][key] = "||".join(value).strip("||")
-            else:
-                self.__config[section][key] = value
-            return self.SaveConfig(), ""
-        else:
-            return False, f"{key} does not exist under {section}"
-        return True, ""
-
-    def SaveConfig(self) -> bool:
-        try:
-            with open(DASHBOARD_CONF, "w+", encoding='utf-8') as configFile:
-                self.__config.write(configFile)
-            return True
-        except Exception as e:
-            return False
-
-    def GetConfig(self, section, key) -> [bool, any]:
-        if section not in self.__config:
-            return False, None
-
-        if key not in self.__config[section]:
-            return False, None
-
-        if section == "Email" and key == "email_template":
-            return True, self.__config[section][key].encode('utf-8').decode('unicode_escape')
-        
-        if section == "WireGuardConfiguration" and key == "autostart":
-            return True, list(filter(lambda x: len(x) > 0, self.__config[section][key].split("||")))
-
-        if self.__config[section][key] in ["1", "yes", "true", "on"]:
-            return True, True
-
-        if self.__config[section][key] in ["0", "no", "false", "off"]:
-            return True, False
-        
-
-        return True, self.__config[section][key]
-
-    def toJson(self) -> dict[str, dict[Any, Any]]:
-        the_dict = {}
-
-        for section in self.__config.sections():
-            the_dict[section] = {}
-            for key, val in self.__config.items(section):
-                if key not in self.hiddenAttribute:
-                    the_dict[section][key] = self.GetConfig(section, key)[1]
-        return the_dict
-
-
-"""
-Database Connection Functions
-"""
-
-sqldb = sqlite3.connect(os.path.join(CONFIGURATION_PATH, 'db', 'wgdashboard.db'), check_same_thread=False)
-sqldb.row_factory = sqlite3.Row
-
-def sqlSelect(statement: str, paramters: tuple = ()) -> sqlite3.Cursor:
-    result = []
-    try:
-        cursor = sqldb.cursor()
-        result = cursor.execute(statement, paramters)
-    except Exception as error:
-        print("[WGDashboard] SQLite Error:" + str(error) + " | Statement: " + statement)
-    return result
-
-def sqlUpdate(statement: str, paramters: tuple = ()) -> sqlite3.Cursor:
-    sqldb = sqlite3.connect(os.path.join(CONFIGURATION_PATH, 'db', 'wgdashboard.db'))
-    sqldb.row_factory = sqlite3.Row
-    cursor = sqldb.cursor()
-    with sqldb:
-        cursor = sqldb.cursor()
-        try:
-            statement = statement.rstrip(';')
-            s = f'BEGIN TRANSACTION;{statement};END TRANSACTION;'
-            cursor.execute(statement, paramters)
-            # sqldb.commit()
-        except Exception as error:
-            print("[WGDashboard] SQLite Error:" + str(error) + " | Statement: " + statement)
-    sqldb.close()
 
 DashboardConfig = DashboardConfig()
 EmailSender = EmailSender(DashboardConfig)
@@ -2051,12 +129,13 @@ def auth_req():
         else:
             DashboardConfig.APIAccessed = False
             whiteList = [
-                '/static/', 'validateAuthentication', 'authenticate',
+                '/static/', 'validateAuthentication', 'authenticate', 'getDashboardConfiguration',
                 'getDashboardTheme', 'getDashboardVersion', 'sharePeer/get', 'isTotpEnabled', 'locale',
-                '/fileDownload'
+                '/fileDownload',
+                '/client'
             ]
             
-            if ("username" not in session 
+            if (("username" not in session or session.get("role") != "admin") 
                     and (f"{(APP_PREFIX if len(APP_PREFIX) > 0 else '')}/" != request.path 
                     and f"{(APP_PREFIX if len(APP_PREFIX) > 0 else '')}" != request.path)
                     and len(list(filter(lambda x : x not in request.path, whiteList))) == len(whiteList)
@@ -2094,6 +173,7 @@ def API_AuthenticateLogin():
     
     if DashboardConfig.APIAccessed:
         authToken = hashlib.sha256(f"{request.headers.get('wg-dashboard-apikey')}{datetime.now()}".encode()).hexdigest()
+        session['role'] = 'admin'
         session['username'] = authToken
         resp = ResponseObject(True, DashboardConfig.GetConfig("Other", "welcome_session")[1])
         resp.set_cookie("authToken", authToken)
@@ -2111,6 +191,7 @@ def API_AuthenticateLogin():
             and ((totpEnabled and totpValid) or not totpEnabled)
     ):
         authToken = hashlib.sha256(f"{data['username']}{datetime.now()}".encode()).hexdigest()
+        session['role'] = 'admin'
         session['username'] = authToken
         resp = ResponseObject(True, DashboardConfig.GetConfig("Other", "welcome_session")[1])
         resp.set_cookie("authToken", authToken)
@@ -2184,9 +265,13 @@ def API_addWireguardConfiguration():
             os.path.join(path[protocol], 'WGDashboard_Backup', data["Backup"]),
             os.path.join(path[protocol], f'{data["ConfigurationName"]}.conf')
         )
-        WireguardConfigurations[data['ConfigurationName']] = WireguardConfiguration(data=data, name=data['ConfigurationName']) if protocol == 'wg' else AmneziaWireguardConfiguration(data=data, name=data['ConfigurationName'])
+        WireguardConfigurations[data['ConfigurationName']] = (
+            WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, data=data, name=data['ConfigurationName'])) if protocol == 'wg' else (
+            AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, data=data, name=data['ConfigurationName']))
     else:
-        WireguardConfigurations[data['ConfigurationName']] = WireguardConfiguration(data=data) if data.get('Protocol') == 'wg' else AmneziaWireguardConfiguration(data=data)
+        WireguardConfigurations[data['ConfigurationName']] = (
+            WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, data=data)) if data.get('Protocol') == 'wg' else (
+            AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, data=data))
     return ResponseObject()
 
 @app.get(f'{APP_PREFIX}/api/toggleWireguardConfiguration')
@@ -2212,6 +297,21 @@ def API_updateWireguardConfiguration():
     status, msg = WireguardConfigurations[name].updateConfigurationSettings(data)
     
     return ResponseObject(status, message=msg, data=WireguardConfigurations[name])
+
+@app.post(f'{APP_PREFIX}/api/updateWireguardConfigurationInfo')
+def API_updateWireguardConfigurationInfo():
+    data = request.get_json()
+    name = data.get('Name')
+    key = data.get('Key')
+    value = data.get('Value')
+    if not all([data, key, name]):
+        return ResponseObject(status=False, message="Please provide configuration name, key and value")
+    if name not in WireguardConfigurations.keys():
+        return ResponseObject(False, "Configuration does not exist", status_code=404)
+    
+    status, msg, key = WireguardConfigurations[name].updateConfigurationInfo(key, value)
+    
+    return ResponseObject(status=status, message=msg, data=key)
 
 @app.get(f'{APP_PREFIX}/api/getWireguardConfigurationRawFile')
 def API_GetWireguardConfigurationRawFile():
@@ -2245,9 +345,11 @@ def API_deleteWireguardConfiguration():
     data = request.get_json()
     if "ConfigurationName" not in data.keys() or data.get("ConfigurationName") is None or data.get("ConfigurationName") not in WireguardConfigurations.keys():
         return ResponseObject(False, "Please provide the configuration name you want to delete", status_code=404)
-    status = WireguardConfigurations[data.get("ConfigurationName")].deleteConfiguration()
-    if status:
-        WireguardConfigurations.pop(data.get("ConfigurationName"))
+    rp =  WireguardConfigurations.pop(data.get("ConfigurationName"))
+    
+    status = rp.deleteConfiguration()
+    if not status:
+        WireguardConfigurations[data.get("ConfigurationName")] = rp
     return ResponseObject(status)
 
 @app.post(f'{APP_PREFIX}/api/renameWireguardConfiguration')
@@ -2258,11 +360,17 @@ def API_renameWireguardConfiguration():
         if (k not in data.keys() or data.get(k) is None or len(data.get(k)) == 0 or 
                 (k == "ConfigurationName" and data.get(k) not in WireguardConfigurations.keys())): 
             return ResponseObject(False, "Please provide the configuration name you want to rename", status_code=404)
-        
-    status, message = WireguardConfigurations[data.get("ConfigurationName")].renameConfiguration(data.get("NewConfigurationName"))
+    
+    if data.get("NewConfigurationName") in WireguardConfigurations.keys():
+        return ResponseObject(False, "Configuration name already exist", status_code=400)
+    
+    rc = WireguardConfigurations.pop(data.get("ConfigurationName"))
+    
+    status, message = rc.renameConfiguration(data.get("NewConfigurationName"))
     if status:
-        WireguardConfigurations.pop(data.get("ConfigurationName"))
-        WireguardConfigurations[data.get("NewConfigurationName")] = WireguardConfiguration(data.get("NewConfigurationName"))
+        WireguardConfigurations[data.get("NewConfigurationName")] = (WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, data.get("NewConfigurationName")) if rc.Protocol == 'wg' else AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, data.get("NewConfigurationName")))
+    else:
+        WireguardConfigurations[data.get("ConfigurationName")] = rc
     return ResponseObject(status, message)
 
 @app.get(f'{APP_PREFIX}/api/getWireguardConfigurationRealtimeTraffic')
@@ -2387,7 +495,7 @@ def API_updateDashboardConfigurationItem():
         if data['key'] == 'wg_conf_path':
             WireguardConfigurations.clear()
             WireguardConfigurations.clear()
-            InitWireguardConfigurationsList()            
+            InitWireguardConfigurationsList()
     return ResponseObject(True, data=DashboardConfig.GetConfig(data["section"], data["key"])[1])
 
 @app.get(f'{APP_PREFIX}/api/getDashboardAPIKeys')
@@ -2439,11 +547,12 @@ def API_updatePeerSettings(configName):
         foundPeer, peer = wireguardConfig.searchPeer(id)
         if foundPeer:
             if wireguardConfig.Protocol == 'wg':
-                return peer.updatePeer(name, private_key, preshared_key, dns_addresses,
+                status, msg = peer.updatePeer(name, private_key, preshared_key, dns_addresses,
                                        allowed_ip, endpoint_allowed_ip, mtu, keepalive)
-            
-            return peer.updatePeer(name, private_key, preshared_key, dns_addresses,
+                return ResponseObject(status, msg)
+            status, msg = peer.updatePeer(name, private_key, preshared_key, dns_addresses,
                 allowed_ip, endpoint_allowed_ip, mtu, keepalive, "off")
+            return ResponseObject(status, msg)
             
     return ResponseObject(False, "Peer does not exist")
 
@@ -2474,7 +583,8 @@ def API_deletePeers(configName: str) -> ResponseObject:
         if len(peers) == 0:
             return ResponseObject(False, "Please specify one or more peers", status_code=400)
         configuration = WireguardConfigurations.get(configName)
-        return configuration.deletePeers(peers)
+        status, msg = configuration.deletePeers(peers, AllPeerJobs, AllPeerShareLinks)
+        return ResponseObject(status, msg)
 
     return ResponseObject(False, "Configuration does not exist", status_code=404)
 
@@ -2486,7 +596,8 @@ def API_restrictPeers(configName: str) -> ResponseObject:
         if len(peers) == 0:
             return ResponseObject(False, "Please specify one or more peers")
         configuration = WireguardConfigurations.get(configName)
-        return configuration.restrictPeers(peers)
+        status, msg = configuration.restrictPeers(peers)
+        return ResponseObject(status, msg)
     return ResponseObject(False, "Configuration does not exist", status_code=404)
 
 @app.post(f'{APP_PREFIX}/api/sharePeer/create')
@@ -2503,7 +614,7 @@ def API_sharePeer_create():
                               "This peer is already sharing. Please view data for shared link.",
                                 data=activeLink[0]
         )
-    status, message = AllPeerShareLinks.addLink(Configuration, Peer, ExpireDate)
+    status, message = AllPeerShareLinks.addLink(Configuration, Peer, datetime.strptime(ExpireDate, "%Y-%m-%d %H:%M:%S"))
     if not status:
         return ResponseObject(status, message)
     return ResponseObject(data=AllPeerShareLinks.getLinkByID(message))
@@ -2514,13 +625,13 @@ def API_sharePeer_update():
     ShareID: str = data.get("ShareID")
     ExpireDate: str = data.get("ExpireDate")
     
-    if ShareID is None:
+    if not all([ShareID, ExpireDate]):
         return ResponseObject(False, "Please specify ShareID")
     
     if len(AllPeerShareLinks.getLinkByID(ShareID)) == 0:
         return ResponseObject(False, "ShareID does not exist")
     
-    status, message = AllPeerShareLinks.updateLinkExpireDate(ShareID, ExpireDate)
+    status, message = AllPeerShareLinks.updateLinkExpireDate(ShareID, datetime.strptime(ExpireDate, "%Y-%m-%d %H:%M:%S"))
     if not status:
         return ResponseObject(status, message)
     return ResponseObject(data=AllPeerShareLinks.getLinkByID(ShareID))
@@ -2552,14 +663,16 @@ def API_allowAccessPeers(configName: str) -> ResponseObject:
         if len(peers) == 0:
             return ResponseObject(False, "Please specify one or more peers")
         configuration = WireguardConfigurations.get(configName)
-        return configuration.allowAccessPeers(peers)
+        status, msg = configuration.allowAccessPeers(peers)
+        return ResponseObject(status, msg)
     return ResponseObject(False, "Configuration does not exist")
 
 @app.post(f'{APP_PREFIX}/api/addPeers/<configName>')
 def API_addPeers(configName):
     if configName in WireguardConfigurations.keys():
+        data: dict = request.get_json()
         try:
-            data: dict = request.get_json()
+            
 
             bulkAdd: bool = data.get("bulkAdd", False)
             bulkAddAmount: int = data.get('bulkAddAmount', 0)
@@ -2571,14 +684,25 @@ def API_addPeers(configName):
             
             endpoint_allowed_ip: str = data.get('endpoint_allowed_ip', DashboardConfig.GetConfig("Peers", "peer_endpoint_allowed_ip")[1])
             dns_addresses: str = data.get('DNS', DashboardConfig.GetConfig("Peers", "peer_global_DNS")[1])
-            mtu: int = data.get('mtu', int(DashboardConfig.GetConfig("Peers", "peer_MTU")[1]))
-            keep_alive: int = data.get('keepalive', int(DashboardConfig.GetConfig("Peers", "peer_keep_alive")[1]))
+            
+            
+            mtu: int = data.get('mtu', None)
+            keep_alive: int = data.get('keepalive', None)
             preshared_key: str = data.get('preshared_key', "")            
     
             if type(mtu) is not int or mtu < 0 or mtu > 1460:
-                mtu = int(DashboardConfig.GetConfig("Peers", "peer_MTU")[1])
+                default: str = DashboardConfig.GetConfig("Peers", "peer_MTU")[1]
+                if default.isnumeric():
+                    mtu = default
+                else:
+                    mtu = 0
             if type(keep_alive) is not int or keep_alive < 0:
-                keep_alive = int(DashboardConfig.GetConfig("Peers", "peer_keep_alive")[1])
+                default = DashboardConfig.GetConfig("Peers", "peer_keep_alive")[1]
+                if default.isnumeric():
+                    keep_alive = default
+                else:
+                    keep_alive = 0
+            
             config = WireguardConfigurations.get(configName)
             if not config.getStatus():
                 config.toggleConfiguration()
@@ -2688,7 +812,7 @@ def API_addPeers(configName):
                 )
                 return ResponseObject(status=status, message=result['message'], data=result['peers'])
         except Exception as e:
-            print(e, str(e.__traceback__))
+            app.logger.error("Add peers failed", data, exc_info=e)
             return ResponseObject(False, "Add peers failed. Please see data for specific issue")
 
     return ResponseObject(False, "Configuration does not exist")
@@ -2786,15 +910,15 @@ def API_deletePeerScheduleJob():
     configuration = WireguardConfigurations.get(job['Configuration'])
     if configuration is None:
         return ResponseObject(False, "Configuration does not exist")
-    f, fp = configuration.searchPeer(job['Peer'])
-    if not f:
-        return ResponseObject(False, "Peer does not exist")
+    # f, fp = configuration.searchPeer(job['Peer'])
+    # if not f:
+    #     return ResponseObject(False, "Peer does not exist")
 
     s, p = AllPeerJobs.deleteJob(PeerJob(
         job['JobID'], job['Configuration'], job['Peer'], job['Field'], job['Operator'], job['Value'],
         job['CreationDate'], job['ExpireDate'], job['Action']))
     if s:
-        return ResponseObject(s, data=p)
+        return ResponseObject(s)
     return ResponseObject(s, message=p)
 
 @app.get(f'{APP_PREFIX}/api/getPeerScheduleJobLogs/<configName>')
@@ -2805,7 +929,7 @@ def API_getPeerScheduleJobLogs(configName):
     requestAll = False
     if data is not None and data == "true":
         requestAll = True
-    return ResponseObject(data=JobLogger.getLogs(requestAll, configName))
+    return ResponseObject(data=AllPeerJobs.getPeerJobLogs(configName))
 
 '''
 File Download
@@ -2837,7 +961,7 @@ def API_ping_getAllPeersIpAddress():
                 try:
                     ip = ipaddress.ip_network(x, strict=False)
                 except ValueError as e:
-                    print(f"{p.id} - {c.Name}")
+                    app.logger.error(f"Failed to parse IP address of {p.id} - {c.Name}")
                 if len(list(ip.hosts())) == 1:
                     parsed.append(str(ip.hosts()[0]))
             endpoint = p.endpoint.replace(" ", "").replace("(none)", "")
@@ -2940,7 +1064,7 @@ def API_getDashboardUpdate():
         tagName = data.get('tag_name')
         htmlUrl = data.get('html_url')
         if tagName is not None and htmlUrl is not None:
-            if version.parse(tagName) > version.parse(DASHBOARD_VERSION):
+            if version.parse(tagName) > version.parse(DashboardConfig.DashboardVersion):
                 return ResponseObject(message=f"{tagName} is now available for update!", data=htmlUrl)
             else:
                 return ResponseObject(message="You're on the latest version")
@@ -3002,9 +1126,9 @@ def API_Welcome_Finish():
 
 class Locale:
     def __init__(self):
-        self.localePath = './static/locale/'
+        self.localePath = './static/locales/'
         self.activeLanguages = {}
-        with open(os.path.join(f"{self.localePath}active_languages.json"), "r") as f:
+        with open(os.path.join(f"{self.localePath}supported_locales.json"), "r") as f:
             self.activeLanguages = sorted(json.loads(''.join(f.readlines())), key=lambda x : x['lang_name'])
         
     def getLanguage(self) -> dict | None:
@@ -3019,7 +1143,7 @@ class Locale:
     
     def updateLanguage(self, lang_id):
         if not os.path.exists(os.path.join(f"{self.localePath}{lang_id}.json")):
-            DashboardConfig.SetConfig("Server", "dashboard_language", "en")
+            DashboardConfig.SetConfig("Server", "dashboard_language", "en-US")
         else:
             DashboardConfig.SetConfig("Server", "dashboard_language", lang_id)
         
@@ -3048,8 +1172,8 @@ def API_Email_Ready():
 @app.post(f'{APP_PREFIX}/api/email/send')
 def API_Email_Send():
     data = request.get_json()
-    if "Receiver" not in data.keys():
-        return ResponseObject(False, "Please at least specify receiver")
+    if "Receiver" not in data.keys() or "Subject" not in data.keys():
+        return ResponseObject(False, "Please at least specify receiver and subject")
     body = data.get('Body', '')
     download = None
     if ("ConfigurationName" in data.keys() 
@@ -3105,34 +1229,174 @@ def API_SystemStatus():
 def API_ProtocolsEnabled():
     return ResponseObject(data=ProtocolsEnabled())
 
+'''
+OIDC Controller
+'''
+@app.get(f'{APP_PREFIX}/api/oidc/toggle')
+def API_OIDC_Toggle():
+    data = request.args
+    if not data.get('mode'):
+        return ResponseObject(False, "Please provide mode")
+    mode = data.get('mode')
+    if mode == 'Client':
+        DashboardConfig.SetConfig("OIDC", "client_enable", 
+                                  not DashboardConfig.GetConfig("OIDC", "client_enable")[1])
+    elif mode == 'Admin':
+        DashboardConfig.SetConfig("OIDC", "admin_enable",
+                                  not DashboardConfig.GetConfig("OIDC", "admin_enable")[1])
+    else:
+        return ResponseObject(False, "Mode does not exist")
+    return ResponseObject()
+
+@app.get(f'{APP_PREFIX}/api/oidc/status')
+def API_OIDC_Status():
+    data = request.args
+    if not data.get('mode'):
+        return ResponseObject(False, "Please provide mode")
+    mode = data.get('mode')
+    if mode == 'Client':
+        return ResponseObject(data=DashboardConfig.GetConfig("OIDC", "client_enable")[1])
+    elif mode == 'Admin':
+        return ResponseObject(data=DashboardConfig.GetConfig("OIDC", "admin_enable")[1])
+    return ResponseObject(False, "Mode does not exist")
+
+'''
+Client Controller
+'''
+@app.get(f'{APP_PREFIX}/api/clients/allClients')
+def API_Clients_AllClients():
+    return ResponseObject(data=DashboardClients.GetAllClients())
+
+@app.get(f'{APP_PREFIX}/api/clients/allClientsRaw')
+def API_Clients_AllClientsRaw():
+    return ResponseObject(data=DashboardClients.GetAllClientsRaw())
+
+@app.post(f'{APP_PREFIX}/api/clients/assignClient')
+def API_Clients_AssignClient():
+    data = request.get_json()
+    configurationName = data.get('ConfigurationName')
+    id = data.get('Peer')
+    client = data.get('ClientID')
+    if not all([configurationName, id, client]):
+        return ResponseObject(False, "Please provide all required fields")
+    if not DashboardClients.GetClient(client):
+        return ResponseObject(False, "Client does not exist")
+    
+    status, data = DashboardClients.AssignClient(configurationName, id, client)
+    if not status:
+        return ResponseObject(status, message="Client already assiged to this peer")
+    
+    return ResponseObject(data=data)
+
+@app.post(f'{APP_PREFIX}/api/clients/unassignClient')
+def API_Clients_UnassignClient():
+    data = request.get_json()
+    assignmentID = data.get('AssignmentID')
+    if not assignmentID:
+        return ResponseObject(False, "Please provide AssignmentID")
+    return ResponseObject(status=DashboardClients.UnassignClient(assignmentID))
+
+@app.get(f'{APP_PREFIX}/api/clients/assignedClients')
+def API_Clients_AssignedClients():
+    data = request.args
+    configurationName = data.get('ConfigurationName')
+    peerID = data.get('Peer')
+    if not all([configurationName, id]):
+        return ResponseObject(False, "Please provide all required fields")
+    return ResponseObject(
+        data=DashboardClients.GetAssignedPeerClients(configurationName, peerID))
+
+@app.get(f'{APP_PREFIX}/api/clients/allConfigurationsPeers')
+def API_Clients_AllConfigurationsPeers():
+    c = {}
+    for (key, val) in WireguardConfigurations.items():
+        c[key] = list(map(lambda x : {
+            "id": x.id,
+            "name": x.name
+        }, val.Peers))
+    
+    return ResponseObject(
+        data=c
+    )
+
+@app.get(f'{APP_PREFIX}/api/clients/assignedPeers')
+def API_Clients_AssignedPeers():
+    data = request.args
+    clientId = data.get("ClientID")
+    if not clientId:
+        return ResponseObject(False, "Please provide ClientID")
+    if not DashboardClients.GetClient(clientId):
+        return ResponseObject(False, "Client does not exist")
+    d = DashboardClients.GetClientAssignedPeersGrouped(clientId)
+    if d is None:
+        return ResponseObject(False, "Client does not exist")
+    return ResponseObject(data=d)
+
+@app.post(f'{APP_PREFIX}/api/clients/generatePasswordResetLink')
+def API_Clients_GeneratePasswordResetLink():
+    data = request.get_json()
+    clientId = data.get("ClientID")
+    if not clientId:
+        return ResponseObject(False, "Please provide ClientID")
+    if not DashboardClients.GetClient(clientId):
+        return ResponseObject(False, "Client does not exist")
+    
+    token = DashboardClients.GenerateClientPasswordResetLink(clientId)
+    if token:
+        return ResponseObject(data=token)
+    return ResponseObject(False, "Failed to generate link")
+
+@app.post(f'{APP_PREFIX}/api/clients/updateProfileName')
+def API_Clients_UpdateProfile():
+    data = request.get_json()
+    clientId = data.get("ClientID")
+    if not clientId:
+        return ResponseObject(False, "Please provide ClientID")
+    if not DashboardClients.GetClient(clientId):
+        return ResponseObject(False, "Client does not exist")
+    
+    value = data.get('Name')
+    return ResponseObject(status=DashboardClients.UpdateClientProfile(clientId, value))
+
+@app.post(f'{APP_PREFIX}/api/clients/deleteClient')
+def API_Clients_DeleteClient():
+    data = request.get_json()
+    clientId = data.get("ClientID")
+    if not clientId:
+        return ResponseObject(False, "Please provide ClientID")
+    if not DashboardClients.GetClient(clientId):
+        return ResponseObject(False, "Client does not exist")
+    return ResponseObject(status=DashboardClients.DeleteClient(clientId))   
+'''
+Index Page
+'''
+
 @app.get(f'{APP_PREFIX}/')
 def index():
+    app.logger.info('hi')
     return render_template('index.html')
 
 def peerInformationBackgroundThread():
     global WireguardConfigurations
-    print(f"[WGDashboard] Background Thread #1 Started", flush=True)
+    app.logger.info("Background Thread #1 Started")
+    app.logger.info("Background Thread #1 PID:" + str(threading.get_native_id()))
+
     time.sleep(10)
     while True:
         with app.app_context():
-            try:
-                curKeys = list(WireguardConfigurations.keys())
-                for name in curKeys:
-                    if name in WireguardConfigurations.keys() and WireguardConfigurations.get(name) is not None:
-                        c = WireguardConfigurations.get(name)
-                        if c.getStatus():
-                            c.getPeersTransfer()
-                            c.getPeersLatestHandshake()
-                            c.getPeersEndpoint()
-                            c.getPeersList()
-                            c.getRestrictedPeersList()
-            except Exception as e:
-                print(f"[WGDashboard] Background Thread #1 Error: {str(e)}", flush=True)
+            for c in WireguardConfigurations.values():
+                if c.getStatus():
+                    c.getPeersTransfer()
+                    c.getPeersLatestHandshake()
+                    c.getPeersEndpoint()
+                    c.getPeers()
+                    c.getRestrictedPeersList()
         time.sleep(10)
 
 def peerJobScheduleBackgroundThread():
     with app.app_context():
-        print(f"[WGDashboard] Background Thread #2 Started", flush=True)
+        app.logger.info(f"Background Thread #2 Started")
+        app.logger.info(f"Background Thread #2 PID:" + str(threading.get_native_id()))
         time.sleep(10)
         while True:
             AllPeerJobs.runJob()
@@ -3162,9 +1426,9 @@ def InitWireguardConfigurationsList(startup: bool = False):
                 try:
                     if i in WireguardConfigurations.keys():
                         if WireguardConfigurations[i].configurationFileChanged():
-                            WireguardConfigurations[i] = WireguardConfiguration(i)
+                            WireguardConfigurations[i] = WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, i)
                     else:
-                        WireguardConfigurations[i] = WireguardConfiguration(i, startup=startup)
+                        WireguardConfigurations[i] = WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, i, startup=startup)
                 except WireguardConfiguration.InvalidConfigurationFileException as e:
                     print(f"{i} have an invalid configuration file.")
 
@@ -3177,23 +1441,31 @@ def InitWireguardConfigurationsList(startup: bool = False):
                 try:
                     if i in WireguardConfigurations.keys():
                         if WireguardConfigurations[i].configurationFileChanged():
-                            WireguardConfigurations[i] = AmneziaWireguardConfiguration(i)
+                            WireguardConfigurations[i] = AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, i)
                     else:
-                        WireguardConfigurations[i] = AmneziaWireguardConfiguration(i, startup=startup)
-                except WireguardConfigurations.InvalidConfigurationFileException as e:
+                        WireguardConfigurations[i] = AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, i, startup=startup)
+                except WireguardConfiguration.InvalidConfigurationFileException as e:
                     print(f"{i} have an invalid configuration file.")
 
-AllPeerShareLinks: PeerShareLinks = PeerShareLinks()
-AllPeerJobs: PeerJobs = PeerJobs()
-JobLogger: PeerJobLogger = PeerJobLogger(CONFIGURATION_PATH, AllPeerJobs)
-DashboardLogger: DashboardLogger = DashboardLogger(CONFIGURATION_PATH)
+
 _, app_ip = DashboardConfig.GetConfig("Server", "app_ip")
 _, app_port = DashboardConfig.GetConfig("Server", "app_port")
 _, WG_CONF_PATH = DashboardConfig.GetConfig("Server", "wg_conf_path")
 
 WireguardConfigurations: dict[str, WireguardConfiguration] = {}
-AmneziaWireguardConfigurations: dict[str, AmneziaWireguardConfiguration] = {}
+
+AllPeerShareLinks: PeerShareLinks = PeerShareLinks(DashboardConfig, WireguardConfigurations)
+AllPeerJobs: PeerJobs = PeerJobs(DashboardConfig, WireguardConfigurations)
+DashboardLogger: DashboardLogger = DashboardLogger()
+DashboardPlugin: DashboardPlugins = DashboardPlugins(app, WireguardConfigurations)
+
+
 InitWireguardConfigurationsList(startup=True)
+
+
+with app.app_context():
+    DashboardClients: DashboardClients = DashboardClients(WireguardConfigurations)
+    app.register_blueprint(createClientBlueprint(WireguardConfigurations, DashboardConfig, DashboardClients))
 
 def startThreads():
     bgThread = threading.Thread(target=peerInformationBackgroundThread, daemon=True)
@@ -3203,4 +1475,7 @@ def startThreads():
 
 if __name__ == "__main__":
     startThreads()
+    DashboardPlugin.startThreads()
+    #    logging.getLogger().addHandler(logging.StreamHandler())
+    app.logger.addHandler(logging.StreamHandler())
     app.run(host=app_ip, debug=False, port=app_port)

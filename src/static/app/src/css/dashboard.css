@@ -909,7 +909,7 @@ pre.index-alert {
     }
 
     main{
-        padding-bottom: calc( 3rem + 40px + env(safe-area-inset-bottom, 5px));
+        padding-bottom: calc(1rem + env(safe-area-inset-bottom));
     }
 }
 
@@ -1000,16 +1000,16 @@ pre.index-alert {
 
 .fade2-enter-active,
 .fade2-leave-active {
-    transition: all 0.3s cubic-bezier(0.82, 0.58, 0.17, 1);
+    transition: all 0.4s cubic-bezier(0.82, 0.58, 0.17, 1);
 }
 
 .fade2-enter-from{
-    transform: translateY(-30px);
+    transform: translateY(30px);
     opacity: 0;
 }
 
 .fade2-leave-to {
-    transform: translateY(30px);
+    transform: translateY(-30px);
     filter: blur(3px);
     opacity: 0;
 }
@@ -1289,4 +1289,15 @@ samp{
 }
 .agent-message-leave-active {
     position: absolute;
+}
+
+.slide-fade-leave-active, .slide-fade-enter-active{
+    transition: all 0.2s cubic-bezier(0.82, 0.58, 0.17, 1.3);
+}
+
+.slide-fade-enter-from,
+.slide-fade-leave-to {
+    transform: translateY(20px);
+    opacity: 0;
+    filter: blur(3px);
 }

@@ -2,14 +2,14 @@
 import {GetLocale} from "@/utilities/locale.js";
 import {computed, onMounted, ref, useTemplateRef} from "vue";
 import {WireguardConfigurationsStore} from "@/stores/WireguardConfigurationsStore.js";
-import LocaleText from "@/components/text/localeText.vue";
+import {onBeforeRouteUpdate, useRoute, useRouter} from "vue-router";
 
 const searchBarPlaceholder = computed(() => {
 	return GetLocale("Search Peers...")
 })
 let searchStringTimeout = undefined
-const searchString = ref("")
 const wireguardConfigurationStore = WireguardConfigurationsStore()
+const searchString = ref(wireguardConfigurationStore.searchString)
 
 const debounce = () => {
 	if (!searchStringTimeout){
@@ -26,53 +26,50 @@ const debounce = () => {
 
 const emits = defineEmits(['close'])
 const input = useTemplateRef('searchBar')
+const props = defineProps(["ConfigurationInfo"])
+const route = useRoute()
+const router = useRouter()
+if (route.query.peer){
+	searchString.value = route.query.peer
+	router.replace({ query: null })
+}
 
+const show = ref(true)
 onMounted(() => {
-	input.value.focus();
+	document.querySelector("#searchPeers").focus()
+})
+
+onBeforeRouteUpdate(() => {
+	show.value = false
 })
 
 </script>
 
 <template>
-	<Transition name="slideUp" appear type="animation" style="animation-delay: 1s">
-		<div class="fixed-bottom w-100 bottom-0 z-2" style="z-index: 1;">
-			<div class="container-fluid">
-				<div class="row g-0">
-					<div class="col-md-3 col-lg-2"></div>
-					<div class="col-md-9 col-lg-10 d-flex justify-content-center py-2">
-						<div class="rounded-3 p-2 border shadow searchPeersContainer bg-body-tertiary">
-							<div class="d-flex gap-1 align-items-center px-2">
-								<h6 class="mb-0 me-2">
-									<label for="searchPeers">
-										<i class="bi bi-search"></i>
-									</label>
-								</h6>
-								<input
-									ref="searchBar"
-									class="flex-grow-1 form-control rounded-3 bg-secondary-subtle border-1 border-secondary-subtle "
-									:placeholder="searchBarPlaceholder"
-									id="searchPeers"
-									@keyup="debounce()"
-									v-model="searchString">
-								<button
-									@click="emits('close')"
-									style="white-space: nowrap"
-									class="btn bg-secondary-subtle text-secondary-emphasis border-secondary-subtle rounded-3 d-flex align-items-center">
-									<span>
-										<i class="bi bi-x-circle-fill me-2"></i><LocaleText t="Done"></LocaleText>
-									</span>
-								</button>
-							</div>
-						</div>
-					</div>
-				</div>
+	<div class="fixed-bottom w-100 bottom-0 z-2 p-3" style="z-index: 1;" v-if="show">
+		<div class="d-flex flex-column  searchPeersContainer ms-auto p-2 rounded-5"
+			 style="width: 300px;">
+			<div class="rounded-5 border border-white p-2 d-flex align-items-center gap-1 w-100">
+				<input
+					ref="searchBar"
+
+					class="flex-grow-1 form-control form-control-sm rounded-5 bg-transparent border-0 border-secondary-subtle "
+					:placeholder="searchBarPlaceholder"
+					id="searchPeers"
+					@keyup="debounce()"
+					v-model="searchString">
 			</div>
 		</div>
-	</Transition>
+	</div>
 </template>
 
 <style scoped>
 .searchPeersContainer{
+	backdrop-filter: blur(8px);
 	width: 100%;
+	background: linear-gradient(var(--degree), rgba(45, 173, 255, 0.4), rgba(255, 108, 109, 0.4), var(--brandColor2) 100%);
+}
+#searchPeers::placeholder{
+	color: white;
 }
 </style>

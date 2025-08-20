@@ -13,7 +13,7 @@ const getHeaders = () => {
 	return headers
 }
 
-const getUrl = (url) => {
+export const getUrl = (url) => {
 	const store = DashboardConfigurationStore();
 	const apiKey = store.getActiveCrossServer();
 	if (apiKey){
