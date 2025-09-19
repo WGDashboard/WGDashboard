@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from .ConnectionString import ConnectionString
+from .ConnectionString import ConnectionString, DEFAULT_DB
 from .DashboardLogger import DashboardLogger
 import sqlalchemy as db
 from .WireguardConfiguration import WireguardConfiguration
@@ -31,7 +31,7 @@ class Assignment:
 class DashboardClientsPeerAssignment:
     def __init__(self, wireguardConfigurations: dict[str, WireguardConfiguration]):
         self.logger = DashboardLogger()
-        self.engine = db.create_engine(ConnectionString("wgdashboard"))
+        self.engine = db.create_engine(ConnectionString(DEFAULT_DB))
         self.metadata = db.MetaData()
         self.wireguardConfigurations = wireguardConfigurations
         self.dashboardClientsPeerAssignmentTable = db.Table(
@@ -41,10 +41,10 @@ class DashboardClientsPeerAssignment:
             db.Column('ConfigurationName', db.String(255)),
             db.Column('PeerID', db.String(500)),
             db.Column('AssignedDate',
-                      (db.DATETIME if 'sqlite:///' in ConnectionString("wgdashboard") else db.TIMESTAMP),
+                      (db.DATETIME if 'sqlite:///' in ConnectionString(DEFAULT_DB) else db.TIMESTAMP),
                       server_default=db.func.now()),
             db.Column('UnassignedDate',
-                      (db.DATETIME if 'sqlite:///' in ConnectionString("wgdashboard") else db.TIMESTAMP)),
+                      (db.DATETIME if 'sqlite:///' in ConnectionString(DEFAULT_DB) else db.TIMESTAMP)),
             extend_existing=True
         )
         self.metadata.create_all(self.engine)

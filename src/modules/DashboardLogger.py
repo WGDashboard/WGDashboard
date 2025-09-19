@@ -4,18 +4,18 @@ Dashboard Logger Class
 import uuid
 import sqlalchemy as db
 from flask import current_app
-from .ConnectionString import ConnectionString
+from .ConnectionString import ConnectionString, DEFAULT_DB, DEFAULT_LOG_DB
 
 
 class DashboardLogger:
     def __init__(self):
-        self.engine = db.create_engine(ConnectionString("wgdashboard_log"))
+        self.engine = db.create_engine(ConnectionString(DEFAULT_LOG_DB))
         self.metadata = db.MetaData()
         self.dashboardLoggerTable = db.Table('DashboardLog', self.metadata,
                                              
                                              db.Column('LogID', db.String(255), nullable=False, primary_key=True),
                                              db.Column('LogDate',
-                                                       (db.DATETIME if 'sqlite:///' in ConnectionString("wgdashboard") else db.TIMESTAMP),
+                                                       (db.DATETIME if 'sqlite:///' in ConnectionString(DEFAULT_DB) else db.TIMESTAMP),
                                                        server_default=db.func.now()),
                                              db.Column('URL', db.String(255)),
                                              db.Column('IP', db.String(255)),

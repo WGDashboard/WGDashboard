@@ -2,7 +2,7 @@ import uuid
 
 from pydantic import BaseModel, field_serializer
 import sqlalchemy as db
-from .ConnectionString import ConnectionString
+from .ConnectionString import ConnectionString, DEFAULT_DB
 
 
 class NewConfigurationTemplate(BaseModel):
@@ -14,7 +14,7 @@ class NewConfigurationTemplate(BaseModel):
     
 class NewConfigurationTemplates:
     def __init__(self):
-        self.engine = db.create_engine(ConnectionString("wgdashboard"))
+        self.engine = db.create_engine(ConnectionString(DEFAULT_DB))
         self.metadata = db.MetaData()
         self.templatesTable = db.Table(
             'NewConfigurationTemplates', self.metadata,

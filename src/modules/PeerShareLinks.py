@@ -1,4 +1,4 @@
-from .ConnectionString import ConnectionString
+from .ConnectionString import ConnectionString, DEFAULT_DB
 from .PeerShareLink import PeerShareLink
 import sqlalchemy as db
 from datetime import datetime
@@ -10,7 +10,7 @@ Peer Share Links
 class PeerShareLinks:
     def __init__(self, DashboardConfig, WireguardConfigurations):
         self.Links: list[PeerShareLink] = []
-        self.engine = db.create_engine(ConnectionString("wgdashboard"))
+        self.engine = db.create_engine(ConnectionString(DEFAULT_DB))
         self.metadata = db.MetaData()
         self.peerShareLinksTable = db.Table(
             'PeerShareLinks', self.metadata,

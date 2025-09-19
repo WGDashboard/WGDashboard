@@ -8,7 +8,7 @@ import pyotp
 import sqlalchemy as db
 import requests
 
-from .ConnectionString import ConnectionString
+from .ConnectionString import ConnectionString, DEFAULT_DB
 from .DashboardClientsPeerAssignment import DashboardClientsPeerAssignment
 from .DashboardClientsTOTP import DashboardClientsTOTP
 from .DashboardOIDC import DashboardOIDC
@@ -20,7 +20,7 @@ from flask import session
 class DashboardClients:
     def __init__(self, wireguardConfigurations):
         self.logger = DashboardLogger()
-        self.engine = db.create_engine(ConnectionString("wgdashboard"))
+        self.engine = db.create_engine(ConnectionString(DEFAULT_DB))
         self.metadata = db.MetaData()
         self.OIDC = DashboardOIDC("Client")
         
@@ -32,10 +32,10 @@ class DashboardClients:
             db.Column('TotpKey', db.String(500)),
             db.Column('TotpKeyVerified', db.Integer),
             db.Column('CreatedDate', 
-                      (db.DATETIME if 'sqlite:///' in ConnectionString("wgdashboard") else db.TIMESTAMP),
+                      (db.DATETIME if 'sqlite:///' in ConnectionString(DEFAULT_DB) else db.TIMESTAMP),
                       server_default=db.func.now()),
             db.Column('DeletedDate', 
-                      (db.DATETIME if 'sqlite:///' in ConnectionString("wgdashboard") else db.TIMESTAMP)),
+                      (db.DATETIME if 'sqlite:///' in ConnectionString(DEFAULT_DB) else db.TIMESTAMP)),
             extend_existing=True,
         )
         
@@ -46,10 +46,10 @@ class DashboardClients:
             db.Column('ProviderIssuer', db.String(500), nullable=False, index=True),
             db.Column('ProviderSubject', db.String(500), nullable=False, index=True),
             db.Column('CreatedDate',
-                      (db.DATETIME if 'sqlite:///' in ConnectionString("wgdashboard") else db.TIMESTAMP),
+                      (db.DATETIME if 'sqlite:///' in ConnectionString(DEFAULT_DB) else db.TIMESTAMP),
                       server_default=db.func.now()),
             db.Column('DeletedDate',
-                      (db.DATETIME if 'sqlite:///' in ConnectionString("wgdashboard") else db.TIMESTAMP)),
+                      (db.DATETIME if 'sqlite:///' in ConnectionString(DEFAULT_DB) else db.TIMESTAMP)),
             extend_existing=True,
         )
 
@@ -65,10 +65,10 @@ class DashboardClients:
             db.Column('ResetToken', db.String(255), nullable=False, primary_key=True),
             db.Column('ClientID', db.String(255), nullable=False),
             db.Column('CreatedDate',
-                      (db.DATETIME if 'sqlite:///' in ConnectionString("wgdashboard") else db.TIMESTAMP),
+                      (db.DATETIME if 'sqlite:///' in ConnectionString(DEFAULT_DB) else db.TIMESTAMP),
                       server_default=db.func.now()),
             db.Column('ExpiryDate',
-                      (db.DATETIME if 'sqlite:///' in ConnectionString("wgdashboard") else db.TIMESTAMP)),
+                      (db.DATETIME if 'sqlite:///' in ConnectionString(DEFAULT_DB) else db.TIMESTAMP)),
             extend_existing=True
         )
 

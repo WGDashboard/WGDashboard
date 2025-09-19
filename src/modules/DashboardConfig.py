@@ -7,7 +7,7 @@ import sqlalchemy as db
 from datetime import datetime
 from typing import Any
 from flask import current_app
-from .ConnectionString import ConnectionString
+from .ConnectionString import ConnectionString, DEFAULT_DB
 from .Utilities import (
     GetRemoteEndpoint, ValidateDNSAddress
 )
@@ -65,7 +65,8 @@ class DashboardConfig:
                 "host": "",
                 "port": "",
                 "username": "",
-                "password": ""
+                "password": "",
+                "prefix": ""
             },
             "Email":{
                 "server": "",
@@ -95,28 +96,12 @@ class DashboardConfig:
                 if not exist:
                     self.SetConfig(section, key, value, True)
 
-        self.engine = db.create_engine(ConnectionString('wgdashboard'))
+        self.engine = db.create_engine(ConnectionString(DEFAULT_DB))
         self.dbMetadata = db.MetaData()
         self.__createAPIKeyTable()
         self.DashboardAPIKeys = self.__getAPIKeys()
         self.APIAccessed = False
         self.SetConfig("Server", "version", DashboardConfig.DashboardVersion)
-
-    def getConnectionString(self, database) -> str or None:
-        sqlitePath = os.path.join(DashboardConfig.ConfigurationPath, "db")
-        
-        if not os.path.isdir(sqlitePath):
-            os.mkdir(sqlitePath)
-        
-        if self.GetConfig("Database", "type")[1] == "postgresql":
-            cn = f'postgresql+psycopg2://{self.GetConfig("Database", "username")[1]}:{self.GetConfig("Database", "password")[1]}@{self.GetConfig("Database", "host")[1]}/{database}'
-        elif self.GetConfig("Database", "type")[1] == "mysql":
-            cn = f'mysql+mysqldb://{self.GetConfig("Database", "username")[1]}:{self.GetConfig("Database", "password")[1]}@{self.GetConfig("Database", "host")[1]}/{database}'
-        else:
-            cn = f'sqlite:///{os.path.join(sqlitePath, f"{database}.db")}'
-        if not database_exists(cn):
-            create_database(cn)
-        return cn
 
     def __createAPIKeyTable(self):
         self.apiKeyTable = db.Table('DashboardAPIKeys', self.dbMetadata,

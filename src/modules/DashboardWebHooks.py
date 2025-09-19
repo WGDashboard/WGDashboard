@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import requests
 from pydantic import BaseModel, field_serializer
 import sqlalchemy as db
-from .ConnectionString import ConnectionString
+from .ConnectionString import ConnectionString, DEFAULT_DB
 from flask import current_app
 
 WebHookActions = ['peer_created', 'peer_deleted', 'peer_updated']
@@ -40,7 +40,7 @@ class WebHookSessionLogs(BaseModel):
 
 class DashboardWebHooks:
     def __init__(self, DashboardConfig):
-        self.engine = db.create_engine(ConnectionString("wgdashboard"))
+        self.engine = db.create_engine(ConnectionString(DEFAULT_DB))
         self.metadata = db.MetaData()
         self.webHooksTable = db.Table(
             'DashboardWebHooks', self.metadata,
@@ -201,7 +201,7 @@ class DashboardWebHooks:
 
 class WebHookSession:
     def __init__(self, webHook: WebHook, data: dict[str, str]):
-        self.engine = db.create_engine(ConnectionString("wgdashboard"))
+        self.engine = db.create_engine(ConnectionString(DEFAULT_DB))
         self.metadata = db.MetaData()
         self.webHookSessionsTable = db.Table('DashboardWebHookSessions', self.metadata, autoload_with=self.engine)
         self.webHook = webHook
