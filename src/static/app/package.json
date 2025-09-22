@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@volar/language-server": "2.4.23",
-    "@vue/language-server": "3.0.7",
+    "@vue/language-server": "3.0.8",
     "@vuepic/vue-datepicker": "^11.0.2",
     "@vueuse/core": "^13.5.0",
     "@vueuse/shared": "^13.5.0",
