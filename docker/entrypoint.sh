@@ -115,7 +115,7 @@ ensure_installation() {
 
     echo "Done setting template."
   else
-    echo "Existing wg0 configuration file found, using that."
+    echo "Existing Wireguard configuration file found in /etc/wireguard."
   fi
 }
 
