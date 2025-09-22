@@ -464,47 +464,6 @@ stop_wgd() {
 	fi
 }
 
-# ============= Docker Functions =============
-startwgd_docker() {
-	_checkWireguard
-	printf "[WGDashboard][Docker] WireGuard configuration started\n"
-	{ date; start_core ; printf "\n\n"; } >> ./log/install.txt
-    gunicorn_start
-}
-
-start_core() {
-	# Re-assign config_files to ensure it includes any newly created configurations
-	local config_files=$(find /etc/wireguard -type f -name "*.conf")
-	
-	# Set file permissions
-	find /etc/wireguard -type f -name "*.conf" -exec chmod 600 {} \;
-	find "$iptable_dir" -type f -name "*.sh" -exec chmod +x {} \;
-	
-	# Start WireGuard for each config file
-	for file in $config_files; do
-		config_name=$(basename "$file" ".conf")
-		wg-quick up "$config_name"
-	done
-}
-
-newconf_wgd() {
-    local wg_port_listen=$wg_port
-    local wg_addr_range=$wg_net
-    private_key=$(wg genkey)
-    public_key=$(echo "$private_key" | wg pubkey)
-    cat <<EOF >"/etc/wireguard/wg0.conf"
-[Interface]
-PrivateKey = $private_key
-Address = $wg_addr_range
-ListenPort = $wg_port_listen
-SaveConfig = true
-PostUp = /opt/wireguarddashboard/src/iptable-rules/postup.sh
-PreDown = /opt/wireguarddashboard/src/iptable-rules/postdown.sh
-EOF
-}
-
-# ============= Docker Functions =============
-
 start_wgd_debug() {
 	_checkWireguard
 	printf "[WGDashboard] Starting WGDashboard in the foreground.\n"

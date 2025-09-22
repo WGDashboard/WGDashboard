@@ -3,10 +3,6 @@ import configparser
 import os
 from sqlalchemy_utils import database_exists, create_database
 
-# Read and parse the INI file once at startup
-parser = configparser.ConfigParser(strict=False)
-parser.read("wg-dashboard.ini")
-
 # Ensure SQLite folder exists
 SQLITE_PATH = "db"
 os.makedirs(SQLITE_PATH, exist_ok=True)
@@ -20,6 +16,10 @@ def ConnectionString(database_name: str) -> str:
     Returns a SQLAlchemy-compatible connection string for the chosen database.
     Creates the database if it doesn't exist.
     """
+    # Read and parse the INI file once at startup
+    parser = configparser.ConfigParser(strict=False)
+    parser.read("wg-dashboard.ini")
+
     db_type = parser.get("Database", "type")
     db_prefix = parser.get("Database", "prefix")
     database_name = f"{db_prefix}{database_name}"
