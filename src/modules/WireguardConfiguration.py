@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from itertools import islice
 from flask import current_app
 
-from .ConnectionString import ConnectionString
+from .ConnectionString import ConnectionString, DEFAULT_DB
 from .DashboardConfig import DashboardConfig
 from .Peer import Peer
 from .PeerJobs import PeerJobs
@@ -64,7 +64,7 @@ class WireguardConfiguration:
         self.AllPeerShareLinks = AllPeerShareLinks
         self.DashboardWebHooks = DashboardWebHooks
         self.configPath = os.path.join(self.__getProtocolPath(), f'{self.Name}.conf')
-        self.engine: sqlalchemy.Engine = sqlalchemy.create_engine(ConnectionString("wgdashboard"))
+        self.engine: sqlalchemy.Engine = sqlalchemy.create_engine(ConnectionString(DEFAULT_DB))
         self.metadata: sqlalchemy.MetaData = sqlalchemy.MetaData()
         self.dbType = self.DashboardConfig.GetConfig("Database", "type")[1]
         

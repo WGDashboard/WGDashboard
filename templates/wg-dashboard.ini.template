@@ -1,0 +1,59 @@
+[Peers]
+remote_endpoint = <your-public-ip>
+peer_global_dns = <your-chosen-dns>
+peer_endpoint_allowed_ip = 0.0.0.0/0
+peer_display_mode = grid
+peer_mtu = 1420
+peer_keep_alive = 21
+
+[Server]
+app_port = 10086
+wg_conf_path = /etc/wireguard
+awg_conf_path = /etc/amnezia/amneziawg
+app_prefix =
+app_ip = 0.0.0.0
+auth_req = true
+version = v4.3.0.1
+dashboard_refresh_interval = 60000
+dashboard_peer_list_display = grid
+dashboard_sort = status
+dashboard_theme = dark
+dashboard_api_key = false
+dashboard_language = en-US
+
+[Account]
+username = admin
+password = $2b$12$nWgPW.4adylN2oMhTyS5AeoiAvDj9SZxnXS.lCMkJYCV6jytmHKzu
+enable_totp = false
+totp_verified = false
+totp_key = UOXAUPDDUNFTTHXZNQI4J4BWCEJZ63HF
+
+[Other]
+welcome_session = true
+
+[Database]
+type = sqlite
+host =
+port =
+username =
+password =
+
+[Email]
+server =
+port =
+encryption =
+username =
+email_password =
+authentication_required = true
+send_from =
+email_template =
+
+[OIDC]
+admin_enable = false
+client_enable = false
+
+[Clients]
+enable = true
+
+[WireGuardConfiguration]
+autostart =

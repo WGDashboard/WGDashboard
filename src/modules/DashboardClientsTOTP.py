@@ -3,19 +3,19 @@ import hashlib
 import uuid
 
 import sqlalchemy as db
-from .ConnectionString import ConnectionString
+from .ConnectionString import ConnectionString, DEFAULT_DB
 
 
 class DashboardClientsTOTP:
     def __init__(self):
-        self.engine = db.create_engine(ConnectionString("wgdashboard"))
+        self.engine = db.create_engine(ConnectionString(DEFAULT_DB))
         self.metadata = db.MetaData()
         self.dashboardClientsTOTPTable = db.Table(
             'DashboardClientsTOTPTokens', self.metadata,
             db.Column("Token", db.String(500), primary_key=True, index=True),
                 db.Column("ClientID", db.String(500), index=True),
                 db.Column(
-                    "ExpireTime", (db.DATETIME if 'sqlite:///' in ConnectionString("wgdashboard") else db.TIMESTAMP)
+                    "ExpireTime", (db.DATETIME if 'sqlite:///' in ConnectionString(DEFAULT_DB) else db.TIMESTAMP)
                 )
         )
         self.metadata.create_all(self.engine)
