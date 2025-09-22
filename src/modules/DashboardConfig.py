@@ -96,12 +96,14 @@ class DashboardConfig:
                 if not exist:
                     self.SetConfig(section, key, value, True)
 
+        self.SetConfig("Server", "version", DashboardConfig.DashboardVersion)
+        self.SaveConfig()
+
         self.engine = db.create_engine(ConnectionString(DEFAULT_DB))
         self.dbMetadata = db.MetaData()
         self.__createAPIKeyTable()
         self.DashboardAPIKeys = self.__getAPIKeys()
         self.APIAccessed = False
-        self.SetConfig("Server", "version", DashboardConfig.DashboardVersion)
 
     def __createAPIKeyTable(self):
         self.apiKeyTable = db.Table('DashboardAPIKeys', self.dbMetadata,
