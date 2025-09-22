@@ -141,7 +141,7 @@ class PeerJobs:
 
 
     def runJob(self):
-        current_app.logger.info("Running scheduled jobs")
+        current_app.logger.debug("Running scheduled jobs")
         needToDelete = []
         self.__getJobs()
         for job in self.Jobs:

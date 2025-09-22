@@ -104,6 +104,7 @@ ARG wg_port="51820"
 ENV TZ="Europe/Amsterdam" \
     global_dns="9.9.9.9" \
     wgd_port="10086" \
+    log_level="INFO" \
     public_ip="" \
     WGDASH=/opt/wgdashboard
 

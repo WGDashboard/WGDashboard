@@ -35,10 +35,13 @@ def ConnectionString(database_name: str) -> str:
         host = parser.get("Database", "host")
         cn = f"mysql+pymysql://{username}:{password}@{host}/{database_name}"
     else:
-        cn = f"sqlite:///{os.path.join(SQLITE_PATH, f'{database_name}.db')}"
+        cn = f'sqlite:///{os.path.join(sqlitePath, f"{database}.db")}'
 
-    # Ensure database exists
-    if not database_exists(cn):
-        create_database(cn)
+    try:
+        if not database_exists(cn):
+            create_database(cn)
+    except Exception as e:
+        current_app.logger.critical("Database error. Terminating...", e)
+        exit(1)
 
     return cn

@@ -72,7 +72,6 @@ def ResponseObject(status=True, message=None, data=None, status_code = 200) -> F
 '''
 Flask App
 '''
-app = Flask("WGDashboard", template_folder=os.path.abspath("./static/dist/WGDashboardAdmin"))
 
 def peerInformationBackgroundThread():
     global WireguardConfigurations
@@ -120,7 +119,8 @@ def peerJobScheduleBackgroundThread():
 def gunicornConfig():
     _, app_ip = DashboardConfig.GetConfig("Server", "app_ip")
     _, app_port = DashboardConfig.GetConfig("Server", "app_port")
-    return app_ip, app_port
+    
+    return app_ip, app_port, log_level
 
 def ProtocolsEnabled() -> list[str]:
     from shutil import which
@@ -172,16 +172,7 @@ def startThreads():
     scheduleJobThread = threading.Thread(target=peerJobScheduleBackgroundThread, daemon=True)
     scheduleJobThread.start()
 
-dictConfig({
-    'version': 1,
-    'formatters': {'default': {
-        'format': '[%(asctime)s] [%(levelname)s] in [%(module)s] %(message)s',
-    }},
-    'root': {
-        'level': 'INFO'
-    }
-})
-
+app = Flask("WGDashboard", template_folder=os.path.abspath("./static/dist/WGDashboardAdmin"))
 
 WireguardConfigurations: dict[str, WireguardConfiguration] = {}
 CONFIGURATION_PATH = os.getenv('CONFIGURATION_PATH', '.')
@@ -189,6 +180,7 @@ CONFIGURATION_PATH = os.getenv('CONFIGURATION_PATH', '.')
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 5206928
 app.secret_key = secrets.token_urlsafe(32)
 app.json = CustomJsonEncoder(app)
+
 with app.app_context():
     SystemStatus = SystemStatus()
     DashboardConfig = DashboardConfig()
@@ -199,19 +191,44 @@ with app.app_context():
     DashboardPlugins: DashboardPlugins = DashboardPlugins(app, WireguardConfigurations)
     DashboardWebHooks: DashboardWebHooks = DashboardWebHooks(DashboardConfig)
     NewConfigurationTemplates: NewConfigurationTemplates = NewConfigurationTemplates()
+
     InitWireguardConfigurationsList(startup=True)
+
     DashboardClients: DashboardClients = DashboardClients(WireguardConfigurations)
-    app.register_blueprint(createClientBlueprint(WireguardConfigurations, DashboardConfig, DashboardClients))
+    app.register_blueprint(
+        createClientBlueprint(WireguardConfigurations, DashboardConfig, DashboardClients)
+    )
 
 _, APP_PREFIX = DashboardConfig.GetConfig("Server", "app_prefix")
+_, app_ip = DashboardConfig.GetConfig("Server", "app_ip")
+_, app_port = DashboardConfig.GetConfig("Server", "app_port")
+_, WG_CONF_PATH = DashboardConfig.GetConfig("Server", "wg_conf_path")
+_, log_level = DashboardConfig.GetConfig("Server", "log_level")
+
 cors = CORS(app, resources={rf"{APP_PREFIX}/api/*": {
     "origins": "*",
     "methods": "DELETE, POST, GET, OPTIONS",
     "allow_headers": ["Content-Type", "wg-dashboard-apikey"]
 }})
-_, app_ip = DashboardConfig.GetConfig("Server", "app_ip")
-_, app_port = DashboardConfig.GetConfig("Server", "app_port")
-_, WG_CONF_PATH = DashboardConfig.GetConfig("Server", "wg_conf_path")
+
+app.logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+
+dictConfig({
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'default': {
+            'format': '[%(asctime)s] [%(levelname)s] in [%(module)s] %(message)s',
+        },
+    },
+    'handlers': {
+        'wsgi': {
+            'class': 'logging.StreamHandler',
+            'stream': 'ext://flask.logging.wsgi_errors_stream',
+            'formatter': 'default',
+        },
+    }
+})
 
 '''
 API Routes

@@ -396,7 +396,7 @@ class WireguardConfiguration:
 
     def getPeers(self):
         tmpList = []
-        current_app.logger.info(f"Refreshing {self.Name} peer list")
+        current_app.logger.debug(f"Refreshing {self.Name} peer list")
         
         if self.configurationFileChanged():
             with open(self.configPath, 'r') as configFile:
@@ -405,7 +405,7 @@ class WireguardConfiguration:
                 content = configFile.read().split('\n')
                 try:
                     if "[Peer]" not in content:
-                        current_app.logger.info(f"{self.Name} config has no [Peer] section")
+                        current_app.logger.debug(f"{self.Name} config has no [Peer] section")
                         return
 
                     peerStarts = content.index("[Peer]")
