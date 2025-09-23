@@ -7,7 +7,7 @@ import sqlalchemy as db
 from datetime import datetime
 from typing import Any
 from flask import current_app
-from .ConnectionString import ConnectionString, DEFAULT_DB
+from .ConnectionString import ConnectionString, default_db
 from .Utilities import (
     GetRemoteEndpoint, ValidateDNSAddress
 )
@@ -100,7 +100,7 @@ class DashboardConfig:
         self.SetConfig("Server", "version", DashboardConfig.DashboardVersion)
         self.SaveConfig()
 
-        self.engine = db.create_engine(ConnectionString(DEFAULT_DB))
+        self.engine = db.create_engine(ConnectionString(default_db))
         self.dbMetadata = db.MetaData()
         self.__createAPIKeyTable()
         self.DashboardAPIKeys = self.__getAPIKeys()

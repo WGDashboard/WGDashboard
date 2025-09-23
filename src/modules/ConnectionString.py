@@ -3,19 +3,19 @@ import configparser
 import os
 from sqlalchemy_utils import database_exists, create_database
 
-# Ensure SQLite folder exists
-SQLITE_PATH = "db"
-os.makedirs(SQLITE_PATH, exist_ok=True)
-
-DEFAULT_DB = "wgdashboard"
-DEFAULT_LOG_DB = "wgdashboard_log"
-DEFAULT_JOB_DB = "wgdashboard_job"
+default_db = "wgdashboard"
+default_log_db = "wgdashboard_log"
+default_job_db = "wgdashboard_job"
+sqlite_path = "db"
+if os.path.exists(sqlite_path):
+    os.makedirs(sqlite_path, exist_ok=True)
 
 def ConnectionString(database_name: str) -> str:
     """
     Returns a SQLAlchemy-compatible connection string for the chosen database.
     Creates the database if it doesn't exist.
     """
+
     # Read and parse the INI file once at startup
     parser = configparser.ConfigParser(strict=False)
     parser.read("wg-dashboard.ini")
@@ -35,7 +35,7 @@ def ConnectionString(database_name: str) -> str:
         host = parser.get("Database", "host")
         cn = f"mysql+pymysql://{username}:{password}@{host}/{database_name}"
     else:
-        cn = f'sqlite:///{os.path.join(sqlitePath, f"{database}.db")}'
+        cn = f'sqlite:///{os.path.join(sqlite_path, f"{database_name}.db")}'
 
     try:
         if not database_exists(cn):
