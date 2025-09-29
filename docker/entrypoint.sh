@@ -83,6 +83,8 @@ ensure_installation() {
     mkdir -p /data/db
   fi
 
+  mkdir "${WGDASH}/src/log"
+
   if [ ! -d "${WGDASH}/src/db" ]; then
     ln -s /data/db "${WGDASH}/src/db"
   fi
@@ -100,8 +102,7 @@ ensure_installation() {
   . "${WGDASH}/src/venv/bin/activate"
 
   # Use the bash interpreter to install WGDashboard according to the wgd.sh script.
-  /bin/bash ./wgd.sh install
-
+	#  /bin/bash ./wgd.sh install
   echo "Looks like the installation succeeded. Moving on."
 
   # Setup WireGuard if needed
