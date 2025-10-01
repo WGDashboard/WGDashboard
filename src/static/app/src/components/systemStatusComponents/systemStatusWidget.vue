@@ -114,7 +114,7 @@ const data = computed(() => {
 				</h6>
 			</div>
 			<div class="progress" role="progressbar" style="height: 6px">
-				<div class="progress-bar bg-warning" :style="{width: `$ data?.Memory.SwapMemory.percent}%` }"></div>
+				<div class="progress-bar bg-warning" :style="{width: `${data?.Memory.SwapMemory.percent}%` }"></div>
 			</div>
 		</div>
 	</div>
