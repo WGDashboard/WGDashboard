@@ -1,6 +1,6 @@
 # WGDashboard Docker Explanation:
 Author: @DaanSelen<br>
-
+Edited by: @09bravo<br>
 This document delves into how the WGDashboard Docker container has been built.<br>
 Of course there are two stages (simply said), one before run-time and one at/after run-time.<br>
 The `Dockerfile` describes how the container image is made, and the `entrypoint.sh` is executed after the container is started. <br>
@@ -45,14 +45,14 @@ Here's an example to get it up and running quickly:
 docker run -d \
   --name wgdashboard \
   --restart unless-stopped \
-  -p 10086:10086/tcp \
-  -p 51820:51820/udp \
+  --network host \
   --cap-add NET_ADMIN \
   ghcr.io/wgdashboard/wgdashboard:latest
 ```
 
 > ⚠️ The default WireGuard port is `51820/udp`. If you change this, update the `/etc/wireguard/wg0.conf` accordingly.
 
+><br> ⚠️ This will use the host network
 ---
 
 ### 📦 Docker Compose Alternative
@@ -65,11 +65,7 @@ services:
     image: ghcr.io/wgdashboard/wgdashboard:latest
     restart: unless-stopped
     container_name: wgdashboard
-
-    ports:
-      - 10086:10086/tcp
-      - 51820:51820/udp
-
+    network_mode: host
     volumes:
       - aconf:/etc/amnezia/amneziawg
       - conf:/etc/wireguard
@@ -77,7 +73,6 @@ services:
 
     cap_add:
       - NET_ADMIN
-
 volumes:
   aconf:
   conf:
@@ -87,7 +82,9 @@ volumes:
 > 📁 You can customize the **volume paths** on the host to fit your needs. The example above uses Docker volumes.
 
 ---
-
+## 🚀 Visting the dashborad
+simply go into ```<Your Server IP>:10086```
+or if you are using a reverse_proxy (caddy, nginx,etc) simply vist your website.
 ## 🔄 Updating the Container
 
 Updating the WGDashboard container should be through 'The Docker Way' - by pulling the newest/newer image and replacing this old one.
