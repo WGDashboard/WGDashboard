@@ -17,13 +17,8 @@ services:
       #- public_ip=         # <--- Set public IP to ensure the correct one is chosen, defaulting to the IP give by ifconfig.me.
       #- wgd_port=          # <--- Set the port WGDashboard will use for its web-server.
 
-    # The following section, ports is very important for exposing more than one Wireguard/AmneziaWireguard interfaces.
-    # Once you create a new configuration and assign a port in the dashboard, don't forget to add it to the ports as well.
-    # Quick-tip: most Wireguard VPN tunnels use UDP. WGDashboard uses HTTP, so tcp.
-    ports:
-      - 10086:10086/tcp
-      - 51820:51820/udp
-
+    # Using the host network
+    network_mode: host
     # Volumes can be configured however you'd like. The default is using docker volumes.
     # If you want to use local paths, replace the path before the : with your path.
     volumes:
