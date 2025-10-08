@@ -82,7 +82,7 @@ volumes:
 > 📁 You can customize the **volume paths** on the host to fit your needs. The example above uses Docker volumes.
 
 ---
-## 🚀 Visting the dashborad
+## 🚀 Visting the dashboard
 simply go into ```<Your Server IP>:10086```
 or if you are using a reverse_proxy (caddy, nginx,etc) simply vist your website.
 ## IPV6
