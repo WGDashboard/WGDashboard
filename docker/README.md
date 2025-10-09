@@ -86,7 +86,8 @@ volumes:
 simply go into ```<Your Server IP>:10086```
 or if you are using a reverse_proxy (caddy, nginx,etc) simply vist your website.
 ## IPV6
-To use IPV6 you need to setup PostUp and Predown, see [#939](https://github.com/WGDashboard/WGDashboard/issues/939)
+To use IPV6 you need to setup PostUp and Predown, see [#939](https://github.com/WGDashboard/WGDashboard/issues/939).
+You also have to use ipv6 is your endpoint with the double brackets (e.g [<Your Ipv6 Ip>])
 ## 🔄 Updating the Container
 
 Updating the WGDashboard container should be through 'The Docker Way' - by pulling the newest/newer image and replacing this old one.
