@@ -54,7 +54,7 @@ RUN make && chmod +x wg*
 #
 
 # Use the python-alpine image for building pip dependencies
-FROM python:3.13-alpine AS pip-builder
+FROM python:3.14-alpine AS pip-builder
 
 # Add the build dependencies and create a Python virtual environment.
 RUN apk add --no-cache \
@@ -81,7 +81,7 @@ RUN . /opt/wgdashboard/src/venv/bin/activate && \
 #
 
 # Running with the python-alpine image.
-FROM python:3.13-alpine AS final
+FROM python:3.14-alpine AS final
 LABEL maintainer="dselen@nerthus.nl"
 
 # Install only the runtime dependencies
