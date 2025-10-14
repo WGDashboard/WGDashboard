@@ -133,11 +133,13 @@ DNS = ${global_dns}" > /configs/wg0.conf.template \
 # Replacement of paths with relative ones for namespace handling when using a reverse proxy
 RUN set -ex && \
   find ${WGDASH}/src/static/dist -type f \( -name "*.html" -o -name "*.js" \) \
-    -exec sed -i 's|/static/dist|./static/dist|g' {} + && \
+    -exec sed -i 's|/static/dist|./static/dist|g' {} \; && \
   find ${WGDASH}/src/static/dist -type f -name "*.css" \
-    -exec sed -i 's|/static/dist/WGDashboardClient/assets/|./|g' {} + && \
-  find ${WGDASH}/src/static/dist -type f -name "*.css" \
-    -exec sed -i 's|/static/dist/WGDashboardAdmin/assets/|./|g' {} +
+    -exec sed -i \
+    -e 's|/static/dist/WGDashboardAdmin/assets/|./|g' \
+    -e 's|/static/dist/WGDashboardAdmin/img/|../img/|g' \
+    -e 's|/static/dist/WGDashboardClient/assets/|./|g' \
+    -e 's|/static/dist/WGDashboardClient/img/|../img/|g' {} \;
 
 # Set a healthcheck to determine the container its health
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
