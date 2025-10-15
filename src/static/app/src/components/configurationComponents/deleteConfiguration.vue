@@ -77,11 +77,11 @@ const emits = defineEmits(["backup", "close"])
 							</div>
 							<div v-else-if="backups.length > 0">
 								<i class="bi bi-check-circle-fill me-2"></i>
-								<LocaleText :t="'This configuration have ' + backups.length + ' backups'"></LocaleText>
+								<LocaleText :t="'This configuration has ' + backups.length + ' backups'"></LocaleText>
 							</div>
 							<div v-else class="d-flex align-items-center gap-2">
 								<i class="bi bi-x-circle-fill me-2"></i>
-								<LocaleText t="This configuration have no backup"></LocaleText>
+								<LocaleText t="This configuration has no backup"></LocaleText>
 								<a role="button" 
 								   @click="emits('backup')"
 								   class="ms-auto btn btn-sm btn-primary rounded-3">

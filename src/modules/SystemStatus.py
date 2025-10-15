@@ -160,18 +160,41 @@ class Processes:
         self.CPU_Top_10_Processes: list[Process] = []
         self.Memory_Top_10_Processes: list[Process] = []
     def getData(self):
-        while True:
-            try:
-                processes = list(psutil.process_iter())
-                self.CPU_Top_10_Processes = sorted(
-                    list(map(lambda x : Process(x.name(), " ".join(x.cmdline()), x.pid, x.cpu_percent()), processes)),
-                    key=lambda x : x.percent, reverse=True)[:20]
-                self.Memory_Top_10_Processes = sorted(
-                    list(map(lambda x : Process(x.name(), " ".join(x.cmdline()), x.pid, x.memory_percent()), processes)),
-                    key=lambda x : x.percent, reverse=True)[:20]
-                break
-            except Exception as e:
-                current_app.logger.error("Get processes error", e)
+        try:
+            processes = list(psutil.process_iter())
+
+            cpu_processes = []
+            memory_processes = []
+
+            for proc in processes:
+                try:
+                    name = proc.name()
+                    cmdline = " ".join(proc.cmdline())
+                    pid = proc.pid
+                    cpu_percent = proc.cpu_percent()
+                    mem_percent = proc.memory_percent()
+
+                    # Create Process object for CPU and memory tracking
+                    cpu_process = Process(name, cmdline, pid, cpu_percent)
+                    mem_process = Process(name, cmdline, pid, mem_percent)
+
+                    cpu_processes.append(cpu_process)
+                    memory_processes.append(mem_process)
+
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    # Skip processes we can’t access or that no longer exist
+                    continue
+
+            # Sort by CPU and memory usage (descending order)
+            cpu_sorted = sorted(cpu_processes, key=lambda p: p.percent, reverse=True)
+            mem_sorted = sorted(memory_processes, key=lambda p: p.percent, reverse=True)
+
+            # Get top 20 processes for each
+            self.CPU_Top_10_Processes = cpu_sorted[:20]
+            self.Memory_Top_10_Processes = mem_sorted[:20]
+
+        except Exception as e:
+            current_app.logger.error("Get processes error", e)
 
     def toJson(self):
         self.getData()

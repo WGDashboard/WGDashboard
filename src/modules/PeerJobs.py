@@ -184,7 +184,7 @@ class PeerJobs:
                                   f"Somehow can't find this peer {job.Peer} from {c.Name} failed {job.Action}ed."
                                   )
             else:
-                current_app.logger.warning(f"Somehow can't find this peer {job.Peer} from {c.Name} failed {job.Action}ed.")
+                current_app.logger.warning(f"Somehow can't find this peer {job.Peer} from {job.Configuration} failed {job.Action}ed.")
                 self.JobLogger.log(job.JobID, False,
                               f"Somehow can't find this peer {job.Peer} from {job.Configuration} failed {job.Action}ed."
                               )
