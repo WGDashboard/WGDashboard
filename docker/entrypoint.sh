@@ -115,7 +115,7 @@ ensure_installation() {
 
     echo "Done setting template."
   else
-    echo "Existing wg0 configuration file found, using that."
+    echo "Existing Wireguard configuration file found in /etc/wireguard."
   fi
 }
 
@@ -137,7 +137,8 @@ set_envvars() {
 
   set_ini Peers remote_endpoint "${public_ip}"
   set_ini Server app_port "${wgd_port}"
-
+  set_ini Server log_level "${log_level}"
+  
   # Account settings - process all parameters
   [[ -n "$username" ]] && echo "Configuring user account:"
   # Basic account variables

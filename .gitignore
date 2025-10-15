@@ -6,6 +6,7 @@ __pycache__
 src/test.py
 *.db
 src/wg-dashboard.ini
+src/ssl-tls.ini
 src/static/pic.xd
 *.conf
 private_key.txt

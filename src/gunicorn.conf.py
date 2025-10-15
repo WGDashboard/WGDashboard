@@ -1,7 +1,7 @@
 import dashboard
 from datetime import datetime
 global sqldb, cursor, DashboardConfig, WireguardConfigurations, AllPeerJobs, JobLogger, Dash
-app_host, app_port = dashboard.gunicornConfig()
+app_host, app_port, log_level = dashboard.gunicornConfig()
 date = datetime.today().strftime('%Y_%m_%d_%H_%M_%S')
 
 def post_worker_init(worker):
@@ -16,7 +16,7 @@ daemon = True
 pidfile = './gunicorn.pid'
 wsgi_app = "dashboard:app"
 accesslog = f"./log/access_{date}.log"
-loglevel = "info"
+loglevel = f"{log_level}"
 capture_output = True
 errorlog = f"./log/error_{date}.log"
 pythonpath = "., ./modules"

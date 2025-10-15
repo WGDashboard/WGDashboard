@@ -102,6 +102,7 @@ Updating the WGDashboard container should be through 'The Docker Way' - by pulli
 | `global_dns`       | IPv4 and IPv6 addresses                  | `9.9.9.9`               | `8.8.8.8`, `1.1.1.1`  | Default DNS for WireGuard clients.                                      |
 | `public_ip`        | Public IP address                        | Retrieved automatically | `253.162.134.73`      | Used to generate accurate client configs. Needed if container is NAT’d. |
 | `wgd_port`         | Any port that is allowed for the process | `10086`                 | `443`                 | This port is used to set the WGDashboard web port.                      |
+| `log_level`        | `DEBUG`, `INFO`, `WARNING`, `ERROR` and `CRITICAL` | `INFO`        | `WARNING`             | Sets the severity of the logs being displayed.                          |        
 | `username`         | Any non‐empty string                     | `-`                     | `admin`               | Username for the WGDashboard web interface account.                     |
 | `password`         | Any non‐empty string                     | `-`                     | `s3cr3tP@ss`          | Password for the WGDashboard web interface account (stored hashed).     |
 | `enable_totp`      | `true`, `false`                          | `true`                  | `false`               | Enable TOTP‐based two‐factor authentication for the account.            |

@@ -1,7 +1,7 @@
 """
 Peer Jobs
 """
-from .ConnectionString import ConnectionString
+from .ConnectionString import ConnectionString, default_job_db
 from .PeerJob import PeerJob
 from .PeerJobLogger import PeerJobLogger
 import sqlalchemy as db
@@ -11,7 +11,7 @@ from flask import current_app
 class PeerJobs:
     def __init__(self, DashboardConfig, WireguardConfigurations):
         self.Jobs: list[PeerJob] = []
-        self.engine = db.create_engine(ConnectionString('wgdashboard_job'))
+        self.engine = db.create_engine(ConnectionString(default_job_db))
         self.metadata = db.MetaData()
         self.peerJobTable = db.Table('PeerJobs', self.metadata,
                                      db.Column('JobID', db.String(255), nullable=False, primary_key=True),
@@ -141,7 +141,7 @@ class PeerJobs:
 
 
     def runJob(self):
-        current_app.logger.info("Running scheduled jobs")
+        current_app.logger.debug("Running scheduled jobs")
         needToDelete = []
         self.__getJobs()
         for job in self.Jobs:

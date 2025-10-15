@@ -12,7 +12,8 @@ services:
     # Environment variables can be used to configure certain values at startup. Without having to configure it from the dashboard.
     # By default its all disabled, but uncomment the following lines to apply these. (uncommenting is removing the # character)
     # Refer to the documentation on https://wgdashboard.dev/ for more info on what everything means.
-    #environment:
+    environment:
+      - log_level=WARNING
       #- tz=                # <--- Set container timezone, default: Europe/Amsterdam.
       #- public_ip=         # <--- Set public IP to ensure the correct one is chosen, defaulting to the IP give by ifconfig.me.
       #- wgd_port=          # <--- Set the port WGDashboard will use for its web-server.

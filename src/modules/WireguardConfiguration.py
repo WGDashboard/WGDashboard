@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from itertools import islice
 from flask import current_app
 
-from .ConnectionString import ConnectionString
+from .ConnectionString import ConnectionString, default_db
 from .DashboardConfig import DashboardConfig
 from .Peer import Peer
 from .PeerJobs import PeerJobs
@@ -64,7 +64,7 @@ class WireguardConfiguration:
         self.AllPeerShareLinks = AllPeerShareLinks
         self.DashboardWebHooks = DashboardWebHooks
         self.configPath = os.path.join(self.__getProtocolPath(), f'{self.Name}.conf')
-        self.engine: sqlalchemy.Engine = sqlalchemy.create_engine(ConnectionString("wgdashboard"))
+        self.engine: sqlalchemy.Engine = sqlalchemy.create_engine(ConnectionString(default_db))
         self.metadata: sqlalchemy.MetaData = sqlalchemy.MetaData()
         self.dbType = self.DashboardConfig.GetConfig("Database", "type")[1]
         
@@ -396,7 +396,7 @@ class WireguardConfiguration:
 
     def getPeers(self):
         tmpList = []
-        current_app.logger.info(f"Refreshing {self.Name} peer list")
+        current_app.logger.debug(f"Refreshing {self.Name} peer list")
         
         if self.configurationFileChanged():
             with open(self.configPath, 'r') as configFile:
@@ -405,7 +405,7 @@ class WireguardConfiguration:
                 content = configFile.read().split('\n')
                 try:
                     if "[Peer]" not in content:
-                        current_app.logger.info(f"{self.Name} config has no [Peer] section")
+                        current_app.logger.debug(f"{self.Name} config has no [Peer] section")
                         return
 
                     peerStarts = content.index("[Peer]")
