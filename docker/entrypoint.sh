@@ -1,8 +1,9 @@
 #!/bin/bash
 
 config_file="/data/wg-dashboard.ini"
-
-trap 'stop_service' SIGTERM
+WGD_PID_FILE="${WGDASH}/gunicorn.pid"
+GUNICORN_PID=""
+TAIL_PID=""
 
 # Hash password with bcrypt
 hash_password() {
@@ -50,32 +51,20 @@ set_ini() {
   fi
 }
 
-stop_service() {
-  echo "[WGDashboard] Stopping WGDashboard..."
-  /bin/bash ./wgd.sh stop
-  exit 0
-}
-
 echo "------------------------- START ----------------------------"
 echo "Starting the WGDashboard Docker container."
 
 ensure_installation() {
   echo "Quick-installing..."
 
-  # Make the wgd.sh script executable.
-  chmod +x "${WGDASH}"/src/wgd.sh
-  cd "${WGDASH}"/src || exit
+  cd "${WGDASH}" || exit
 
   # Github issue: https://github.com/donaldzou/WGDashboard/issues/723
   echo "Checking for stale pids..."
-  if [[ -f ${WGDASH}/src/gunicorn.pid ]]; then
+  if [[ -f "$WGD_PID_FILE" ]]; then
     echo "Found stale pid, removing..."
-    rm ${WGDASH}/src/gunicorn.pid
+    rm "$WGD_PID_FILE"
   fi
-
-  # Removing clear shell command from the wgd.sh script to enhance docker logging.
-  echo "Removing clear command from wgd.sh for better Docker logging."
-  sed -i '/clear/d' ./wgd.sh
 
   # Create required directories and links
   if [ ! -d "/data/db" ]; then
@@ -83,8 +72,8 @@ ensure_installation() {
     mkdir -p /data/db
   fi
 
-  if [ ! -d "${WGDASH}/src/db" ]; then
-    ln -s /data/db "${WGDASH}/src/db"
+  if [ ! -d "${WGDASH}/db" ]; then
+    ln -s /data/db "${WGDASH}/db"
   fi
 
   if [ ! -f "${config_file}" ]; then
@@ -92,15 +81,9 @@ ensure_installation() {
     touch "${config_file}"
   fi
 
-  if [ ! -f "${WGDASH}/src/wg-dashboard.ini" ]; then
-    ln -s "${config_file}" "${WGDASH}/src/wg-dashboard.ini"
+  if [ ! -f "${WGDASH}/wg-dashboard.ini" ]; then
+    ln -s "${config_file}" "${WGDASH}/wg-dashboard.ini"
   fi
-
-  # Create the Python virtual environment.
-  . "${WGDASH}/src/venv/bin/activate"
-
-  # Use the bash interpreter to install WGDashboard according to the wgd.sh script.
-  /bin/bash ./wgd.sh install
 
   echo "Looks like the installation succeeded. Moving on."
 
@@ -187,39 +170,82 @@ set_envvars() {
   done
 }
 
-# Start service and monitor logs
-start_and_monitor() {
+start_service(){
   printf "\n---------------------- STARTING CORE -----------------------\n"
 
   # Due to some instances complaining about this, making sure its there every time.
-  mkdir -p /dev/net
-  mknod /dev/net/tun c 10 200
-  chmod 600 /dev/net/tun
+  if [ ! -c /dev/net/tun ]; then
+    mkdir -p /dev/net
+    mknod /dev/net/tun c 10 200
+    chmod 600 /dev/net/tun
+  fi
 
-  # Actually starting WGDashboard
-  echo "Activating Python venv and executing the WireGuard Dashboard service."
-  bash ./wgd.sh start
+  gunicorn --config ./gunicorn.conf.py &
 
-  # Wait a second before continuing, to give the python program some time to get ready.
-  sleep 1
+  echo "Waiting for Gunicorn PID file..."
+  local checkPIDExist=0
+  local timeout=40
+  local waited=0
+
+  while [ $checkPIDExist -eq 0 ]; do
+    if [[ -f "$WGD_PID_FILE" ]]; then
+      checkPIDExist=1
+      GUNICORN_PID="$(cat "$WGD_PID_FILE")"
+      echo "Gunicorn PID file found, WGDashboard starting"
+    else
+      sleep 1
+      waited=$((waited+1))
+      if [ $waited -ge $timeout ]; then
+        echo "Gunicorn PID file not found after $timeout seconds, exiting"
+        exit 1
+      fi
+    fi
+  done
+  echo "WGDashboard started successfully (PID: $GUNICORN_PID)"
+}
+
+# Start service and monitor logs
+monitor() {
   echo -e "\nEnsuring container continuation."
 
   # Find and monitor log file
-  local logdir="${WGDASH}/src/log"
+  local logdir="${WGDASH}/log"
   latestErrLog=$(find "$logdir" -name "error_*.log" -type f -print | sort -r | head -n 1)
 
   # Only tail the logs if they are found
   if [ -n "$latestErrLog" ]; then
     tail -f "$latestErrLog" &
+    TAIL_PID=$!
+    echo "Tailing logs (PID: $TAIL_PID)"
     # Wait for the tail process to end.
-    wait $!
+    wait "$TAIL_PID"
   else
     echo "No log files found to tail. Something went wrong, exiting..."
     exit 1
   fi
 }
 
+stop_service() {
+  echo "Stopping WGDashboard..."
+  if [[ -f "$WGD_PID_FILE" ]]; then
+    if kill -0 "$GUNICORN_PID" 2>/dev/null; then
+      echo "Stopping Gunicorn (PID $GUNICORN_PID)..."
+      kill -TERM "$GUNICORN_PID"
+    fi
+  fi
+
+ if [[ -n "$TAIL_PID" ]] && kill -0 "$TAIL_PID" 2>/dev/null; then
+    echo "Stopping log tail (PID $TAIL_PID)..."
+    kill -TERM "$TAIL_PID"
+    wait "$TAIL_PID"
+  fi
+  exit 0
+}
+
+trap 'stop_service' SIGTERM SIGINT
+
 # Main execution flow
 ensure_installation
 set_envvars
-start_and_monitor
+start_service
+monitor
