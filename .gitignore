@@ -19,6 +19,8 @@ node_modules/**
 */proxy.js
 src/static/app/proxy.js
 .secrets
+*.ini
+*.pid
 
 # Logs
 logs
