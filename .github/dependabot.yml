@@ -8,24 +8,24 @@ updates:
   - package-ecosystem: "pip"
     directory: "/src"
     schedule:
-      interval: "daily"
+      interval: "weekly"
 
   - package-ecosystem: "npm"
     directory: "/src/static/app"
     schedule:
-      interval: "daily"
+      interval: "weekly"
       
   - package-ecosystem: "github-actions"
     directory: "/.github"
     schedule:
-      interval: "daily"
+      interval: "weekly"
 
   - package-ecosystem: "docker"
     directory: "/docker"
     schedule:
-      interval: "daily"
+      interval: "weekly"
 
   - package-ecosystem: "docker-compose"
     directory: "/docker"
     schedule:
-      interval: "daily"
+      interval: "weekly"
