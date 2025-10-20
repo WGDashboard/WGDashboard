@@ -37,7 +37,7 @@
     "uuid": "^13.0.0",
     "vue": "^3.5.22",
     "vue-chartjs": "^5.3.0",
-    "vue-router": "^4.2.5"
+    "vue-router": "^4.6.3"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.0",
