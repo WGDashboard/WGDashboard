@@ -1,6 +1,6 @@
 bcrypt==5.0.0
 ifcfg==0.24
-psutil==7.1.0
+psutil==7.1.1
 pyotp==2.9.0
 Flask==3.1.2
 flask-cors==6.0.1
