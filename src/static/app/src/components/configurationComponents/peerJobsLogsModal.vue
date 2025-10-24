@@ -146,8 +146,8 @@ export default {
 										<td v-if="showLogID"><samp class="text-muted">{{log.LogID}}</samp></td>
 										<td v-if="showJobID"><samp class="text-muted">{{log.JobID}}</samp></td>
 										<td>
-											<span class="badge" :class="[log.Status === '1' ? 'text-success-emphasis bg-success-subtle':'text-danger-emphasis bg-danger-subtle']">
-												{{log.Status === "1" ? 'Success': 'Failed'}}
+											<span class="badge" :class="[(log.Status === '1' || log.Status === 'true') ? 'text-success-emphasis bg-success-subtle':'text-danger-emphasis bg-danger-subtle']">
+												{{(log.Status === "1" || log.Status === "true") ? 'Success': 'Failed'}}
 											</span>
 										</td>
 										<td>{{log.Message}}</td>

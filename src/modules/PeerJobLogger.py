@@ -2,8 +2,12 @@
 Peer Job Logger
 """
 import uuid
+from typing import Sequence
+
 import sqlalchemy as db
 from flask import current_app
+from sqlalchemy import RowMapping
+
 from .ConnectionString import ConnectionString
 from .Log import Log
 
@@ -57,3 +61,20 @@ class PeerJobLogger:
             current_app.logger.error(f"Getting Peer Job Log Error", e)
             return logs
         return logs
+    
+    def getFailingJobs(self) -> Sequence[RowMapping]:
+        with self.engine.connect() as conn:
+            table = conn.execute(
+                db.select(
+                    self.jobLogTable.c.JobID
+                ).where(
+                    self.jobLogTable.c.Status == 'false'
+                ).group_by(
+                    self.jobLogTable.c.JobID
+                ).having(
+                    db.func.count(
+                        self.jobLogTable.c.JobID
+                    ) > 10
+                )
+            ).mappings().fetchall()
+            return table

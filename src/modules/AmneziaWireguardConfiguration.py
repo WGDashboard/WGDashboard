@@ -173,9 +173,7 @@ class AmneziaWireguardConfiguration(WireguardConfiguration):
         self.metadata.create_all(self.engine)
 
     def getPeers(self):
-        self.Peers.clear()
-        current_app.logger.info(f"Refreshing {self.Name} peer list")
-        
+        self.Peers.clear()        
         if self.configurationFileChanged():
             with open(self.configPath, 'r') as configFile:
                 p = []

@@ -395,9 +395,7 @@ class WireguardConfiguration:
         return changed
 
     def getPeers(self):
-        tmpList = []
-        current_app.logger.info(f"Refreshing {self.Name} peer list")
-        
+        tmpList = []        
         if self.configurationFileChanged():
             with open(self.configPath, 'r') as configFile:
                 p = []
@@ -503,15 +501,24 @@ class WireguardConfiguration:
         with self.engine.begin() as conn:
             for tempPeer in self.Peers:
                 if tempPeer.status == "running":
-                    endpoint = tempPeer.endpoint.rsplit(":", 1)
+                    endpoint = tempPeer.endpoint.rsplit(":", 1)    
                     if len(endpoint) == 2 and len(endpoint[0]) > 0:
-                        conn.execute(
-                            self.peersHistoryEndpointTable.insert().values({
-                                "id": tempPeer.id,
-                                "endpoint": endpoint[0],
-                                "time": datetime.now()
-                            })
-                        )
+                        exist = conn.execute(
+                            self.peersHistoryEndpointTable.select().where(
+                                sqlalchemy.and_(
+                                    self.peersHistoryEndpointTable.c.id == tempPeer.id,
+                                    self.peersHistoryEndpointTable.c.endpoint == endpoint[0]
+                                )
+                            )
+                        ).mappings().fetchone()
+                        if not exist:
+                            conn.execute(
+                                self.peersHistoryEndpointTable.insert().values({
+                                    "id": tempPeer.id,
+                                    "endpoint": endpoint[0],
+                                    "time": datetime.now()
+                                })
+                            )
                           
     def addPeers(self, peers: list) -> tuple[bool, list, str]:
         result = {
