@@ -15,7 +15,7 @@
     "@volar/language-server": "2.4.23",
     "@vue/language-server": "3.1.1",
     "@vuepic/vue-datepicker": "^11.0.2",
-    "@vueuse/core": "^13.5.0",
+    "@vueuse/core": "^14.0.0",
     "@vueuse/shared": "^13.5.0",
     "animate.css": "^4.1.1",
     "bootstrap": "^5.3.2",
