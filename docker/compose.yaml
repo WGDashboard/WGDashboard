@@ -3,7 +3,7 @@ services:
     # Since the github organisation we recommend the ghcr.io.
     # Alternatively we also still push to docker.io under donaldzou/wgdashboard.
     # Both share the exact same tags. So they should be interchangable.
-    image: ghcr.io/wgdashboard/wgdashboard:latest
+    image: ghcr.io/wgdashboard/wgdashboard:1267fb6
 
     # Make sure to set the restart policy. Because for a VPN its important to come back IF it crashes.
     restart: unless-stopped

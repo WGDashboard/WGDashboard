@@ -96,14 +96,6 @@ ensure_installation() {
     ln -s "${config_file}" "${WGDASH}/src/wg-dashboard.ini"
   fi
 
-  # Create the Python virtual environment.
-  . "${WGDASH}/src/venv/bin/activate"
-
-  # Use the bash interpreter to install WGDashboard according to the wgd.sh script.
-  /bin/bash ./wgd.sh install
-
-  echo "Looks like the installation succeeded. Moving on."
-
   # Setup WireGuard if needed
   if [ -z "$(ls -A /etc/wireguard)" ]; then
     cp -a "/configs/wg0.conf.template" "/etc/wireguard/wg0.conf"
@@ -196,8 +188,8 @@ start_and_monitor() {
   chmod 600 /dev/net/tun
 
   # Actually starting WGDashboard
-  echo "Activating Python venv and executing the WireGuard Dashboard service."
-  bash ./wgd.sh start
+  echo "Starting WGDashboard directly with Gunicorn..."
+  /opt/wgdashboard/src/venv/bin/python3 ./venv/bin/gunicorn --config ./gunicorn.conf.py
 
   # Wait a second before continuing, to give the python program some time to get ready.
   sleep 1

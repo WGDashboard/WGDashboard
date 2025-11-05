@@ -27,7 +27,7 @@ RUN go mod download && \
     go build -ldflags '-linkmode external -extldflags "-fno-PIC -static"' -v -o /usr/bin
 #
 # AWG TOOLS BUILDING STAGE
-# Base: Debian
+# Base: Alpine
 #
 FROM alpine:latest AS awg-tools
 
@@ -87,11 +87,8 @@ LABEL maintainer="dselen@nerthus.nl"
 # Install only the runtime dependencies
 RUN apk add --no-cache \
     iproute2 iptables \
-    bash curl \
-    wget unzip \
-    procps sudo \
-    tzdata wireguard-tools \
-    openresolv openrc
+    bash curl procps \
+    tzdata wireguard-tools
 
 # Copy only the final binaries from the AWG builder stages
 COPY --from=awg-go /usr/bin/amneziawg-go /usr/bin/amneziawg-go
