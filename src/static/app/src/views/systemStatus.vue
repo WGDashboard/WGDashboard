@@ -171,11 +171,12 @@ const memoryHistoricalChartData = computed(() => {
 </script>
 
 <template>
-<div class="text-body row g-2 mb-2">
-	<div class="col-sm-6">
-		<div class="card rounded-3 h-100 shadow">
-			<div class="card-body p-4">
-				<div class="d-flex flex-column gap-3">
+<div class="container-fluid">
+	<div class="text-body row g-2 mb-2">
+		<div class="col-sm-6">
+			<div class="card rounded-3 h-100 shadow">
+				<div class="card-body p-4">
+					<div class="d-flex flex-column gap-3">
 					<div class="d-flex flex-column gap-3" style="height: 130px">
 						<div class="d-flex align-items-center">
 							<h3 class="text-muted mb-0">
@@ -361,6 +362,7 @@ const memoryHistoricalChartData = computed(() => {
 		</div>
 	</div>
 	
+</div>
 </div>
 </template>
 

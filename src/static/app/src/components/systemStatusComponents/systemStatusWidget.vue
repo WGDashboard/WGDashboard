@@ -33,7 +33,7 @@ const data = computed(() => {
 
 <template>
 	<div class="row text-body g-3 mb-5">
-		<div class="col-md-6 col-sm-12 col-xl-3">
+		<div class="col-12 col-md-6 col-lg-3">
 			<div class="d-flex align-items-center">
 				<h6 class="text-muted">
 					<i class="bi bi-cpu-fill me-2"></i>
@@ -58,7 +58,7 @@ const data = computed(() => {
 				></CpuCore>
 			</div>
 		</div>
-		<div class="col-md-6 col-sm-12 col-xl-3">
+		<div class="col-12 col-md-6 col-lg-3">
 			<div class="d-flex align-items-center">
 				<h6 class="text-muted">
 					<i class="bi bi-device-ssd-fill me-2"></i>
@@ -83,7 +83,7 @@ const data = computed(() => {
 				></StorageMount>
 			</div>
 		</div>
-		<div class="col-md-6 col-sm-12 col-xl-3">
+		<div class="col-12 col-md-6 col-lg-3">
 			<div class="d-flex align-items-center">
 				<h6 class="text-muted">
 					<i class="bi bi-memory me-2"></i>
@@ -100,7 +100,7 @@ const data = computed(() => {
 				<div class="progress-bar bg-info" :style="{width: `${data?.Memory.VirtualMemory.percent}%` }"></div>
 			</div>
 		</div>
-		<div class="col-md-6 col-sm-12 col-xl-3">
+		<div class="col-12 col-md-6 col-lg-3">
 			<div class="d-flex align-items-center">
 				<h6 class="text-muted">
 					<i class="bi bi-memory me-2"></i>
@@ -114,7 +114,7 @@ const data = computed(() => {
 				</h6>
 			</div>
 			<div class="progress" role="progressbar" style="height: 6px">
-				<div class="progress-bar bg-warning" :style="{width: `$ data?.Memory.SwapMemory.percent}%` }"></div>
+				<div class="progress-bar bg-warning" :style="{width: `${data?.Memory.SwapMemory.percent}%` }"></div>
 			</div>
 		</div>
 	</div>
