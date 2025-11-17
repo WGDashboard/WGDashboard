@@ -30,7 +30,7 @@
     "npm": "^11.6.2",
     "ol": "^10.2.1",
     "pinia": "^3.0.3",
-    "pinia-plugin-persistedstate": "^4.5.0",
+    "pinia-plugin-persistedstate": "^4.7.1",
     "qrcode": "^1.5.3",
     "qrcodejs": "^1.0.0",
     "simple-code-editor": "^2.0.9",
