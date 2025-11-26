@@ -74,7 +74,8 @@ jobs:
 #          labels: ${{ steps.meta.outputs.labels }}
 #          platforms: linux/amd64,linux/arm64
 
-      - name: replace psycopg binary to c version
+
+      - name: replace psycopg binary to c version for arm/v7
         run: |
             sed -i "s|psycopg\[binary\]==3.2.13|psycopg\[c\]==3.2.13|" ./src/requirements.txt
 

@@ -61,7 +61,9 @@ RUN apk add --no-cache \
       build-base \
       pkgconfig \
       python3-dev \
+      postgresql-dev \
       libffi-dev \
+      libpq \
       linux-headers \
       rust \
       cargo \
@@ -133,7 +135,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # Copy in the runtime script, essential.
 COPY ./docker/entrypoint.sh /entrypoint.sh
 
-#
+# Expose ports on the container
 EXPOSE 10086
 WORKDIR $WGDASH/src
 
