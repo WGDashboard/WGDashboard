@@ -47,7 +47,7 @@ jobs:
           platforms: |
             - linux/amd64
             - linux/arm64
-#            - linux/arm/v7
+            - linux/arm/v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -64,7 +64,7 @@ jobs:
             type=ref,event=tag
             type=sha,format=short,prefix=
 
-      - name: Build and export (multi-arch)
+      - name: Build and export (multi-arch) AMD64 & ARM64
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -73,7 +73,20 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
-          #,linux/arm/v7
+
+      - name: replace psycopg binary to c version
+        run: |
+            sed -i "s|psycopg[binary]==3.2.13|psycopg[c]==3.2.13|" ./src/
+
+      - name: Build and export arm/v7
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/arm/v7
 
   docker_scan:
     if: ${{ github.event_name != 'pull_request' }}
