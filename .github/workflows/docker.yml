@@ -76,7 +76,7 @@ jobs:
 
       - name: replace psycopg binary to c version
         run: |
-            sed -i "s|psycopg[binary]==3.2.13|psycopg[c]==3.2.13|" ./src/requirements.txt
+            sed -i "s|psycopg\[binary\]==3.2.13|psycopg\[c\]==3.2.13|" ./src/requirements.txt
 
       - name: Build and export arm/v7
         uses: docker/build-push-action@v6
