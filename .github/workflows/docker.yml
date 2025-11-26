@@ -64,15 +64,15 @@ jobs:
             type=ref,event=tag
             type=sha,format=short,prefix=
 
-#      - name: Build and export (AMD64 & ARM64)
-#        uses: docker/build-push-action@v6
-#        with:
-#          context: .
-#          file: ./docker/Dockerfile
-#          push: ${{ github.event_name != 'pull_request' }}
-#          tags: ${{ steps.meta.outputs.tags }}
-#          labels: ${{ steps.meta.outputs.labels }}
-#          platforms: linux/amd64,linux/arm64
+      - name: Build and export (AMD64 & ARM64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
 
 
       - name: replace psycopg binary to c version for arm/v7
