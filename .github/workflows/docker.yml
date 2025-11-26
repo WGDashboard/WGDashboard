@@ -23,6 +23,12 @@ jobs:
       packages: write
     strategy:
       fail-fast: false
+      matrix:
+        variant:
+          - name: modern
+            arch: linux/amd64,linux/arm64
+          - name: legacy
+            arch: linux/arm/v7
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -44,10 +50,7 @@ jobs:
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
         with:
-          platforms: |
-            - linux/amd64
-            - linux/arm64
-            - linux/arm/v7
+          platforms: ${{ matrix.variant.arch }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -64,22 +67,13 @@ jobs:
             type=ref,event=tag
             type=sha,format=short,prefix=
 
-      - name: Build and export (AMD64 & ARM64)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./docker/Dockerfile
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          platforms: linux/amd64,linux/arm64
-
-
       - name: replace psycopg binary to c version for arm/v7
+        if: ${{ matrix.variant.name == 'legacy' }}
         run: |
+            echo "TUNING PSYCOPG FOR ${{ matrix.variant.name }}"
             sed -i "s|psycopg\[binary\]==3.2.13|psycopg\[c\]==3.2.13|" ./src/requirements.txt
 
-      - name: Build and export arm/v7
+      - name: Build and export Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -87,7 +81,7 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          platforms: linux/arm/v7
+          platforms: ${{ matrix.variant.arch }}
 
   docker_scan:
     if: ${{ github.event_name != 'pull_request' }}
