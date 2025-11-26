@@ -52,7 +52,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Docker meta by docs https://github.com/docker/metadata-action
+      - name: Extract Docker metadata from environment
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -64,7 +64,7 @@ jobs:
             type=ref,event=tag
             type=sha,format=short,prefix=
 
-      - name: Build and export (multi-arch) AMD64 & ARM64
+      - name: Build and export (AMD64 & ARM64)
         uses: docker/build-push-action@v6
         with:
           context: .
