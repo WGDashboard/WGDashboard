@@ -61,16 +61,6 @@ jobs:
             type=ref,event=tag
             type=sha,format=short,prefix=
 
-      - name: replace psycopg binary to c version for arm/v7
-        if: ${{ matrix.variant.name == 'armv7' }}
-        run: |
-            echo "TUNING PSYCOPG FOR ${{ matrix.variant.name }}"
-            sed -i "s|psycopg\[binary\]==3.2.13|psycopg\[c\]==3.2.13|" ./src/requirements.txt
-
-      - name: make dest directory
-        run: |
-            mkdir -p /dist
-
       - name: Build and export Docker image
         uses: docker/build-push-action@v6
         with:
