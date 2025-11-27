@@ -56,6 +56,8 @@ RUN make && chmod +x wg*
 # Use the python-alpine image for building pip dependencies
 FROM python:3.14-alpine AS pip-builder
 
+ARG TARGETPLATFORM
+
 # Add the build dependencies and create a Python virtual environment.
 RUN apk add --no-cache \
       build-base \
@@ -72,6 +74,11 @@ RUN apk add --no-cache \
 
 # Copy the requirements file into the build layer.
 COPY ./src/requirements.txt /opt/wgdashboard/src
+RUN if [ "$TARGETPLATFORM" = "linux/arm/v7" ]; then \
+      sed -i "s|psycopg\[binary\]==3.2.13|psycopg\[c\]==3.2.13|" /opt/wgdashboard/src/requirements.txt; \
+    fi; \
+    cat /opt/wgdashboard/src/requirements.txt
+
 # Install the pip packages
 RUN . /opt/wgdashboard/src/venv/bin/activate && \
     pip3 install --upgrade pip && \
