@@ -73,20 +73,56 @@ jobs:
             echo "TUNING PSYCOPG FOR ${{ matrix.variant.name }}"
             sed -i "s|psycopg\[binary\]==3.2.13|psycopg\[c\]==3.2.13|" ./src/requirements.txt
 
+      - name: make dest directory
+        run: |
+            mkdir -p /dist
+
       - name: Build and export Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./docker/Dockerfile
-          push: ${{ github.event_name != 'pull_request' }}
+          push: false
+          outputs: type=oci,dest=/dist/docker-${{ matrix.variant.name }}.tar
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: ${{ matrix.variant.arch }}
 
+      - name: Upload docker image as artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: docker-image-${{ matrix.variant.name }}
+          path: /dist/docker-${{ matrix.variant.name }}.tar
+  
+  docker_merge:
+    runs-on: ubuntu-latest
+    needs: docker_build
+    steps:
+      - name: Make workspace directory
+        run: mkdir -p /workspace
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: /workspace
+
+      - name: Install unzip
+        run: |
+            apt-get update && apt-get install -y unzip
+
+      - name: List workspace contents
+        run: |
+            cd /workspace
+            for zip in $(find ./ -type f -name "docker*.zip"); do
+              echo "Found zip: $zip";
+              unzip $zip
+            done
+            ls -lah
+
   docker_scan:
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
-    needs: docker_build
+    needs: docker_merger
     steps:
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
