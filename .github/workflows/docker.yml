@@ -84,7 +84,6 @@ jobs:
   docker_scan:
     if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
-    needs: docker_merge
     steps:
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
