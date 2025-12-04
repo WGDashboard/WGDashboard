@@ -22,7 +22,8 @@ ENV CGO_ENABLED=1
 # Change directory
 WORKDIR /workspace/awg
 # Compile the binaries
-RUN go mod download && \
+RUN go version && \
+    go mod download && \
     go mod verify && \
     go build -ldflags '-linkmode external -extldflags "-fno-PIC -static"' -v -o /usr/bin
 #
