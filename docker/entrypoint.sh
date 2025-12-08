@@ -190,8 +190,11 @@ start_and_monitor() {
 
   # Actually starting WGDashboard
   echo "Starting WGDashboard directly with Gunicorn..."
-  cd $WGDASH/src
-  /opt/wgdashboard/src/venv/bin/python3 /opt/wgdashboard/src/venv/bin/gunicorn --config /opt/wgdashboard/src/gunicorn.conf.py
+
+# Debug line if all fails
+#  /bin/bash /opt/wgdashboard/src/wgd.sh start
+
+  /opt/wgdashboard/src/venv/bin/gunicorn --config /opt/wgdashboard/src/gunicorn.conf.py
   if [ $? -ne 0 ]; then
     echo "Loading WGDashboard failed... Look above for details."
   fi
