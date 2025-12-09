@@ -76,7 +76,7 @@ RUN apk add --no-cache \
 # Copy the requirements file into the build layer.
 COPY ./src/requirements.txt /opt/wgdashboard/src
 RUN if [ "$TARGETPLATFORM" = "linux/arm/v7" ]; then \
-      sed -i "s|psycopg\[binary\]==3.2.13|psycopg\[c\]==3.2.13|" /opt/wgdashboard/src/requirements.txt; \
+      sed -i 's|psycopg\[binary\]|psycopg[c]|' /opt/wgdashboard/src/requirements.txt; \
     fi; \
     cat /opt/wgdashboard/src/requirements.txt
 

@@ -22,7 +22,7 @@ set_ini() {
   if grep -q "^[[:space:]]*${key}[[:space:]]*=" "$config_file"; then
     current_value=$(grep "^[[:space:]]*${key}[[:space:]]*=" "$config_file" | cut -d= -f2- | xargs)
 
-    # Don't display actual value if it's a password field
+    # Dont display actual value if it's a password field
     if [[ "$key" == *"password"* ]]; then
       if [ "$current_value" = "$value" ]; then
         echo "- $key is already set correctly (value hidden)"
@@ -180,7 +180,6 @@ set_envvars() {
 
 # Start service and monitor logs
 start_and_monitor() {
-  local logdir="${WGDASH}/src/log"
   printf "\n---------------------- STARTING CORE -----------------------\n"
 
   # Due to some instances complaining about this, making sure its there every time.
@@ -191,34 +190,54 @@ start_and_monitor() {
   # Actually starting WGDashboard
   echo "Starting WGDashboard directly with Gunicorn..."
 
-# Debug line if all fails
-#  /bin/bash /opt/wgdashboard/src/wgd.sh start
-
-  cd ${WGDASH}/src
-  ./venv/bin/gunicorn --config ./gunicorn.conf.py
+  [[ ! -d ${WGDASH}/src/log ]] && mkdir ${WGDASH}/src/log
+  ${WGDASH}/src/venv/bin/gunicorn --config ${WGDASH}/src/gunicorn.conf.py
   if [ $? -ne 0 ]; then
     echo "Loading WGDashboard failed... Look above for details."
   fi
 
   # Wait a second before continuing, to give the python program some time to get ready.
   echo -e "\nEnsuring container continuation."
-  while [[ ! -d $logdir ]]; do
-    echo "Logging directory not yet present..."
-    sleep 1s
+
+  max_rounds="10"
+  round="0"
+
+  # Hang in there for 10s for Gunicorn to get ready
+  while true; do
+    round=$((round + 1))
+    latest_error=$(ls -t ${WGDASH}/src/log/error_*.log 2> /dev/null | head -n 1)
+
+    if [[ $round -eq $max_rounds ]]; then
+      echo "Reached breaking point!"
+      break
+
+    fi
+
+    if [[ -z $latest_error ]]; then
+      echo -e "Logs not yet present! Retrying in 1 second!"
+      sleep 1s
+
+    else
+      break
+
+    fi
+
   done
 
-  # Find and monitor log file
-  latestErrLog=$(find "$logdir" -name "error_*.log" -type f -print | sort -r | head -n 1)
-
-  # Only tail the logs if they are found
-  if [ -n "$latestErrLog" ]; then
-    tail -f "$latestErrLog" &
-    # Wait for the tail process to end.
-    wait $!
-  else
-    echo "No log files found to tail. Something went wrong, exiting..."
+  if [[ -z $latest_error ]]; then
+    echo -e "No error logs founds... Please investigate.\nExiting in 3 minutes..."
+    sleep 180s
     exit 1
+
+  else
+    tail -f "$latest_error" &
+    wait $!
+
   fi
+
+  echo "The blocking command has been broken! Script will exit in 3 minutes... Investigate!"
+  sleep 180s
+  exit 1
 }
 
 # Main execution flow
