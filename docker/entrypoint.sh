@@ -1,6 +1,7 @@
 #!/bin/bash
 
 config_file="/data/wg-dashboard.ini"
+runtime_pid=""
 
 trap 'stop_service' SIGTERM
 
@@ -52,8 +53,33 @@ set_ini() {
 
 stop_service() {
   echo "[WGDashboard] Stopping WGDashboard..."
-  /bin/bash ./wgd.sh stop
+  kill $runtime_pid
   exit 0
+}
+
+grab_pid() {
+  max_rounds="10"
+  round="0"
+
+  while true; do
+    round=$((round + 1))
+
+    if [[ -f ${WGDASH}/src/gunicorn.pid ]]; then
+      runtime_pid=$(cat ${WGDASH}/src/gunicorn.pid)
+
+      echo "Running as PID: ${runtime_pid}"
+      return 0
+    fi
+
+    if [[ $round -eq $max_rounds ]]; then
+      echo "Reached breaking point!"
+      return 1
+
+    fi
+
+    sleep 0.5s
+  done
+
 }
 
 echo "------------------------- START ----------------------------"
@@ -192,6 +218,7 @@ start_and_monitor() {
 
   [[ ! -d ${WGDASH}/src/log ]] && mkdir ${WGDASH}/src/log
   ${WGDASH}/src/venv/bin/gunicorn --config ${WGDASH}/src/gunicorn.conf.py
+
   if [ $? -ne 0 ]; then
     echo "Loading WGDashboard failed... Look above for details."
   fi
@@ -231,8 +258,12 @@ start_and_monitor() {
 
   else
     tail -f "$latest_error" &
-    wait $!
+    tail_pid=$!
 
+    echo "Grabbing PID..."
+    grab_pid &
+
+    wait $tail_pid
   fi
 
   echo "The blocking command has been broken! Script will exit in 3 minutes... Investigate!"
