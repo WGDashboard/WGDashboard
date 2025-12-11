@@ -97,7 +97,7 @@ LABEL maintainer="dselen@nerthus.nl"
 # Install only the runtime dependencies
 RUN apk add --no-cache \
     iproute2 iptables \
-    bash curl procps \
+    bash curl procps openrc \
     tzdata wireguard-tools
 
 # Copy only the final binaries from the AWG builder stages
