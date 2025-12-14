@@ -1,0 +1,8 @@
+[Interface]
+Address = ${wg_net}/24
+PrivateKey =
+PostUp = iptables -t nat -I POSTROUTING 1 -s ${wg_net}/24 -o ${out_adapt} -j MASQUERADE; iptables -I FORWARD -i wg0 -o wg0 -j DROP
+PreDown = iptables -t nat -D POSTROUTING -s ${wg_net}/24 -o ${out_adapt} -j MASQUERADE; iptables -D FORWARD -i wg0 -o wg0 -j DROP
+ListenPort = ${wg_port}
+SaveConfig = true
+DNS = ${global_dns}

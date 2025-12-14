@@ -1,6 +1,6 @@
 {
   "name": "app",
-  "version": "4.3.0.3",
+  "version": "4.3.1",
   "private": true,
   "type": "module",
   "module": "es2022",

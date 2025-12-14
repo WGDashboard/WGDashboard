@@ -3,7 +3,7 @@ import ScheduleDropdown from "@/components/configurationComponents/peerScheduleJ
 import {ref} from "vue";
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
 import {fetchPost} from "@/utilities/fetch.js";
-import VueDatePicker from "@vuepic/vue-datepicker";
+import { VueDatePicker } from "@vuepic/vue-datepicker";
 import dayjs from "dayjs";
 import LocaleText from "@/components/text/localeText.vue";
 

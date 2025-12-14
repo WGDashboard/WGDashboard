@@ -2,7 +2,7 @@
 import dayjs from "dayjs";
 import {fetchPost} from "@/utilities/fetch.js";
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
-import VueDatePicker from "@vuepic/vue-datepicker";
+import { VueDatePicker } from "@vuepic/vue-datepicker";
 import LocaleText from "@/components/text/localeText.vue";
 
 export default {

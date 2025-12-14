@@ -97,5 +97,5 @@ class PeerJobLogger:
     def vacuum(self):
         with self.engine.begin() as conn:
             if conn.dialect.name == 'sqlite':
-                print("[WGDashboard] SQLite Vacuuming PeerJogLogs Database")
+                print("[WGDashboard] SQLite Vacuuming PeerJobLogs Database")
                 conn.execute(db.text('VACUUM;'))

@@ -3,7 +3,7 @@ import {WireguardConfigurationsStore} from "@/stores/WireguardConfigurationsStor
 import {fetchPost} from "@/utilities/fetch.js";
 import dayjs from "dayjs";
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
-import VueDatePicker from '@vuepic/vue-datepicker';
+import { VueDatePicker } from '@vuepic/vue-datepicker';
 import LocaleText from "@/components/text/localeText.vue";
 import PeerShareWithEmail from "@/components/configurationComponents/peerShareLinkComponents/peerShareWithEmail.vue";
 

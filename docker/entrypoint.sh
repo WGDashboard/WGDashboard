@@ -217,7 +217,10 @@ start_and_monitor() {
   echo "Starting WGDashboard directly with Gunicorn..."
 
   [[ ! -d ${WGDASH}/src/log ]] && mkdir ${WGDASH}/src/log
+  [[ ! -d ${WGDASH}/src/download ]] && mkdir ${WGDASH}/src/download
   ${WGDASH}/src/venv/bin/gunicorn --config ${WGDASH}/src/gunicorn.conf.py
+
+  /usr/sbin/resolvconf -u
 
   if [ $? -ne 0 ]; then
     echo "Loading WGDashboard failed... Look above for details."

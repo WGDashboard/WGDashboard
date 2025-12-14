@@ -97,8 +97,9 @@ LABEL maintainer="dselen@nerthus.nl"
 # Install only the runtime dependencies
 RUN apk add --no-cache \
     iproute2 iptables \
-    bash curl procps \
-    tzdata wireguard-tools
+    bash curl procps openrc \
+    tzdata wireguard-tools envsubst
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Copy only the final binaries from the AWG builder stages
 COPY --from=awg-go /usr/bin/amneziawg-go /usr/bin/amneziawg-go
@@ -107,6 +108,7 @@ COPY --from=awg-tools /workspace/awg-tools/src/wg-quick/linux.bash /usr/bin/awg-
 
 # Environment variables
 ARG wg_net="10.0.0.1"
+ARG wg_subn="24"
 ARG wg_port="51820"
 ENV TZ="Europe/Amsterdam" \
     global_dns="9.9.9.9" \
@@ -117,31 +119,22 @@ ENV TZ="Europe/Amsterdam" \
 # Create directories needed for operation
 RUN mkdir /data /configs -p ${WGDASH}/src /etc/amnezia/amneziawg
 
-# Copy the python virtual environment from the pip-builder stage
+# Copy the venv and source files from local compiled locations or repos
 COPY ./src ${WGDASH}/src
 COPY --from=pip-builder /opt/wgdashboard/src/venv /opt/wgdashboard/src/venv
+COPY ./docker/wg0.conf.template /tmp/wg0.conf.template
+# Copy in the runtime script, essential.
+COPY ./docker/entrypoint.sh /entrypoint.sh
 
 # First WireGuard interface template
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-RUN out_adapt=$(ip -o -4 route show to default | awk '{print $NF}') \
-  && echo -e "[Interface]\n\
-Address = ${wg_net}/24\n\
-PrivateKey =\n\
-PostUp = iptables -t nat -I POSTROUTING 1 -s ${wg_net}/24 -o ${out_adapt} -j MASQUERADE\n\
-PostUp = iptables -I FORWARD -i wg0 -o wg0 -j DROP\n\
-PreDown = iptables -t nat -D POSTROUTING -s ${wg_net}/24 -o ${out_adapt} -j MASQUERADE\n\
-PreDown = iptables -D FORWARD -i wg0 -o wg0 -j DROP\n\
-ListenPort = ${wg_port}\n\
-SaveConfig = true\n\
-DNS = ${global_dns}" > /configs/wg0.conf.template \
-  && chmod 600 /configs/wg0.conf.template
+RUN export out_adapt=$(ip -o -4 route show to default | awk '{print $NF}') \
+    && envsubst < /tmp/wg0.conf.template > /configs/wg0.conf.template \
+    && chmod 600 /configs/wg0.conf.template \
+    && cat /configs/wg0.conf.template
 
 # Set a healthcheck to determine the container its health
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD sh -c 'pgrep gunicorn > /dev/null && pgrep tail > /dev/null' || exit 1
-
-# Copy in the runtime script, essential.
-COPY ./docker/entrypoint.sh /entrypoint.sh
 
 # Expose ports on the container
 EXPOSE 10086

@@ -1238,8 +1238,9 @@ def API_ping_getAllPeersIpAddress():
                     ip = ipaddress.ip_network(x, strict=False)
                 except ValueError as e:
                     app.logger.error(f"Failed to parse IP address of {p.id} - {c.Name}")
-                if len(list(ip.hosts())) == 1:
-                    parsed.append(str(ip.hosts()[0]))
+                host = list(ip.hosts())
+                if len(host) == 1:
+                    parsed.append(str(host[0]))
             endpoint = p.endpoint.replace(" ", "").replace("(none)", "")
             if len(p.name) > 0:
                 cips[f"{p.name} - {p.id}"] = {
