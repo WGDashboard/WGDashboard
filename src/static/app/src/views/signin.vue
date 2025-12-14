@@ -172,11 +172,24 @@ export default {
 				<RemoteServerList v-else></RemoteServerList>
 
 				<div class="d-flex mt-3" v-if="!this.store.IsElectronApp">
+					<!-- Left: Client App link -->
+					<a
+						href="/client"
+						class="btn btn-sm btn-outline-secondary"
+					>
+						<i class="bi bi-box-arrow-up-right me-1"></i>
+						<LocaleText t="Client App" />
+					</a>
+
+					<!-- Right: Remote server switch -->
 					<div class="form-check form-switch ms-auto">
 						<input
 							v-model="this.store.CrossServerConfiguration.Enable"
 							:disabled="loading"
-							class="form-check-input" type="checkbox" role="switch" id="flexSwitchCheckChecked">
+							class="form-check-input"
+							type="checkbox"
+							role="switch"
+							id="flexSwitchCheckChecked">
 						<label class="form-check-label" for="flexSwitchCheckChecked">
 							<LocaleText t="Access Remote Server"></LocaleText>
 						</label>
