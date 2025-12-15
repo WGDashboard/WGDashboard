@@ -1,6 +1,7 @@
 #!/bin/bash
 
 config_file="/data/wg-dashboard.ini"
+runtime_pid=""
 
 trap 'stop_service' SIGTERM
 
@@ -52,7 +53,31 @@ set_ini() {
 
 stop_service() {
   echo "[WGDashboard] Stopping WGDashboard..."
-  /bin/bash ./wgd.sh stop
+
+  local max_rounds="10"
+  local round="0"
+  local runtime_pid=""
+
+  while true; do
+    round=$((round + 1))
+
+    if [[ -f ${WGDASH}/src/gunicorn.pid ]]; then
+      runtime_pid=$(cat ${WGDASH}/src/gunicorn.pid)
+
+      echo "Running as PID: ${runtime_pid}"
+      return 0
+    fi
+
+    if [[ $round -eq $max_rounds ]]; then
+      echo "Reached breaking point!"
+      return 1
+
+    fi
+
+    sleep 0.5s
+  done
+
+  kill $runtime_pid
   exit 0
 }
 
@@ -192,9 +217,10 @@ start_and_monitor() {
 
   [[ ! -d ${WGDASH}/src/log ]] && mkdir ${WGDASH}/src/log
   [[ ! -d ${WGDASH}/src/download ]] && mkdir ${WGDASH}/src/download
+
   ${WGDASH}/src/venv/bin/gunicorn --config ${WGDASH}/src/gunicorn.conf.py
 
-  resolvconf -u
+  /usr/sbin/resolvconf -u
 
   if [ $? -ne 0 ]; then
     echo "Loading WGDashboard failed... Look above for details."
@@ -203,13 +229,14 @@ start_and_monitor() {
   # Wait a second before continuing, to give the python program some time to get ready.
   echo -e "\nEnsuring container continuation."
 
-  max_rounds="10"
-  round="0"
+  local max_rounds="10"
+  local round="0"
 
   # Hang in there for 10s for Gunicorn to get ready
   while true; do
     round=$((round + 1))
-    latest_error=$(ls -t ${WGDASH}/src/log/error_*.log 2> /dev/null | head -n 1)
+
+    local latest_error=$(ls -t ${WGDASH}/src/log/error_*.log 2> /dev/null | head -n 1)
 
     if [[ $round -eq $max_rounds ]]; then
       echo "Reached breaking point!"
@@ -235,13 +262,10 @@ start_and_monitor() {
 
   else
     tail -f "$latest_error" &
-    wait $!
+    tail_pid=$!
 
+    wait $tail_pid
   fi
-
-  echo "The blocking command has been broken! Script will exit in 3 minutes... Investigate!"
-  sleep 180s
-  exit 1
 }
 
 # Main execution flow

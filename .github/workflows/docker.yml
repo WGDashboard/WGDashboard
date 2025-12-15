@@ -7,6 +7,9 @@ on:
       - 'main'
     tags:
       - '*'
+    paths:
+      - 'src/**'
+      - 'docker/**'
   release:
     types: [ published ]
 
