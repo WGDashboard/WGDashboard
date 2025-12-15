@@ -478,7 +478,6 @@ class WireguardConfiguration:
             with self.engine.connect() as conn:
                 existingPeers = conn.execute(self.peersTable.select()).mappings().fetchall()
                 for i in existingPeers:
-                    print(i)
                     tmpList.append(Peer(i, self))
         self.Peers = tmpList
     
@@ -784,9 +783,7 @@ class WireguardConfiguration:
                         )
                     ).mappings().fetchone()
                     if cur_i is not None:
-                        # print(cur_i is None)
                         total_sent = cur_i['total_sent']
-                        # print(cur_i is None)
                         total_receive = cur_i['total_receive']
                         cur_total_sent = float(data_usage[i][2]) / (1024 ** 3)
                         cur_total_receive = float(data_usage[i][1]) / (1024 ** 3)
@@ -1227,7 +1224,6 @@ class WireguardConfiguration:
     def __validateOverridePeerSettings(self, key: str, value: str | int) -> tuple[bool, None] | tuple[bool, str]:
         status = True
         msg = None
-        print(value)
         if key == "DNS" and value:
             status, msg = ValidateDNSAddress(value)
         elif key == "EndpointAllowedIPs" and value:
