@@ -404,6 +404,7 @@ class WireguardConfiguration:
                 try:
                     if "[Peer]" not in content:
                         current_app.logger.info(f"{self.Name} config has no [Peer] section")
+                        self.Peers = []
                         return
 
                     peerStarts = content.index("[Peer]")
@@ -477,6 +478,7 @@ class WireguardConfiguration:
             with self.engine.connect() as conn:
                 existingPeers = conn.execute(self.peersTable.select()).mappings().fetchall()
                 for i in existingPeers:
+                    print(i)
                     tmpList.append(Peer(i, self))
         self.Peers = tmpList
     
@@ -665,9 +667,8 @@ class WireguardConfiguration:
 
         if not self.__wgSave():
             return False, "Failed to save configuration through WireGuard"
-
+        self.getRestrictedPeers()
         self.getPeers()
-
         if numOfRestrictedPeers == len(listOfPublicKeys):
             return True, f"Restricted {numOfRestrictedPeers} peer(s)"
         return False, f"Restricted {numOfRestrictedPeers} peer(s) successfully. Failed to restrict {numOfFailedToRestrictPeers} peer(s)"
