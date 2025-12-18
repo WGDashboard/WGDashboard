@@ -194,7 +194,8 @@ def createClientBlueprint(wireguardConfigurations: dict[WireguardConfiguration],
     
     @client.get(prefix)
     def ClientIndex():
-        return render_template('client.html')
+        app_prefix = dashboardConfig.GetConfig("Server", "app_prefix")[1]
+        return render_template('client.html', APP_PREFIX=app_prefix)
     
     @client.get(f'{prefix}/api/serverInformation')
     def ClientAPI_ServerInformation():

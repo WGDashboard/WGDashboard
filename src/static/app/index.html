@@ -6,10 +6,14 @@
 		<meta name="apple-mobile-web-app-capable" content="yes">
 		<meta name="application-name" content="WGDashboard">
 		<meta name="apple-mobile-web-app-title" content="WGDashboard">
-		<link rel="manifest" href="/json/manifest.json">
-		<link rel="icon" href="/img/Logo-2-512x512.png">
+		<base href="{{ APP_PREFIX if APP_PREFIX else '' }}/">
+		<link rel="manifest" href="./json/manifest.json">
+		<link rel="icon" href="./img/Logo-2-512x512.png">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
 		<title>WGDashboard</title>
+		<script>
+			window.APP_PREFIX = "{{ APP_PREFIX if APP_PREFIX else '' }}";
+		</script>
 	</head>
 	<body>
 		<div id="app"></div>
