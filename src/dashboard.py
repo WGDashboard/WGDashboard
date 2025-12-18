@@ -1109,13 +1109,24 @@ def API_GetPeerTraffics():
 @app.get(f'{APP_PREFIX}/api/getPeerTrackingTableCounts')
 def API_GetPeerTrackingTableCounts():
     configurationName = request.args.get("configurationName")
-    if configurationName not in WireguardConfigurations.keys():
+    if configurationName and configurationName not in WireguardConfigurations.keys():
         return ResponseObject(False, "Configuration does not exist")
-    c = WireguardConfigurations.get(configurationName)
-    return ResponseObject(data={
-        "TrafficTrackingTableSize": c.getTransferTableSize(),
-        "HistoricalTrackingTableSize": c.getHistoricalEndpointTableSize()
-    })
+    
+    if configurationName:
+        c = WireguardConfigurations.get(configurationName)
+        return ResponseObject(data={
+            "TrafficTrackingTableSize": c.getTransferTableSize(),
+            "HistoricalTrackingTableSize": c.getHistoricalEndpointTableSize()
+        })
+    
+    d = {}
+    for i in WireguardConfigurations.keys():
+        c = WireguardConfigurations.get(i)
+        d[i] = {
+            "TrafficTrackingTableSize": c.getTransferTableSize(),
+            "HistoricalTrackingTableSize": c.getHistoricalEndpointTableSize()
+        }
+    return ResponseObject(data=d)
 
 @app.get(f'{APP_PREFIX}/api/downloadPeerTrackingTable')
 def API_DownloadPeerTackingTable():
