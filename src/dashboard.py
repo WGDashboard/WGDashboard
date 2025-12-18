@@ -255,7 +255,8 @@ def auth_req():
                 'getDashboardTheme', 'getDashboardVersion', 'sharePeer/get', 'isTotpEnabled', 'locale',
                 '/fileDownload',
                 '/client',
-                '/assets/', '/img/', '/json/'
+                '/assets/', '/img/', '/json/',
+                '/client/assets/', '/client/img/'
             ]
             
             if (("username" not in session or session.get("role") != "admin") 

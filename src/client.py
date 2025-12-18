@@ -4,8 +4,9 @@ from tzlocal import get_localzone
 
 from functools import wraps
 
-from flask import Blueprint, render_template, abort, request, Flask, current_app, session, redirect, url_for
+from flask import Blueprint, render_template, abort, request, Flask, current_app, session, redirect, url_for, send_from_directory
 import os
+import mimetypes
 
 from modules.WireguardConfiguration import WireguardConfiguration
 from modules.DashboardConfig import DashboardConfig
@@ -192,6 +193,14 @@ def createClientBlueprint(wireguardConfigurations: dict[WireguardConfiguration],
             })
         return ResponseObject(status, msg)
     
+    @client.get(f'{prefix}/assets/<path:filename>')
+    @client.get(f'{prefix}/img/<path:filename>')
+    def serve_client_static(filename):
+        client_dist_folder = os.path.abspath("./static/dist/WGDashboardClient")
+        mimetype = mimetypes.guess_type(filename)[0]
+        subfolder = 'assets' if 'assets' in request.path else 'img'
+        return send_from_directory(os.path.join(client_dist_folder, subfolder), os.path.basename(filename), mimetype=mimetype)
+
     @client.get(prefix)
     def ClientIndex():
         app_prefix = dashboardConfig.GetConfig("Server", "app_prefix")[1]
