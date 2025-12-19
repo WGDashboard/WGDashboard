@@ -85,7 +85,8 @@ class DashboardConfig:
                 "enable": "true",
             },
             "WireGuardConfiguration": {
-                "autostart": ""
+                "autostart": "",
+                "peer_tracking": "false"
             }
         }
 

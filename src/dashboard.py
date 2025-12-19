@@ -92,11 +92,13 @@ def peerInformationBackgroundThread():
                             c.getPeersTransfer()
                             c.getPeersEndpoint()
                             c.getPeers()
-                            if delay == 6:
-                                if c.configurationInfo.PeerTrafficTracking:
-                                    c.logPeersTraffic()
-                                if c.configurationInfo.PeerHistoricalEndpointTracking:
-                                    c.logPeersHistoryEndpoint()
+                            if DashboardConfig.GetConfig('WireGuardConfiguration', 'peer_tracking')[1] is True:
+                                print("[WGDashboard] Tracking Peers")
+                                if delay == 6:
+                                    if c.configurationInfo.PeerTrafficTracking:
+                                        c.logPeersTraffic()
+                                    if c.configurationInfo.PeerHistoricalEndpointTracking:
+                                        c.logPeersHistoryEndpoint()
                             c.getRestrictedPeersList()
             except Exception as e:
                 app.logger.error(f"[WGDashboard] Background Thread #1 Error", e)
