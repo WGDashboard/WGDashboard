@@ -96,11 +96,13 @@ def peerInformationBackgroundThread():
                             c.getPeersTransfer()
                             c.getPeersEndpoint()
                             c.getPeers()
-                            if delay == 6:
-                                if c.configurationInfo.PeerTrafficTracking:
-                                    c.logPeersTraffic()
-                                if c.configurationInfo.PeerHistoricalEndpointTracking:
-                                    c.logPeersHistoryEndpoint()
+                            if DashboardConfig.GetConfig('WireGuardConfiguration', 'peer_tracking')[1] is True:
+                                print("[WGDashboard] Tracking Peers")
+                                if delay == 6:
+                                    if c.configurationInfo.PeerTrafficTracking:
+                                        c.logPeersTraffic()
+                                    if c.configurationInfo.PeerHistoricalEndpointTracking:
+                                        c.logPeersHistoryEndpoint()
                             c.getRestrictedPeersList()
             except Exception as e:
                 app.logger.error(f"[WGDashboard] Background Thread #1 Error", e)
@@ -1115,13 +1117,24 @@ def API_GetPeerTraffics():
 @app.get(f'{APP_PREFIX}/api/getPeerTrackingTableCounts')
 def API_GetPeerTrackingTableCounts():
     configurationName = request.args.get("configurationName")
-    if configurationName not in WireguardConfigurations.keys():
+    if configurationName and configurationName not in WireguardConfigurations.keys():
         return ResponseObject(False, "Configuration does not exist")
-    c = WireguardConfigurations.get(configurationName)
-    return ResponseObject(data={
-        "TrafficTrackingTableSize": c.getTransferTableSize(),
-        "HistoricalTrackingTableSize": c.getHistoricalEndpointTableSize()
-    })
+    
+    if configurationName:
+        c = WireguardConfigurations.get(configurationName)
+        return ResponseObject(data={
+            "TrafficTrackingTableSize": c.getTransferTableSize(),
+            "HistoricalTrackingTableSize": c.getHistoricalEndpointTableSize()
+        })
+    
+    d = {}
+    for i in WireguardConfigurations.keys():
+        c = WireguardConfigurations.get(i)
+        d[i] = {
+            "TrafficTrackingTableSize": c.getTransferTableSize(),
+            "HistoricalTrackingTableSize": c.getHistoricalEndpointTableSize()
+        }
+    return ResponseObject(data=d)
 
 @app.get(f'{APP_PREFIX}/api/downloadPeerTrackingTable')
 def API_DownloadPeerTackingTable():

@@ -16,7 +16,7 @@ from .DashboardAPIKey import DashboardAPIKey
 
 
 class DashboardConfig:
-    DashboardVersion = 'v4.3.1'
+    DashboardVersion = 'v4.3.2'
     ConfigurationPath = os.getenv('CONFIGURATION_PATH', '.')
     ConfigurationFilePath = os.path.join(ConfigurationPath, 'wg-dashboard.ini')
     
@@ -85,7 +85,8 @@ class DashboardConfig:
                 "enable": "true",
             },
             "WireGuardConfiguration": {
-                "autostart": ""
+                "autostart": "",
+                "peer_tracking": "false"
             }
         }
 

@@ -176,7 +176,10 @@ export default {
 						<input
 							v-model="this.store.CrossServerConfiguration.Enable"
 							:disabled="loading"
-							class="form-check-input" type="checkbox" role="switch" id="flexSwitchCheckChecked">
+							class="form-check-input"
+							type="checkbox"
+							role="switch"
+							id="flexSwitchCheckChecked">
 						<label class="form-check-label" for="flexSwitchCheckChecked">
 							<LocaleText t="Access Remote Server"></LocaleText>
 						</label>
@@ -184,10 +187,20 @@ export default {
 				</div>
 			</div>
 		</div>
-		<small class="text-muted pb-3 d-block w-100 text-center mt-3">
-			WGDashboard {{ this.version }} | Developed with ❤️ by 
-			<a href="https://github.com/donaldzou" target="_blank"><strong>Donald Zou</strong></a>
-		</small>
+		<div class="d-flex container-fluid align-items-center my-1 w-100">
+			<small class="text-muted">
+				WGDashboard <strong>{{ this.version }}</strong> | Made with ❤️ by
+				<a href="https://github.com/WGDashboard"
+				   class="text-decoration-none text-body"
+				   target="_blank"><strong>WGDashboard</strong></a>
+			</small>
+			<a href="./client" target="_blank"
+			   class="text-decoration-none ms-auto text-body"
+			   style="white-space: nowrap">
+				<small><i class="bi bi-box-arrow-up-right me-1"></i>
+					<LocaleText t="Client App" /></small>
+			</a>
+		</div>
 		<div class="messageCentre text-body position-absolute d-flex">
 			<TransitionGroup name="message" tag="div"
 			                 class="position-relative flex-sm-grow-0 flex-grow-1 d-flex align-items-end ms-sm-auto flex-column gap-2">

@@ -18,10 +18,18 @@ def GetRemoteEndpoint() -> str:
     @return: 
     """
     import socket
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-        s.connect(("1.1.1.1", 80))  # Connecting to a public IP
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("1.1.1.1", 80))  # Connecting to a public IP
         wgd_remote_endpoint = s.getsockname()[0]
         return str(wgd_remote_endpoint)
+    except (socket.error, OSError):
+        pass
+    try:
+        return socket.gethostbyname(socket.gethostname())
+    except (socket.error, OSError):
+        pass
+    return "127.0.0.1"
 
 
 def StringToBoolean(value: str):
