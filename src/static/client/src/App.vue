@@ -2,11 +2,13 @@
 import './assets/main.css'
 import NotificationList from "@/components/Notification/notificationList.vue";
 import {clientStore} from "@/stores/clientStore.js";
+import {axiosGet} from "@/utilities/request.js";
 
 const store = clientStore()
-fetch("/client/api/serverInformation")
-	.then(res => res.json())
-	.then(res => store.serverInformation = res.data)
+const serverInformation = axiosGet("/api/serverInformation", {})
+if (serverInformation){
+	store.serverInformation = serverInformation;
+}
 </script>
 
 <template>

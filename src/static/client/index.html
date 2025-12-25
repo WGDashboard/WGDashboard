@@ -5,6 +5,7 @@
 		<link rel="icon" href="./img/Logo-2-128x128.png">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
 		<title>WGDashboard Client</title>
+        <base href="./client/">
         <style>
             *{
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
@@ -29,19 +30,11 @@
             }
         </style>
 		<script>
-			let appPrefix = "{{ APP_PREFIX if APP_PREFIX else '' }}";
-			if (appPrefix.includes('{' + '{')) {
-				appPrefix = '';
-			}
-			window.APP_PREFIX = appPrefix;
 			const isViteDevMode = document.querySelector('script[src*="@vite/client"]') !== null;
-			const base = document.createElement('base');
-			if (isViteDevMode) {
+			const base = document.querySelector('base');
+			if (base && isViteDevMode) {
 				base.href = '/';
-			} else {
-				base.href = (window.APP_PREFIX || '') + '/client/';
 			}
-			document.head.insertBefore(base, document.head.firstChild);
 		</script>
 	</head>
 	<body>
