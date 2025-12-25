@@ -2,8 +2,11 @@ import axios from "axios";
 import {useRouter} from "vue-router";
 
 export const requestURl = (url) => {
-	return import.meta.env.MODE === 'development' ? '/client' + url
-		: `${window.location.protocol}//${(window.location.host + window.location.pathname + url).replace(/\/\//g, '/')}`
+	if (import.meta.env.MODE === 'development') {
+		return '/client' + url;
+	}
+	const appPrefix = window.APP_PREFIX || '';
+	return `${window.location.protocol}//${window.location.host}${appPrefix}/client${url}`;
 }
 
 // const router = useRouter()

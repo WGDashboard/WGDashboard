@@ -2,7 +2,7 @@
 <html lang="">
 	<head>
 		<meta charset="UTF-8">
-		<link rel="icon" href="/static/dist/WGDashboardClient/img/Logo-2-128x128.png">
+		<link rel="icon" href="./img/Logo-2-128x128.png">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
 		<title>WGDashboard Client</title>
         <style>
@@ -28,16 +28,31 @@
                 }
             }
         </style>
-		<script type="module" crossorigin src="/static/dist/WGDashboardClient/assets/index-C_FweDYM.js"></script>
-		<link rel="stylesheet" crossorigin href="/static/dist/WGDashboardClient/assets/index-CyU4Qwd1.css">
+		<script>
+			let appPrefix = "{{ APP_PREFIX if APP_PREFIX else '' }}";
+			if (appPrefix.includes('{' + '{')) {
+				appPrefix = '';
+			}
+			window.APP_PREFIX = appPrefix;
+			const isViteDevMode = document.querySelector('script[src*="@vite/client"]') !== null;
+			const base = document.createElement('base');
+			if (isViteDevMode) {
+				base.href = '/';
+			} else {
+				base.href = (window.APP_PREFIX || '') + '/client/';
+			}
+			document.head.insertBefore(base, document.head.firstChild);
+		</script>
+		<script type="module" crossorigin src="./assets/index-Cvh_c-yQ.js"></script>
+		<link rel="stylesheet" crossorigin href="./assets/index-TPmsOMhK.css">
 	</head>
 	<body>
 		<div id="app">
             <div id="preloader">
                 <div id="preloader_placeholder">
-                    <img style="width: 100%" src="/static/dist/WGDashboardClient/img/Logo-2-128x128.png" alt="WGDashboard Client" />
+                    <img style="width: 100%" src="./img/Logo-2-128x128.png" alt="WGDashboard Client" />
                 </div>
             </div>
-        </div>
+        </div>
 	</body>
 </html>

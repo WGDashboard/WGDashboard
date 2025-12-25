@@ -6,10 +6,25 @@
 		<meta name="apple-mobile-web-app-capable" content="yes">
 		<meta name="application-name" content="WGDashboard">
 		<meta name="apple-mobile-web-app-title" content="WGDashboard">
-		<link rel="manifest" href="/json/manifest.json">
-		<link rel="icon" href="/img/Logo-2-512x512.png">
+		<link rel="manifest" href="./json/manifest.json">
+		<link rel="icon" href="./img/Logo-2-512x512.png">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
 		<title>WGDashboard</title>
+		<script>
+			let appPrefix = "{{ APP_PREFIX if APP_PREFIX else '' }}";
+			if (appPrefix.includes('{' + '{')) {
+				appPrefix = '';
+			}
+			window.APP_PREFIX = appPrefix;
+			const isViteDevMode = document.querySelector('script[src*="@vite/client"]') !== null;
+			const base = document.createElement('base');
+			if (isViteDevMode) {
+				base.href = '/';
+			} else {
+				base.href = (window.APP_PREFIX || '') + '/';
+			}
+			document.head.insertBefore(base, document.head.firstChild);
+		</script>
 	</head>
 	<body>
 		<div id="app"></div>

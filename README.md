@@ -32,10 +32,10 @@
     <img src="https://opensource.nyc3.cdn.digitaloceanspaces.com/attribution/assets/SVG/DO_Logo_horizontal_blue.svg" width="201px">
   </a>
 </p>
-<p align="center">Monitoring WireGuard is not convenient, in most case, you'll need to login to your server and type <code>wg show</code>. That's why this project is being created, to view and manage all WireGuard configurations in a easy way.</p>
-<p align="center">With all these awesome features, while keeping it <b>easy to install and use</b></p>
+<p align="center">Monitoring WireGuard is not convenient, in most case, you'll need to login to your server and type <code>wg show</code>. That's why this project is being created, to view and manage all WireGuard configurations in an easy way.</p>
+<p align="center">Though all these awesome features are present, we are still striving to make it <b>easy to install and use</b></p>
 
-<p align="center"><b><i>This project is not affiliate to the official WireGuard Project</i></b></p>
+<p align="center"><b><i>This project is not affiliated to the official WireGuard Project</i></b></p>
 
 <h3 align="center">Looking for help or want to chat about this project?</h4>
 <p align="center">

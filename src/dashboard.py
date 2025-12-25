@@ -72,7 +72,11 @@ def ResponseObject(status=True, message=None, data=None, status_code = 200) -> F
 '''
 Flask App
 '''
-app = Flask("WGDashboard", template_folder=os.path.abspath("./static/dist/WGDashboardAdmin"))
+_, APP_PREFIX_INIT = DashboardConfig().GetConfig("Server", "app_prefix")
+app = Flask("WGDashboard",
+            template_folder=os.path.abspath("./static/dist/WGDashboardAdmin"),
+            static_folder=os.path.abspath("./static/dist/WGDashboardAdmin"),
+            static_url_path=APP_PREFIX_INIT if APP_PREFIX_INIT else '')
 
 def peerInformationBackgroundThread():
     global WireguardConfigurations
@@ -252,7 +256,9 @@ def auth_req():
                 '/static/', 'validateAuthentication', 'authenticate', 'getDashboardConfiguration',
                 'getDashboardTheme', 'getDashboardVersion', 'sharePeer/get', 'isTotpEnabled', 'locale',
                 '/fileDownload',
-                '/client'
+                '/client',
+                '/assets/', '/img/', '/json/',
+                '/client/assets/', '/client/img/'
             ]
             
             if (("username" not in session or session.get("role") != "admin") 
@@ -1711,7 +1717,7 @@ Index Page
 
 @app.get(f'{APP_PREFIX}/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html', APP_PREFIX=APP_PREFIX)
 
 if __name__ == "__main__":
     startThreads()
