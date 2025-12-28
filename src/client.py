@@ -54,6 +54,8 @@ def createClientBlueprint(wireguardConfigurations: dict[WireguardConfiguration],
     
     @client.post(f'{prefix}/api/signup')
     def ClientAPI_SignUp():
+        if not dashboardConfig.GetConfig("Clients", "sign_up")[1]:
+            abort(404)
         data = request.get_json()
         status, msg = dashboardClients.SignUp(**data)
         return ResponseObject(status, msg)
@@ -209,7 +211,10 @@ def createClientBlueprint(wireguardConfigurations: dict[WireguardConfiguration],
     @client.get(f'{prefix}/api/serverInformation')
     def ClientAPI_ServerInformation():
         return ResponseObject(data={
-            "ServerTimezone": str(get_localzone())
+            "ServerTimezone": str(get_localzone()),
+            "SignUp": {
+                "enable": dashboardConfig.GetConfig("Clients", "sign_up")[1]
+            }
         })
     
     @client.get(f'{prefix}/api/validateAuthentication')

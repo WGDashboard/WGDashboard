@@ -50,6 +50,11 @@ const router = createRouter({
 })
 router.beforeEach(async (to, from, next) => {
 	const store = clientStore()
+	if (to.path === "/signup" && !store.serverInformation.SignUp.enable){
+		next('/signin')
+		store.newNotification("Sign up is disabled. Please contact administrator for more information", "warning")
+	}
+
 	if (to.path === '/signout'){
 		await axios.get(requestURl('/api/signout')).then(() => {
 			next('/signin')

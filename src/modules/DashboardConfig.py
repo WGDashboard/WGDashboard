@@ -83,6 +83,7 @@ class DashboardConfig:
             },
             "Clients": {
                 "enable": "true",
+                "sign_up": "true"
             },
             "WireGuardConfiguration": {
                 "autostart": "",
