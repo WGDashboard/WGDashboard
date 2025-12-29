@@ -109,10 +109,17 @@ class WireguardConfiguration:
                 self.__parser["Interface"]["Jmax"] = self.Jmax
                 self.__parser["Interface"]["S1"] = self.S1
                 self.__parser["Interface"]["S2"] = self.S2
+                self.__parser["Interface"]["S3"] = self.S3
+                self.__parser["Interface"]["S4"] = self.S4
                 self.__parser["Interface"]["H1"] = self.H1
                 self.__parser["Interface"]["H2"] = self.H2
                 self.__parser["Interface"]["H3"] = self.H3
                 self.__parser["Interface"]["H4"] = self.H4
+                self.__parser["Interface"]["I1"] = self.I1
+                self.__parser["Interface"]["I2"] = self.I2
+                self.__parser["Interface"]["I3"] = self.I3
+                self.__parser["Interface"]["I4"] = self.I4
+                self.__parser["Interface"]["I5"] = self.I5
 
             if "Backup" not in data.keys():
                 self.createDatabase()
@@ -995,7 +1002,7 @@ class WireguardConfiguration:
             original = [l.rstrip("\n") for l in f.readlines()]
             allowEdit = ["Address", "PreUp", "PostUp", "PreDown", "PostDown", "ListenPort", "Table"]
             if self.Protocol == 'awg':
-                allowEdit += ["Jc", "Jmin", "Jmax", "S1", "S2", "H1", "H2", "H3", "H4"]
+                allowEdit += ["Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4", "I1", "I2", "I3", "I4", "I5"]
             start = original.index("[Interface]")
             try:
                 end = original.index("[Peer]")
