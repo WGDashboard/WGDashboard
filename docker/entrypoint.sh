@@ -108,17 +108,31 @@ ensure_installation() {
     mkdir -p /data/db
   fi
 
-  if [ ! -d "${WGDASH}/src/db" ]; then
-    ln -s /data/db "${WGDASH}/src/db"
-  fi
-
   if [ ! -f "${config_file}" ]; then
     echo "Creating wg-dashboard.ini file"
     touch "${config_file}"
   fi
 
-  if [ ! -f "${WGDASH}/src/wg-dashboard.ini" ]; then
-    ln -s "${config_file}" "${WGDASH}/src/wg-dashboard.ini"
+  if [[ ! -L "${WGDASH}/src/db" ]] && [[ -d "${WGDASH}/src/db" ]]; then
+    echo "Removing ${WGDASH}/src/db since its not a symbolic link."
+    rm -rfv "${WGDASH}/src/db"
+  fi
+
+  if [[ -L "${WGDASH}/src/db" ]]; then
+    echo "${WGDASH}/src/db is a symbolic link."
+  else
+    ln -sv /data/db "${WGDASH}/src/db"
+  fi
+
+  if [[ ! -L "${WGDASH}/src/wg-dashboard.ini" ]] && [[ -f "${WGDASH}/src/wg-dashboard.ini" ]]; then
+    echo "Removing ${WGDASH}/src/wg-dashboard.ini since its not a symbolic link."
+    rm -fv "${WGDASH}/src/wg-dashboard.ini"
+  fi
+
+  if [[ -L "${WGDASH}/src/wg-dashboard.ini" ]]; then
+    echo "${WGDASH}/src/wg-dashboard.ini is a symbolic link."
+  else
+    ln -sv "${config_file}" "${WGDASH}/src/wg-dashboard.ini"
   fi
 
   # Setup WireGuard if needed
@@ -207,6 +221,9 @@ set_envvars() {
 start_and_monitor() {
   printf "\n---------------------- STARTING CORE -----------------------\n"
 
+  # Regenerate the resolvconf
+  /usr/sbin/resolvconf -u
+
   # Due to some instances complaining about this, making sure its there every time.
   mkdir -p /dev/net
   mknod /dev/net/tun c 10 200
@@ -219,8 +236,6 @@ start_and_monitor() {
   [[ ! -d ${WGDASH}/src/download ]] && mkdir ${WGDASH}/src/download
 
   ${WGDASH}/src/venv/bin/gunicorn --config ${WGDASH}/src/gunicorn.conf.py
-
-  /usr/sbin/resolvconf -u
 
   if [ $? -ne 0 ]; then
     echo "Loading WGDashboard failed... Look above for details."

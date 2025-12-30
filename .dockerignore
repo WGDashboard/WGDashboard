@@ -3,3 +3,5 @@
 *.md
 tests/
 docs/
+src/db
+src/wg-dashboard.ini

@@ -51,7 +51,7 @@
   You can support via <br>
 </p>
 <p align="center">
-  <a align="center" href="https://github.com/sponsors/donaldzou" target="_blank"><img src="https://img.shields.io/badge/GitHub%20Sponsor-2e9a40?style=for-the-badge&logo=github"></a>
+  <a align="center" href="https://github.com/sponsors/WGDashboard" target="_blank"><img src="https://img.shields.io/badge/GitHub%20Sponsor-2e9a40?style=for-the-badge&logo=github"></a>
   <a align="center" href="https://buymeacoffee.com/donaldzou" target="_blank"><img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-ffdd00?style=for-the-badge&logo=buymeacoffee&logoColor=000000"></a>
   <a align="center" href="https://patreon.com/c/DonaldDonnyZou/membership" target="_blank"><img src="https://img.shields.io/badge/Patreon-000000?style=for-the-badge&logo=patreon&logoColor=ffffff"></a>
 </p>
