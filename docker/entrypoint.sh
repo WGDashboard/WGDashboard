@@ -221,6 +221,9 @@ set_envvars() {
 start_and_monitor() {
   printf "\n---------------------- STARTING CORE -----------------------\n"
 
+  # Regenerate the resolvconf
+  /usr/sbin/resolvconf -u
+
   # Due to some instances complaining about this, making sure its there every time.
   mkdir -p /dev/net
   mknod /dev/net/tun c 10 200
@@ -233,8 +236,6 @@ start_and_monitor() {
   [[ ! -d ${WGDASH}/src/download ]] && mkdir ${WGDASH}/src/download
 
   ${WGDASH}/src/venv/bin/gunicorn --config ${WGDASH}/src/gunicorn.conf.py
-
-  /usr/sbin/resolvconf -u
 
   if [ $? -ne 0 ]; then
     echo "Loading WGDashboard failed... Look above for details."
