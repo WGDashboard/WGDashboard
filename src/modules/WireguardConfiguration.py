@@ -127,9 +127,11 @@ class WireguardConfiguration:
         current_app.logger.info(f"Initialized Configuration: {name}")
         self.__dumpDatabase()
         if self.getAutostartStatus() and not self.getStatus() and startup:
-            a, b = self.toggleConfiguration()
-            print(a, b)
-            current_app.logger.info(f"Autostart Configuration: {name}")
+            status, ext = self.toggleConfiguration()
+            if not status:
+                current_app.logger.error(f"Failed to autostart configuration: {name}. Reason: {ext}")
+            else:
+                current_app.logger.info(f"Autostart Configuration: {name}")
             
         self.configurationInfo: WireguardConfigurationInfo | None = None
         configurationInfoJson = self.readConfigurationInfo()
@@ -848,14 +850,12 @@ class WireguardConfiguration:
             try:
                 check = subprocess.check_output(f"{self.Protocol}-quick down {self.Name}",
                                                 shell=True, stderr=subprocess.STDOUT)
-                print(check.decode())
                 self.removeAutostart()
             except subprocess.CalledProcessError as exc:
                 return False, str(exc.output.strip().decode("utf-8"))
         else:
             try:
                 check = subprocess.check_output(f"{self.Protocol}-quick up {self.Name}", shell=True, stderr=subprocess.STDOUT)
-                print(check.decode())
                 self.addAutostart()
             except subprocess.CalledProcessError as exc:
                 return False, str(exc.output.strip().decode("utf-8"))
