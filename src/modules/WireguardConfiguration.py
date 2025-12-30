@@ -127,7 +127,8 @@ class WireguardConfiguration:
         current_app.logger.info(f"Initialized Configuration: {name}")
         self.__dumpDatabase()
         if self.getAutostartStatus() and not self.getStatus() and startup:
-            self.toggleConfiguration()
+            a, b = self.toggleConfiguration()
+            print(a, b)
             current_app.logger.info(f"Autostart Configuration: {name}")
             
         self.configurationInfo: WireguardConfigurationInfo | None = None
