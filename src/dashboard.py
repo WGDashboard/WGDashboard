@@ -1444,7 +1444,7 @@ def API_Locale_Update():
 
 @app.get(f'{APP_PREFIX}/api/email/ready')
 def API_Email_Ready():
-    return ResponseObject(EmailSender.ready())
+    return ResponseObject(EmailSender.is_ready())
 
 @app.post(f'{APP_PREFIX}/api/email/send')
 def API_Email_Send():

@@ -15,6 +15,8 @@ class EmailSender:
         if not os.path.exists('./attachments'):
             os.mkdir('./attachments')
 
+        self.refresh_vals()
+
     def refresh_vals(self):
         self.Server = self.DashboardConfig.GetConfig("Email", "server")[1]
         self.Port = self.DashboardConfig.GetConfig("Email", "port")[1]
@@ -26,20 +28,22 @@ class EmailSender:
 
         self.SendFrom = self.DashboardConfig.GetConfig("Email", "send_from")[1]
 
+    def is_ready(self) -> bool:
+        self.refresh_vals()
+
         if self.AuthRequired:
-            self.Ready = all([
+            ready = all([
                 self.Server, self.Port, self.Encryption,
                 self.Username, self.Password, self.SendFrom
             ])
         else:
-            self.Ready = all([
+            ready = all([
                 self.Server, self.Port, self.Encryption, self.SendFrom
             ])
+        return ready
 
     def send(self, receiver, subject, body, includeAttachment: bool = False, attachmentName: str = "") -> tuple[bool, str | None]:
-        self.refresh_vals()
-
-        if not self.Ready:
+        if not self.is_ready():
             return False, "SMTP not configured"
 
         message = MIMEMultipart()
