@@ -1342,12 +1342,17 @@ def API_traceroute_execute():
                                   data=json.dumps([x['ip'] for x in result]))
                 d = r.json()
                 for i in range(len(result)):
-                    result[i]['geo'] = d[i]  
+                    result[i]['geo'] = d[i]
+
+                return ResponseObject(data=result)
+
             except Exception as e:
+                app.logger.error(f"Failed to gather the geolocation data: {e}")
                 return ResponseObject(data=result, message="Failed to request IP address geolocation")
-            return ResponseObject(data=result)
-        except Exception as exp:
-            return ResponseObject(False, exp)
+    
+        except Exception as e:
+            app.logger.error(f"Failed to execute the traceroute: {e}")
+            return ResponseObject(data=[], message="Failed to traceroute the given parameter")
     else:
         return ResponseObject(False, "Please provide ipAddress")
 
