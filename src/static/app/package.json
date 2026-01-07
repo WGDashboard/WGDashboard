@@ -29,7 +29,7 @@
     "is-cidr": "^6.0.1",
     "npm": "^11.6.4",
     "ol": "^10.7.0",
-    "pinia": "^3.0.3",
+    "pinia": "^3.0.4",
     "pinia-plugin-persistedstate": "^4.7.1",
     "qrcode": "^1.5.3",
     "qrcodejs": "^1.0.0",
