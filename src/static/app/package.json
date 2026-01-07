@@ -40,7 +40,7 @@
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^6.0.0",
+    "@vitejs/plugin-vue": "^6.0.3",
     "vite": "^7.3.0"
   }
 }
