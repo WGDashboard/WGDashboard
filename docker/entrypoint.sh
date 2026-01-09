@@ -102,33 +102,47 @@ ensure_installation() {
   echo "Removing clear command from wgd.sh for better Docker logging."
   sed -i '/clear/d' ./wgd.sh
 
+  # PERSISTENCE FOR databases directory
   # Create required directories and links
   if [ ! -d "/data/db" ]; then
     echo "Creating database dir"
     mkdir -p /data/db
   fi
 
-  if [ ! -f "${config_file}" ]; then
-    echo "Creating wg-dashboard.ini file"
-    touch "${config_file}"
-  fi
-
   if [[ ! -L "${WGDASH}/src/db" ]] && [[ -d "${WGDASH}/src/db" ]]; then
     echo "Removing ${WGDASH}/src/db since its not a symbolic link."
     rm -rfv "${WGDASH}/src/db"
   fi
-
   if [[ -L "${WGDASH}/src/db" ]]; then
     echo "${WGDASH}/src/db is a symbolic link."
   else
     ln -sv /data/db "${WGDASH}/src/db"
   fi
 
+  # PERSISTENCE FOR wg-dashboard-oidc-providers.json
+  if [ ! -f "/data/wg-dashboard-oidc-providers.json" ]; then
+    echo "Creating wg-dashboard-oidc-providers.json file"
+    touch "/data/wg-dashboard-oidc-providers.json"
+  fi
+  if [[ ! -L "${WGDASH}/src/wg-dashboard-oidc-providers.json" ]] && [[ -f "${WGDASH}/src/wg-dashboard-oidc-providers.json" ]]; then
+    echo "Removing ${WGDASH}/src/wg-dashboard-oidc-providers.json since its not a symbolic link."
+    rm -fv "${WGDASH}/src/wg-dashboard-oidc-providers.json"
+  fi
+  if [[ -L "${WGDASH}/src/wg-dashboard-oidc-providers.json" ]]; then
+    echo "${WGDASH}/src/wg-dashboard-oidc-providers.json is a symbolic link."
+  else
+    ln -sv /data/wg-dashboard-oidc-providers.json "${WGDASH}/src/wg-dashboard-oidc-providers.json"
+  fi
+
+  # PERSISTENCE FOR wg-dashboard.ini
+  if [ ! -f "${config_file}" ]; then
+    echo "Creating wg-dashboard.ini file"
+    touch "${config_file}"
+  fi
   if [[ ! -L "${WGDASH}/src/wg-dashboard.ini" ]] && [[ -f "${WGDASH}/src/wg-dashboard.ini" ]]; then
     echo "Removing ${WGDASH}/src/wg-dashboard.ini since its not a symbolic link."
     rm -fv "${WGDASH}/src/wg-dashboard.ini"
   fi
-
   if [[ -L "${WGDASH}/src/wg-dashboard.ini" ]]; then
     echo "${WGDASH}/src/wg-dashboard.ini is a symbolic link."
   else
