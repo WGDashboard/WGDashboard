@@ -115,6 +115,9 @@ const sendTestEmail = async () => {
 							<select class="form-select rounded-3"
 							        v-model="store.Configuration.Email.encryption"
 							        id="encryption">
+								<option value="IMPLICITTLS">
+									IMPLICIT TLS
+								</option>
 								<option value="STARTTLS">
 									STARTTLS
 								</option>

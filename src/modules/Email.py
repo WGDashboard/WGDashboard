@@ -1,4 +1,5 @@
 import os.path
+import ssl
 import smtplib
 
 # Email libaries
@@ -7,6 +8,8 @@ from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formatdate
+
+from flask import current_app
 
 class EmailSender:
     def __init__(self, DashboardConfig):
@@ -17,7 +20,7 @@ class EmailSender:
 
         self.refresh_vals()
 
-    def refresh_vals(self):
+    def refresh_vals(self) -> None:
         self.Server = self.DashboardConfig.GetConfig("Email", "server")[1]
         self.Port = self.DashboardConfig.GetConfig("Email", "port")[1]
 
@@ -69,12 +72,16 @@ class EmailSender:
 
         smtp = None
         try:
-            smtp = smtplib.SMTP(self.Server, port=int(self.Port))
+            context = ssl.create_default_context()
+            if self.Encryption == "IMPLICITTLS":
+                smtp = smtplib.SMTP_SSL(self.Server, port=int(self.Port), context=context)
+            else:
+                smtp = smtplib.SMTP(self.Server, port=int(self.Port))
             smtp.ehlo()
 
             # Configure SMTP encryption type
             if self.Encryption == "STARTTLS":
-                smtp.starttls()
+                smtp.starttls(context=context)
                 smtp.ehlo()
 
             # Log into the SMTP server if required
@@ -90,4 +97,7 @@ class EmailSender:
 
         finally:
             if smtp:
-                smtp.quit()
+                try:
+                    smtp.quit()
+                except Exception:
+                    pass
