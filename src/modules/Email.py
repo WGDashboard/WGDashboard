@@ -9,8 +9,6 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formatdate
 
-from flask import current_app
-
 class EmailSender:
     def __init__(self, DashboardConfig):
         self.DashboardConfig = DashboardConfig
