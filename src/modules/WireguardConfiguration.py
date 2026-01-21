@@ -791,7 +791,11 @@ class WireguardConfiguration:
                         cur_total_receive = float(data_usage[i][1]) / (1024 ** 3)
                         cumulative_receive = cur_i['cumu_receive'] + total_receive
                         cumulative_sent = cur_i['cumu_sent'] + total_sent
-                        if total_sent <= cur_total_sent and total_receive <= cur_total_receive:
+                        # Allow minor floating-point drift to avoid false rollover.
+                        epsilon_gb = 0.0005  # ~0.5 MB
+                        sent_diff = cur_total_sent - total_sent
+                        recv_diff = cur_total_receive - total_receive
+                        if sent_diff >= -epsilon_gb and recv_diff >= -epsilon_gb:
                             total_sent = cur_total_sent
                             total_receive = cur_total_receive
                         else:
