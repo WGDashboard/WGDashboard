@@ -4,6 +4,8 @@ WGDashboard can run as a non-root service user if you:
 - grant controlled `sudo` access for `wg` and `wg-quick`, and
 - allow read/write access to the WireGuard configuration files.
 
+This guide applies to **Linux systemd hosts**. Windows is not supported for this non-root setup.
+
 This is an advanced setup. Make a backup before changing a live system.
 
 ## 1) Create a service user and group
