@@ -4,6 +4,7 @@ import {fetchPost} from "@/utilities/fetch.js";
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
 import { VueDatePicker } from "@vuepic/vue-datepicker";
 import LocaleText from "@/components/text/localeText.vue";
+import {initSystemThemeWatcher, resolveTheme} from "@/utilities/theme.js";
 
 export default {
 	name: "newDashboardAPIKey",
@@ -22,7 +23,13 @@ export default {
 		return {store};
 	},
 	mounted() {
+		initSystemThemeWatcher();
 		console.log(this.newKeyData.ExpiredAt)
+	},
+	computed: {
+		isDark(){
+			return resolveTheme(this.store.Configuration.Server.dashboard_theme) === "dark"
+		}
 	},
 	
 	methods: {
@@ -79,7 +86,7 @@ export default {
 						preview-format="yyyy-MM-dd HH:mm:ss"
 						:clearable="false"
 						:disabled="this.newKeyData.NeverExpire || this.submitting"
-						:dark="this.store.Configuration.Server.dashboard_theme === 'dark'"
+						:dark="isDark"
 					/>
 				</div>
 				<div class="form-check">

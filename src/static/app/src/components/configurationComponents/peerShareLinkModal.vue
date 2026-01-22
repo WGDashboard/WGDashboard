@@ -6,6 +6,7 @@ import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.
 import { VueDatePicker } from '@vuepic/vue-datepicker';
 import LocaleText from "@/components/text/localeText.vue";
 import PeerShareWithEmail from "@/components/configurationComponents/peerShareLinkComponents/peerShareWithEmail.vue";
+import {initSystemThemeWatcher, resolveTheme} from "@/utilities/theme.js";
 
 
 export default {
@@ -30,7 +31,13 @@ export default {
 		const store = DashboardConfigurationStore();
 		return {store}
 	},
+	computed: {
+		isDark(){
+			return resolveTheme(this.store.Configuration.Server.dashboard_theme) === "dark"
+		}
+	},
 	mounted() {
+		initSystemThemeWatcher();
 		this.dataCopy = JSON.parse(JSON.stringify(this.selectedPeer.ShareLink)).at(0);
 	},
 	watch: {
@@ -155,7 +162,7 @@ export default {
 										format="yyyy-MM-dd HH:mm:ss"
 										preview-format="yyyy-MM-dd HH:mm:ss"
 
-										:dark="this.store.Configuration.Server.dashboard_theme === 'dark'"
+										:dark="isDark"
 									/>
 								</div>
 								<div class="d-flex gap-2 flex-column flex-sm-row">

@@ -3,6 +3,7 @@ import LocaleText from "@/components/text/localeText.vue";
 import {computed, onMounted, reactive, ref, watch} from "vue";
 import CodeEditor from "@/utilities/simple-code-editor/CodeEditor.vue";
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
+import {initSystemThemeWatcher, resolveTheme} from "@/utilities/theme.js";
 const allowedFileType = ref("conf")
 const fileUploader = ref(undefined)
 
@@ -12,8 +13,12 @@ const uploadFiles = reactive({
 })
 
 const dashboardStore = DashboardConfigurationStore();
+const editorTheme = computed(() => {
+	return resolveTheme(dashboardStore.Configuration.Server.dashboard_theme) === "dark" ? "github-dark" : "github";
+});
 
 onMounted(() => {
+	initSystemThemeWatcher();
 	fileUploader.value = document.querySelector("#fileUploader");
 	fileUploader.value.addEventListener("change", (e) => {
 		uploadFiles[allowedFileType.value] = undefined;
@@ -112,7 +117,7 @@ const uploadReady = computed(() => {
 												:read-only="true"
 												:display-language="true"
 												v-model="uploadFiles[t].content"
-												:theme="dashboardStore.Configuration.Server.dashboard_theme === 'dark' ? 'github-dark':'github'"
+												:theme="editorTheme"
 												:languages="[[t, uploadFiles[t].filename]]"
 												width="100%" height="500px">
 											</CodeEditor>

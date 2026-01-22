@@ -2,6 +2,7 @@
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
 import {fetchPost} from "@/utilities/fetch.js";
 import LocaleText from "@/components/text/localeText.vue";
+import {initSystemThemeWatcher, resolveTheme} from "@/utilities/theme.js";
 export default {
 	name: "setup",
 	components: {LocaleText},
@@ -23,12 +24,18 @@ export default {
 		}
 	},
 	computed: {
+		resolvedTheme(){
+			return resolveTheme(this.store.Configuration.Server.dashboard_theme)
+		},
 		goodToSubmit(){
 			return this.setup.username 
 				&& this.setup.newPassword.length >= 8
 				&& this.setup.repeatNewPassword.length >= 8
 				&& this.setup.newPassword === this.setup.repeatNewPassword
 		}
+	},
+	mounted() {
+		initSystemThemeWatcher();
 	},
 	methods: {
 		submit(){
@@ -56,7 +63,7 @@ export default {
 
 <template>
 	<div class="container-fluid login-container-fluid d-flex main pt-5 overflow-scroll" 
-	     :data-bs-theme="this.store.Configuration.Server.dashboard_theme">
+	     :data-bs-theme="resolvedTheme">
 		<div class="m-auto text-body" style="width: 500px">
 			<span class="dashboardLogo display-4">
 				<LocaleText t="Nice to meet you!"></LocaleText>
