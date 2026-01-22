@@ -16,7 +16,7 @@ from .Peer import Peer
 from .PeerJobs import PeerJobs
 from .PeerShareLinks import PeerShareLinks
 from .Utilities import StringToBoolean, GenerateWireguardPublicKey, RegexMatch, ValidateDNSAddress, \
-    ValidateEndpointAllowedIPs
+    ValidateEndpointAllowedIPs, RunCommand
 from .WireguardConfigurationInfo import WireguardConfigurationInfo, PeerGroupsClass
 from .DashboardWebHooks import DashboardWebHooks
 
@@ -67,6 +67,8 @@ class WireguardConfiguration:
         self.engine: sqlalchemy.Engine = sqlalchemy.create_engine(ConnectionString("wgdashboard"))
         self.metadata: sqlalchemy.MetaData = sqlalchemy.MetaData()
         self.dbType = self.DashboardConfig.GetConfig("Database", "type")[1]
+        self._realtime_rate_samples: dict[str, dict] = {}
+        self._realtime_rates: dict[str, dict] = {}
         
         if name is not None:
             if data is not None and "Backup" in data.keys():
@@ -496,6 +498,50 @@ class WireguardConfiguration:
                             "time": datetime.now()
                         })
                     )
+
+    def getPeersDailyUsage(self, peer_ids: list[str], day: datetime.date):
+        if not peer_ids:
+            return {}
+        if not self.configurationInfo.PeerTrafficTracking:
+            return {pid: {"total": 0, "sent": 0, "receive": 0} for pid in peer_ids}
+
+        start = datetime(day.year, day.month, day.day, 0, 0, 0, 0)
+        end = start + timedelta(days=1) - timedelta(microseconds=1)
+
+        total_expr = self.peersTransferTable.c.cumu_data + self.peersTransferTable.c.total_data
+        sent_expr = self.peersTransferTable.c.cumu_sent + self.peersTransferTable.c.total_sent
+        receive_expr = self.peersTransferTable.c.cumu_receive + self.peersTransferTable.c.total_receive
+
+        usage = {pid: {"total": 0, "sent": 0, "receive": 0} for pid in peer_ids}
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                sqlalchemy.select(
+                    self.peersTransferTable.c.id.label("id"),
+                    sqlalchemy.func.max(total_expr).label("max_total"),
+                    sqlalchemy.func.min(total_expr).label("min_total"),
+                    sqlalchemy.func.max(sent_expr).label("max_sent"),
+                    sqlalchemy.func.min(sent_expr).label("min_sent"),
+                    sqlalchemy.func.max(receive_expr).label("max_receive"),
+                    sqlalchemy.func.min(receive_expr).label("min_receive"),
+                ).where(
+                    sqlalchemy.and_(
+                        self.peersTransferTable.c.id.in_(peer_ids),
+                        self.peersTransferTable.c.time >= start,
+                        self.peersTransferTable.c.time <= end,
+                    )
+                ).group_by(
+                    self.peersTransferTable.c.id
+                )
+            ).mappings().fetchall()
+        for row in rows:
+            pid = row["id"]
+            if pid in usage:
+                usage[pid] = {
+                    "total": max((row["max_total"] or 0) - (row["min_total"] or 0), 0),
+                    "sent": max((row["max_sent"] or 0) - (row["min_sent"] or 0), 0),
+                    "receive": max((row["max_receive"] or 0) - (row["min_receive"] or 0), 0),
+                }
+        return usage
     
     def logPeersHistoryEndpoint(self):
         with self.engine.begin() as conn:
@@ -560,12 +606,14 @@ class WireguardConfiguration:
                     with open(uid, "w+") as f:
                         f.write(p['preshared_key'])
 
-                subprocess.check_output(f"{self.Protocol} set {self.Name} peer {p['id']} allowed-ips {p['allowed_ip'].replace(' ', '')}{f' preshared-key {uid}' if presharedKeyExist else ''}",
-                                        shell=True, stderr=subprocess.STDOUT)
+                cmd = [self.Protocol, "set", self.Name, "peer", p['id'], "allowed-ips",
+                       p['allowed_ip'].replace(' ', '')]
+                if presharedKeyExist:
+                    cmd += ["preshared-key", uid]
+                RunCommand(cmd, require_root=True)
                 if presharedKeyExist:
                     os.remove(uid)
-            subprocess.check_output(
-                f"{self.Protocol}-quick save {self.Name}", shell=True, stderr=subprocess.STDOUT)
+            RunCommand([f"{self.Protocol}-quick", "save", self.Name], require_root=True)
             self.getPeers()
             for p in peers:
                 p = self.searchPeer(p['id'])
@@ -615,8 +663,11 @@ class WireguardConfiguration:
                         with open(uid, "w+") as f:
                             f.write(restrictedPeer['preshared_key'])
 
-                    subprocess.check_output(f"{self.Protocol} set {self.Name} peer {restrictedPeer['id']} allowed-ips {restrictedPeer['allowed_ip'].replace(' ', '')}{f' preshared-key {uid}' if presharedKeyExist else ''}",
-                                            shell=True, stderr=subprocess.STDOUT)
+                    cmd = [self.Protocol, "set", self.Name, "peer", restrictedPeer['id'], "allowed-ips",
+                           restrictedPeer['allowed_ip'].replace(' ', '')]
+                    if presharedKeyExist:
+                        cmd += ["preshared-key", uid]
+                    RunCommand(cmd, require_root=True)
                     if presharedKeyExist: os.remove(uid)
                 else:
                     return False, "Failed to allow access of peer " + i
@@ -636,8 +687,7 @@ class WireguardConfiguration:
                 found, pf = self.searchPeer(p)
                 if found:
                     try:
-                        subprocess.check_output(f"{self.Protocol} set {self.Name} peer {pf.id} remove",
-                                                shell=True, stderr=subprocess.STDOUT)
+                        RunCommand([self.Protocol, "set", self.Name, "peer", pf.id, "remove"], require_root=True)
                         conn.execute(
                             self.peersRestrictedTable.insert().from_select(
                                 [c.name for c in self.peersTable.columns],
@@ -688,8 +738,7 @@ class WireguardConfiguration:
                     AllPeerShareLinks.updateLinkExpireDate(shareLink.ShareID, datetime.now())
                 if found:
                     try:
-                        subprocess.check_output(f"{self.Protocol} set {self.Name} peer {pf.id} remove",
-                                                shell=True, stderr=subprocess.STDOUT)
+                        RunCommand([self.Protocol, "set", self.Name, "peer", pf.id, "remove"], require_root=True)
                         conn.execute(
                             self.peersTable.delete().where(
                                 self.peersTable.columns.id == pf.id
@@ -719,7 +768,7 @@ class WireguardConfiguration:
 
     def __wgSave(self) -> tuple[bool, str] | tuple[bool, None]:
         try:
-            subprocess.check_output(f"{self.Protocol}-quick save {self.Name}", shell=True, stderr=subprocess.STDOUT)
+            RunCommand([f"{self.Protocol}-quick", "save", self.Name], require_root=True)
             return True, None
         except subprocess.CalledProcessError as e:
             return False, str(e)
@@ -728,8 +777,7 @@ class WireguardConfiguration:
         if not self.getStatus():
             self.toggleConfiguration()
         try:
-            latestHandshake = subprocess.check_output(f"{self.Protocol} show {self.Name} latest-handshakes",
-                                                      shell=True, stderr=subprocess.STDOUT)
+            latestHandshake = RunCommand([self.Protocol, "show", self.Name, "latest-handshakes"], require_root=True)
         except subprocess.CalledProcessError:
             return "stopped"
         latestHandshake = latestHandshake.decode("UTF-8").split()
@@ -768,8 +816,7 @@ class WireguardConfiguration:
         if not self.getStatus():
             self.toggleConfiguration()
         # try:
-        data_usage = subprocess.check_output(f"{self.Protocol} show {self.Name} transfer",
-                                             shell=True, stderr=subprocess.STDOUT)
+        data_usage = RunCommand([self.Protocol, "show", self.Name, "transfer"], require_root=True)
         data_usage = data_usage.decode("UTF-8").split("\n")
         
         data_usage = [p.split("\t") for p in data_usage]
@@ -791,7 +838,11 @@ class WireguardConfiguration:
                         cur_total_receive = float(data_usage[i][1]) / (1024 ** 3)
                         cumulative_receive = cur_i['cumu_receive'] + total_receive
                         cumulative_sent = cur_i['cumu_sent'] + total_sent
-                        if total_sent <= cur_total_sent and total_receive <= cur_total_receive:
+                        # Allow minor floating-point drift to avoid false rollover.
+                        epsilon_gb = 0.0005  # ~0.5 MB
+                        sent_diff = cur_total_sent - total_sent
+                        recv_diff = cur_total_receive - total_receive
+                        if sent_diff >= -epsilon_gb and recv_diff >= -epsilon_gb:
                             total_sent = cur_total_sent
                             total_receive = cur_total_receive
                         else:
@@ -821,13 +872,54 @@ class WireguardConfiguration:
                                 )
 
             
+    def getPeersRealtimeRates(self):
+        if not self.getStatus():
+            self.toggleConfiguration()
+        try:
+            data_usage = RunCommand([self.Protocol, "show", self.Name, "transfer"], require_root=True)
+        except subprocess.CalledProcessError:
+            return {}
+        now = time.time()
+        data_usage = data_usage.decode("UTF-8").split("\n")
+        data_usage = [p.split("\t") for p in data_usage]
+        rates = {}
+        for row in data_usage:
+            if len(row) == 3:
+                peer_id = row[0]
+                recv_bytes = float(row[1])
+                sent_bytes = float(row[2])
+                last = self._realtime_rate_samples.get(peer_id)
+                sent_bps = 0.0
+                recv_bps = 0.0
+                if last:
+                    dt = now - last.get("ts", now)
+                    if dt > 0:
+                        sent_delta = sent_bytes - last.get("sent", sent_bytes)
+                        recv_delta = recv_bytes - last.get("recv", recv_bytes)
+                        if sent_delta < 0:
+                            sent_delta = 0
+                        if recv_delta < 0:
+                            recv_delta = 0
+                        sent_bps = sent_delta / dt
+                        recv_bps = recv_delta / dt
+                rates[peer_id] = {
+                    "sent_bps": sent_bps,
+                    "recv_bps": recv_bps,
+                    "updated_at": now
+                }
+                self._realtime_rate_samples[peer_id] = {
+                    "sent": sent_bytes,
+                    "recv": recv_bytes,
+                    "ts": now
+                }
+        self._realtime_rates = rates
+        return rates
 
     def getPeersEndpoint(self):
         if not self.getStatus():
             self.toggleConfiguration()
         try:
-            data_usage = subprocess.check_output(f"{self.Protocol} show {self.Name} endpoints",
-                                                 shell=True, stderr=subprocess.STDOUT)
+            data_usage = RunCommand([self.Protocol, "show", self.Name, "endpoints"], require_root=True)
         except subprocess.CalledProcessError:
             return "stopped"
         data_usage = data_usage.decode("UTF-8").split()
@@ -847,14 +939,13 @@ class WireguardConfiguration:
         self.getStatus()
         if self.Status:
             try:
-                check = subprocess.check_output(f"{self.Protocol}-quick down {self.Name}",
-                                                shell=True, stderr=subprocess.STDOUT)
+                check = RunCommand([f"{self.Protocol}-quick", "down", self.Name], require_root=True)
                 self.removeAutostart()
             except subprocess.CalledProcessError as exc:
                 return False, str(exc.output.strip().decode("utf-8"))
         else:
             try:
-                check = subprocess.check_output(f"{self.Protocol}-quick up {self.Name}", shell=True, stderr=subprocess.STDOUT)
+                check = RunCommand([f"{self.Protocol}-quick", "up", self.Name], require_root=True)
                 self.addAutostart()
             except subprocess.CalledProcessError as exc:
                 return False, str(exc.output.strip().decode("utf-8"))

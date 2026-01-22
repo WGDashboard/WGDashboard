@@ -1,4 +1,4 @@
-import re, ipaddress
+import re, ipaddress, os, shutil
 import subprocess
 
 
@@ -68,18 +68,25 @@ def ValidateEndpointAllowedIPs(IPs) -> tuple[bool, str] | tuple[bool, None]:
             return False, str(e)
     return True, None
 
+def RunCommand(cmd: list[str], input_data: bytes | None = None, require_root: bool = False) -> bytes:
+    exe = shutil.which(cmd[0]) if not os.path.isabs(cmd[0]) else cmd[0]
+    if exe:
+        cmd = [exe] + cmd[1:]
+    if require_root and os.geteuid() != 0:
+        sudo_path = shutil.which("sudo") or "/usr/sbin/sudo"
+        cmd = [sudo_path, "--non-interactive"] + cmd
+    return subprocess.check_output(cmd, input=input_data, stderr=subprocess.STDOUT)
+
 def GenerateWireguardPublicKey(privateKey: str) -> tuple[bool, str] | tuple[bool, None]:
     try:
-        publicKey = subprocess.check_output(f"wg pubkey", input=privateKey.encode(), shell=True,
-                                            stderr=subprocess.STDOUT)
+        publicKey = RunCommand(["wg", "pubkey"], input_data=privateKey.encode())
         return True, publicKey.decode().strip('\n')
     except subprocess.CalledProcessError:
         return False, None
     
 def GenerateWireguardPrivateKey() -> tuple[bool, str] | tuple[bool, None]:
     try:
-        publicKey = subprocess.check_output(f"wg genkey", shell=True,
-                                            stderr=subprocess.STDOUT)
+        publicKey = RunCommand(["wg", "genkey"])
         return True, publicKey.decode().strip('\n')
     except subprocess.CalledProcessError:
         return False, None

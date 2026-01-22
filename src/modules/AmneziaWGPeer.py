@@ -5,7 +5,7 @@ import subprocess
 import uuid
 
 from .Peer import Peer
-from .Utilities import ValidateIPAddressesWithRange, ValidateDNSAddress, GenerateWireguardPublicKey
+from .Utilities import ValidateIPAddressesWithRange, ValidateDNSAddress, GenerateWireguardPublicKey, RunCommand
 
 
 class AmneziaWGPeer(Peer):
@@ -58,16 +58,16 @@ class AmneziaWGPeer(Peer):
                 with open(uid, "w+") as f:
                     f.write(preshared_key)
             newAllowedIPs = allowed_ip.replace(" ", "")
-            updateAllowedIp = subprocess.check_output(
-                f"{self.configuration.Protocol} set {self.configuration.Name} peer {self.id} allowed-ips {newAllowedIPs} {f'preshared-key {uid}' if pskExist else 'preshared-key /dev/null'}",
-                shell=True, stderr=subprocess.STDOUT)
+            cmd = [self.configuration.Protocol, "set", self.configuration.Name, "peer", self.id, "allowed-ips",
+                   newAllowedIPs, "preshared-key", (uid if pskExist else "/dev/null")]
+            updateAllowedIp = RunCommand(cmd, require_root=True)
 
             if pskExist: os.remove(uid)
 
             if len(updateAllowedIp.decode().strip("\n")) != 0:
                 return False, "Update peer failed when updating Allowed IPs"
-            saveConfig = subprocess.check_output(f"{self.configuration.Protocol}-quick save {self.configuration.Name}",
-                                                 shell=True, stderr=subprocess.STDOUT)
+            saveConfig = RunCommand([f"{self.configuration.Protocol}-quick", "save", self.configuration.Name],
+                                    require_root=True)
             if f"wg showconf {self.configuration.Name}" not in saveConfig.decode().strip('\n'):
                 return False, "Update peer failed when saving the configuration"
 
