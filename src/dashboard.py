@@ -1621,6 +1621,42 @@ def API_Clients_AssignedPeers():
         return ResponseObject(False, "Client does not exist")
     return ResponseObject(data=d)
 
+@app.get(f'{APP_PREFIX}/api/clients/realtimeUsage')
+def API_Clients_RealtimeUsage():
+    data = request.args
+    clientId = data.get("ClientID")
+    if not clientId:
+        return ResponseObject(False, "Please provide ClientID")
+    if not DashboardClients.GetClient(clientId):
+        return ResponseObject(False, "Client does not exist")
+    assigned = DashboardClients.GetClientAssignedPeers(clientId)
+    if assigned is None:
+        return ResponseObject(False, "Client does not exist")
+
+    total_sent = 0.0
+    total_recv = 0.0
+    assignments_by_config = {}
+    for peer in assigned:
+        assignments_by_config.setdefault(peer.get("configuration_name"), []).append(peer.get("id"))
+
+    for configuration_name, peer_ids in assignments_by_config.items():
+        configuration = WireguardConfigurations.get(configuration_name)
+        if not configuration:
+            continue
+        peer_rates = configuration.getPeersRealtimeRates()
+        for peer_id in peer_ids:
+            rate = peer_rates.get(peer_id)
+            if not rate:
+                continue
+            total_sent += float(rate.get("sent_bps", 0))
+            total_recv += float(rate.get("recv_bps", 0))
+
+    return ResponseObject(data={
+        "sent_bps": total_sent,
+        "recv_bps": total_recv,
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    })
+
 @app.post(f'{APP_PREFIX}/api/clients/generatePasswordResetLink')
 def API_Clients_GeneratePasswordResetLink():
     data = request.get_json()
