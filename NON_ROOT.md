@@ -37,11 +37,18 @@ sudo chmod 0600 /etc/wireguard/*.key
 
 ## 3) Sudoers allowlist (required)
 
-Create `/etc/sudoers.d/wgdashboard`:
+Determine the actual binary paths on your system:
+
+```
+command -v wg
+command -v wg-quick
+```
+
+Create `/etc/sudoers.d/wgdashboard` using those exact paths:
 
 ```
 Defaults:wgdashboard !requiretty
-wgdashboard ALL=(root) NOPASSWD: /usr/sbin/wg, /usr/sbin/wg-quick
+wgdashboard ALL=(root) NOPASSWD: /path/to/wg, /path/to/wg-quick
 ```
 
 Validate:
@@ -56,6 +63,8 @@ Create `/etc/systemd/system/wg-dashboard.service.d/override.conf`:
 
 ```
 [Service]
+Type=simple
+PIDFile=
 User=wgdashboard
 Group=wgdashboard
 SupplementaryGroups=wireguard
@@ -85,4 +94,3 @@ curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:10819/
 - WGDashboard executes `wg` and `wg-quick`. This requires sudo when running as non-root.
 - If you use AmneziaWG, ensure the corresponding binaries are available.
 - If you use SELinux/AppArmor, add policy exceptions as needed.
-
