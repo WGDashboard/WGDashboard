@@ -23,6 +23,8 @@ import PeersDefaultSettingsInput from "@/components/settingsComponent/peersDefau
 					<PeersDefaultSettingsInput
 						targetData="peer_keep_alive" title="Persistent Keepalive"></PeersDefaultSettingsInput>
 					<PeersDefaultSettingsInput
+						targetData="peer_preshared_key_default" title="Pre-Shared Key Default"></PeersDefaultSettingsInput>
+					<PeersDefaultSettingsInput
 						targetData="remote_endpoint" title="Peer Remote Endpoint"
 						:warning="true" warningText="This will be changed globally, and will be apply to all peer's QR code and configuration file."
 					></PeersDefaultSettingsInput>
