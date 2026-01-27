@@ -438,5 +438,21 @@
 	"Assign successfully!": "",
 	"Sessions": "",
 	"Data": "",
-	"Back": ""
+	"Back": "",
+	"Dashboard Transfer": "",
+	"Export Transfer File": "",
+	"Import Transfer File": "",
+	"Export includes database and selected configuration files.": "",
+	"Import will overwrite existing data.": "",
+	"Select a transfer file (.zip)": "",
+	"Include WGDashboard Config": "",
+	"Include WireGuard Configurations": "",
+	"Include AmneziaWG Configurations": "",
+	"Apply WGDashboard Config on Import": "",
+	"Import WireGuard Configurations": "",
+	"Import AmneziaWG Configurations": "",
+	"Exporting...": "",
+	"Importing...": "",
+	"Export": "",
+	"Import": ""
 }

@@ -1,5 +1,6 @@
 import logging
-import random, shutil, sqlite3, configparser, hashlib, ipaddress, json, os, secrets, subprocess
+from io import TextIOWrapper
+import base64, random, shutil, sqlite3, configparser, hashlib, ipaddress, json, os, secrets, subprocess
 import time, re, uuid, bcrypt, psutil, pyotp, threading
 import traceback
 from uuid import uuid4
@@ -7,6 +8,7 @@ from zipfile import ZipFile
 from datetime import datetime, timedelta
 
 import sqlalchemy
+from sqlalchemy.schema import CreateTable, CreateIndex
 from jinja2 import Template
 from flask import Flask, request, render_template, session, send_file
 from flask_cors import CORS
@@ -68,6 +70,101 @@ def ResponseObject(status=True, message=None, data=None, status_code = 200) -> F
     response.status_code = status_code
     response.content_type = "application/json"
     return response
+
+def _transfer_dir(name: str) -> str:
+    base = DashboardConfig.ConfigurationPath
+    path = os.path.join(base, name)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+def _normalize_sql(stmt: str) -> str:
+    return " ".join(stmt.strip().splitlines())
+
+def _iter_database_dump(engine, db_type: str):
+    metadata = sqlalchemy.MetaData()
+    metadata.reflect(bind=engine)
+    if db_type == "mysql":
+        yield "SET FOREIGN_KEY_CHECKS=0"
+    elif db_type == "sqlite":
+        yield "PRAGMA foreign_keys=OFF"
+    elif db_type == "postgresql":
+        yield "SET session_replication_role = replica"
+
+    for table in metadata.sorted_tables:
+        yield _normalize_sql(str(CreateTable(table).compile(dialect=engine.dialect)))
+        for index in table.indexes:
+            yield _normalize_sql(str(CreateIndex(index).compile(dialect=engine.dialect)))
+
+    with engine.connect() as conn:
+        for table in metadata.sorted_tables:
+            result = conn.execute(table.select())
+            for row in result.mappings():
+                insert_stmt = table.insert().values(dict(row))
+                compiled = insert_stmt.compile(dialect=engine.dialect, compile_kwargs={"literal_binds": True})
+                yield _normalize_sql(str(compiled))
+
+    if db_type == "mysql":
+        yield "SET FOREIGN_KEY_CHECKS=1"
+    elif db_type == "sqlite":
+        yield "PRAGMA foreign_keys=ON"
+    elif db_type == "postgresql":
+        yield "SET session_replication_role = DEFAULT"
+
+def _write_database_dump(engine, db_type: str, output_path: str):
+    with open(output_path, "w") as f:
+        for stmt in _iter_database_dump(engine, db_type):
+            if stmt:
+                f.write(stmt + "\n")
+
+def _zip_add_config_files(zip_file: ZipFile, prefix: str, target_dir: str):
+    if not os.path.isdir(target_dir):
+        return
+    for entry in os.listdir(target_dir):
+        if not entry.endswith(".conf"):
+            continue
+        full_path = os.path.join(target_dir, entry)
+        if os.path.isfile(full_path):
+            zip_file.write(full_path, f"{prefix}/{entry}")
+
+def _zip_relative_name(entry_name: str, prefix: str) -> str | None:
+    if not entry_name.startswith(prefix):
+        return None
+    relative = entry_name[len(prefix):]
+    if not relative or relative.endswith("/"):
+        return None
+    if "/" in relative or "\\" in relative:
+        return None
+    if ".." in relative:
+        return None
+    return relative
+
+def _import_database_dump_from_zip(zip_file: ZipFile, sql_path: str):
+    metadata = sqlalchemy.MetaData()
+    metadata.reflect(bind=DashboardConfig.engine)
+    metadata.drop_all(bind=DashboardConfig.engine)
+    with DashboardConfig.engine.begin() as conn:
+        with zip_file.open(sql_path) as f:
+            for line in TextIOWrapper(f, encoding="utf-8"):
+                statement = line.strip()
+                if statement:
+                    conn.exec_driver_sql(statement)
+
+def _import_configs_from_zip(zip_file: ZipFile, prefix: str, target_dir: str):
+    if not os.path.isdir(target_dir):
+        os.makedirs(target_dir, exist_ok=True)
+    for entry in zip_file.namelist():
+        relative = _zip_relative_name(entry, prefix)
+        if not relative or not relative.endswith(".conf"):
+            continue
+        target = os.path.join(target_dir, relative)
+        with zip_file.open(entry) as src, open(target, "wb") as dst:
+            shutil.copyfileobj(src, dst)
+
+def _dir_writable(path: str) -> bool:
+    if os.path.isdir(path):
+        return os.access(path, os.W_OK)
+    parent = os.path.dirname(path.rstrip(os.sep)) or "."
+    return os.path.isdir(parent) and os.access(parent, os.W_OK)
 
 '''
 Flask App
@@ -628,6 +725,119 @@ def API_restoreWireguardConfigurationBackup():
 @app.get(f'{APP_PREFIX}/api/getDashboardConfiguration')
 def API_getDashboardConfiguration():
     return ResponseObject(data=DashboardConfig.toJson())
+
+@app.post(f'{APP_PREFIX}/api/transfer/export')
+def API_transferExport():
+    data = request.get_json(silent=True) or {}
+    include_dashboard_config = bool(data.get("includeDashboardConfig", False))
+    include_wg = bool(data.get("includeWireguardConfigs", True))
+    include_awg = bool(data.get("includeAmneziaConfigs", True))
+    db_type = DashboardConfig.GetConfig("Database", "type")[1]
+
+    download_dir = _transfer_dir("download")
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    zip_name = f"wgdashboard-transfer-{timestamp}-{uuid4().hex}.zip"
+    zip_path = os.path.join(download_dir, zip_name)
+    tmp_sql = os.path.join(download_dir, f"wgdashboard-transfer-{uuid4().hex}.sql")
+
+    try:
+        _write_database_dump(DashboardConfig.engine, db_type, tmp_sql)
+        with ZipFile(zip_path, "w") as zip_file:
+            meta = {
+                "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "dashboard_version": DashboardConfig.DashboardVersion,
+                "db_type": db_type,
+                "include_dashboard_config": include_dashboard_config,
+                "include_wireguard_configs": include_wg,
+                "include_amnezia_configs": include_awg
+            }
+            zip_file.writestr("meta.json", json.dumps(meta, indent=2))
+            zip_file.write(tmp_sql, "database/wgdashboard.sql")
+
+            if include_dashboard_config and os.path.isfile(DashboardConfig.ConfigurationFilePath):
+                zip_file.write(DashboardConfig.ConfigurationFilePath, "config/wg-dashboard.ini")
+
+            if include_wg:
+                _zip_add_config_files(zip_file, "wg", DashboardConfig.GetConfig("Server", "wg_conf_path")[1])
+            if include_awg:
+                _zip_add_config_files(zip_file, "awg", DashboardConfig.GetConfig("Server", "awg_conf_path")[1])
+    except Exception:
+        app.logger.error("Transfer export failed", exc_info=True)
+        return ResponseObject(False, "Export failed")
+    finally:
+        if os.path.exists(tmp_sql):
+            os.remove(tmp_sql)
+
+    return ResponseObject(data=zip_name)
+
+@app.post(f'{APP_PREFIX}/api/transfer/import')
+def API_transferImport():
+    data = request.get_json(silent=True) or {}
+    payload = data.get("file")
+    apply_dashboard_config = bool(data.get("applyDashboardConfig", False))
+    import_wg = bool(data.get("importWireguardConfigs", True))
+    import_awg = bool(data.get("importAmneziaConfigs", True))
+    warnings = []
+
+    if not payload:
+        return ResponseObject(False, "Please provide a transfer file")
+
+    if "base64," in payload:
+        payload = payload.split("base64,", 1)[1]
+
+    try:
+        content = base64.b64decode(payload)
+    except Exception:
+        return ResponseObject(False, "Invalid transfer file")
+
+    import_dir = _transfer_dir("import")
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    zip_path = os.path.join(import_dir, f"wgdashboard-transfer-{timestamp}-{uuid4().hex}.zip")
+
+    try:
+        with open(zip_path, "wb") as f:
+            f.write(content)
+
+        with ZipFile(zip_path, "r") as zip_file:
+            if "meta.json" not in zip_file.namelist():
+                return ResponseObject(False, "Transfer metadata missing")
+            meta = json.loads(zip_file.read("meta.json").decode("utf-8"))
+            db_type = DashboardConfig.GetConfig("Database", "type")[1]
+            if meta.get("db_type") and meta.get("db_type") != db_type:
+                return ResponseObject(False, "Database type mismatch")
+            if "database/wgdashboard.sql" not in zip_file.namelist():
+                return ResponseObject(False, "Database dump missing")
+
+            _import_database_dump_from_zip(zip_file, "database/wgdashboard.sql")
+
+            if import_wg:
+                wg_path = DashboardConfig.GetConfig("Server", "wg_conf_path")[1]
+                if not _dir_writable(wg_path):
+                    return ResponseObject(False, f"WireGuard path not writable: {wg_path}")
+                _import_configs_from_zip(zip_file, "wg/", wg_path)
+            if import_awg:
+                awg_path = DashboardConfig.GetConfig("Server", "awg_conf_path")[1]
+                if not os.path.isdir(awg_path):
+                    warnings.append(f"AmneziaWG path not found; skipped: {awg_path}")
+                elif not _dir_writable(awg_path):
+                    warnings.append(f"AmneziaWG path not writable; skipped: {awg_path}")
+                else:
+                    _import_configs_from_zip(zip_file, "awg/", awg_path)
+            if apply_dashboard_config and "config/wg-dashboard.ini" in zip_file.namelist():
+                with zip_file.open("config/wg-dashboard.ini") as src, open(DashboardConfig.ConfigurationFilePath, "wb") as dst:
+                    shutil.copyfileobj(src, dst)
+    except Exception:
+        app.logger.error("Transfer import failed", exc_info=True)
+        return ResponseObject(False, "Import failed")
+    finally:
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+
+    InitWireguardConfigurationsList()
+    if warnings:
+        return ResponseObject(True, "Import completed with warnings. A restart may be required to reload settings.",
+                              data={"warnings": warnings})
+    return ResponseObject(True, "Import completed. A restart may be required to reload settings.")
 
 @app.post(f'{APP_PREFIX}/api/updateDashboardConfigurationItem')
 def API_updateDashboardConfigurationItem():
@@ -1215,8 +1425,10 @@ def API_download():
     file = request.args.get('file')
     if file is None or len(file) == 0:
         return ResponseObject(False, "Please specify a file")
-    if os.path.exists(os.path.join('download', file)):
-        return send_file(os.path.join('download', file), as_attachment=True)
+    download_dir = _transfer_dir("download")
+    target = os.path.join(download_dir, file)
+    if os.path.exists(target):
+        return send_file(target, as_attachment=True)
     else:
         return ResponseObject(False, "File does not exist")
 

@@ -973,7 +973,9 @@ class WireguardConfiguration:
         if len(backup) == 0:
             return False, None
         zip = f'{str(uuid.UUID(int=random.Random().getrandbits(128), version=4))}.zip'
-        with ZipFile(os.path.join('download', zip), 'w') as zipF:
+        download_dir = os.path.join(self.DashboardConfig.ConfigurationPath, 'download')
+        os.makedirs(download_dir, exist_ok=True)
+        with ZipFile(os.path.join(download_dir, zip), 'w') as zipF:
             zipF.write(
                 os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', backup[0]['filename']),
                 os.path.basename(os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', backup[0]['filename']))
