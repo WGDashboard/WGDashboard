@@ -77,6 +77,7 @@ class AmneziaWireguardConfiguration(WireguardConfiguration):
             sqlalchemy.Column('advanced_security', sqlalchemy.String(255)),
             sqlalchemy.Column('endpoint_allowed_ip', sqlalchemy.Text),
             sqlalchemy.Column('name', sqlalchemy.Text),
+            sqlalchemy.Column('notes', sqlalchemy.Text),
             sqlalchemy.Column('total_receive', sqlalchemy.Float),
             sqlalchemy.Column('total_sent', sqlalchemy.Float),
             sqlalchemy.Column('total_data', sqlalchemy.Float),
@@ -101,6 +102,7 @@ class AmneziaWireguardConfiguration(WireguardConfiguration):
             sqlalchemy.Column('advanced_security', sqlalchemy.String(255)),
             sqlalchemy.Column('endpoint_allowed_ip', sqlalchemy.Text),
             sqlalchemy.Column('name', sqlalchemy.Text),
+            sqlalchemy.Column('notes', sqlalchemy.Text),
             sqlalchemy.Column('total_receive', sqlalchemy.Float),
             sqlalchemy.Column('total_sent', sqlalchemy.Float),
             sqlalchemy.Column('total_data', sqlalchemy.Float),
@@ -138,6 +140,7 @@ class AmneziaWireguardConfiguration(WireguardConfiguration):
             sqlalchemy.Column('advanced_security', sqlalchemy.String(255)),
             sqlalchemy.Column('endpoint_allowed_ip', sqlalchemy.Text),
             sqlalchemy.Column('name', sqlalchemy.Text),
+            sqlalchemy.Column('notes', sqlalchemy.Text),
             sqlalchemy.Column('total_receive', sqlalchemy.Float),
             sqlalchemy.Column('total_sent', sqlalchemy.Float),
             sqlalchemy.Column('total_data', sqlalchemy.Float),
@@ -171,6 +174,22 @@ class AmneziaWireguardConfiguration(WireguardConfiguration):
         )
 
         self.metadata.create_all(self.engine)
+        self.__ensurePeerNotesColumn()
+
+    def __ensurePeerNotesColumn(self):
+        targets = [self.Name, f'{self.Name}_restrict_access', f'{self.Name}_deleted']
+        inspector = sqlalchemy.inspect(self.engine)
+        existing_tables = set(inspector.get_table_names())
+        safe_name = re.compile(r'^[A-Za-z0-9_-]+$')
+        with self.engine.begin() as conn:
+            for table_name in targets:
+                if table_name not in existing_tables:
+                    continue
+                if not safe_name.match(table_name):
+                    continue
+                cols = [c["name"] for c in inspector.get_columns(table_name)]
+                if "notes" not in cols:
+                    conn.execute(sqlalchemy.text(f'ALTER TABLE `{table_name}` ADD COLUMN notes TEXT'))
 
     def getPeers(self):
         self.Peers.clear()        
@@ -217,6 +236,7 @@ class AmneziaWireguardConfiguration(WireguardConfiguration):
                                         "endpoint_allowed_ip": self.DashboardConfig.GetConfig("Peers", "peer_endpoint_allowed_ip")[
                                             1],
                                         "name": i.get("name"),
+                                        "notes": "",
                                         "total_receive": 0,
                                         "total_sent": 0,
                                         "total_data": 0,
@@ -266,6 +286,7 @@ class AmneziaWireguardConfiguration(WireguardConfiguration):
                         "DNS": i['DNS'],
                         "endpoint_allowed_ip": i['endpoint_allowed_ip'],
                         "name": i['name'],
+                        "notes": i.get("notes", ""),
                         "total_receive": 0,
                         "total_sent": 0,
                         "total_data": 0,

@@ -22,6 +22,7 @@ const peerData = ref({
 	bulkAdd: false,
 	bulkAddAmount: 0,
 	name: "",
+	notes: "",
 	allowed_ips: [],
 	private_key: "",
 	public_key: "",
@@ -124,6 +125,18 @@ watch(() => {
 										<div class="d-flex flex-column gap-2">
 											<DnsInput :saving="saving" :data="peerData"></DnsInput>
 											<EndpointAllowedIps :saving="saving" :data="peerData"></EndpointAllowedIps>
+											<div v-if="!peerData.bulkAdd">
+												<label for="peer_notes_add_textbox" class="form-label">
+													<small class="text-muted">
+														<LocaleText t="Notes"></LocaleText>
+													</small>
+												</label>
+												<textarea class="form-control form-control-sm rounded-3"
+												          :disabled="saving"
+												          v-model="peerData.notes"
+												          id="peer_notes_add_textbox"
+												          rows="3"></textarea>
+											</div>
 											<div class="row gy-3">
 												<div class="col-sm" v-if="!peerData.bulkAdd">
 													<PresharedKeyInput :saving="saving" :data="peerData" :bulk="peerData.bulkAdd"></PresharedKeyInput>
