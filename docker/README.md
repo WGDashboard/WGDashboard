@@ -113,6 +113,11 @@ Updating the WGDashboard container should be through 'The Docker Way' - by pulli
 | `email_password`   | Any non-empty string                     | `-`                     | `app_password`        | Password for SMTP authentication.                                       |
 | `email_from`       | Valid email address                      | `-`                     | `noreply@example.com` | Email address used as the sender for notifications.                     |
 | `email_template`   | Path to template file                    | `-`                     | `your-template`       | Custom template for email notifications.                                |
+| `database_type`    | `sqlite`, `postgresql`, `mariadb+mariadbconnector`, etc.           | `-` | `postgresql` | Type of [sqlalchemy database engine](https://docs.sqlalchemy.org/en/21/core/engines.html). |
+| `database_host`    | Any non-empty string                     | `-`                     | `localhost`           | IP-Address or hostname of the SQL-database server.                       |
+| `database_port`    | Any non-empty string (or int for port)   | `-`                     | `5432`                | Port for the database communication.                                     |
+| `database_username`| Valid database username                  | `-`                     | `database_user`       | Database user username.                                                  |
+| `database_password`| Valid database password                  | `-`                     | `database_password`   | Database user password.                                                  |
 
 ---
 
