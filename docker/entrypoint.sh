@@ -211,6 +211,24 @@ set_envvars() {
     set_ini WireGuardConfiguration autostart "${wg_autostart}"
   fi
 
+  # Database (check if any settings need to be configured)
+  database_vars=("database_type" "database_host" "database_port" "database_username" "database_password")
+  for var in "${database_vars[@]}"; do
+    if [ -n "${!var}" ]; then
+      echo "Configuring email settings:"
+      break
+    fi
+  done
+
+  # Database (iterate through all possible fields)
+  database_fields=("type:database_type" "host:database_host" "port:database_port" 
+                "username:database_username" "password:database_password")
+
+  for field_pair in "${database_fields[@]}"; do
+    IFS=: read -r field var <<< "$field_pair"
+    [[ -n "${!var}" ]] && set_ini Email "$field" "${!var}"
+  done
+
   # Email (check if any settings need to be configured)
   email_vars=("email_server" "email_port" "email_encryption" "email_username" "email_password" "email_from" "email_template")
   for var in "${email_vars[@]}"; do
