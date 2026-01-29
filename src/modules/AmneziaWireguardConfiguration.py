@@ -177,19 +177,21 @@ class AmneziaWireguardConfiguration(WireguardConfiguration):
         self.__ensurePeerNotesColumn()
 
     def __ensurePeerNotesColumn(self):
-        targets = [self.Name, f'{self.Name}_restrict_access', f'{self.Name}_deleted']
         inspector = sqlalchemy.inspect(self.engine)
         existing_tables = set(inspector.get_table_names())
-        safe_name = re.compile(r'^[A-Za-z0-9_-]+$')
+        targets = [self.peersTable, self.peersRestrictedTable, self.peersDeletedTable]
         with self.engine.begin() as conn:
-            for table_name in targets:
-                if table_name not in existing_tables:
+            for table in targets:
+                if table.name not in existing_tables:
                     continue
-                if not safe_name.match(table_name):
+                cols = [c["name"] for c in inspector.get_columns(table.name)]
+                if "notes" in cols:
                     continue
-                cols = [c["name"] for c in inspector.get_columns(table_name)]
-                if "notes" not in cols:
-                    conn.execute(sqlalchemy.text(f'ALTER TABLE `{table_name}` ADD COLUMN notes TEXT'))
+                ddl = sqlalchemy.schema.DDL(
+                    "ALTER TABLE %(table)s ADD COLUMN notes TEXT",
+                    context={"table": table}
+                )
+                conn.execute(ddl)
 
     def getPeers(self):
         self.Peers.clear()        
