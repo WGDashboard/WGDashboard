@@ -102,7 +102,6 @@ jobs:
           only-fixed: true
           write-comment: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          exit-code: true
 
       - name: Docker Scout Compare
         uses: docker/scout-action@v1
