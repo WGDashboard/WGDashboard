@@ -11,21 +11,21 @@ from .WireguardConfiguration import WireguardConfiguration
 from .DashboardWebHooks import DashboardWebHooks
 
 
-def _safe_int(value) -> int:
+def _safe_float(value) -> float:
     try:
         if value is None:
-            return 0
+            return 0.0
         if isinstance(value, bool):
-            return int(value)
+            return float(value)
         if isinstance(value, (int, float)):
-            return int(value)
+            return float(value)
         if isinstance(value, str):
             if value.strip() == "":
-                return 0
-            return int(float(value))
-        return int(value)
+                return 0.0
+            return float(value)
+        return float(value)
     except Exception:
-        return 0
+        return 0.0
 
 
 class AmneziaWireguardConfiguration(WireguardConfiguration):
@@ -49,11 +49,11 @@ class AmneziaWireguardConfiguration(WireguardConfiguration):
     def toJson(self):
         self.Status = self.getStatus()
         def peer_total(peer):
-            return _safe_int(peer.cumu_data) + _safe_int(peer.total_data)
+            return _safe_float(peer.cumu_data) + _safe_float(peer.total_data)
         def peer_sent(peer):
-            return _safe_int(peer.cumu_sent) + _safe_int(peer.total_sent)
+            return _safe_float(peer.cumu_sent) + _safe_float(peer.total_sent)
         def peer_receive(peer):
-            return _safe_int(peer.cumu_receive) + _safe_int(peer.total_receive)
+            return _safe_float(peer.cumu_receive) + _safe_float(peer.total_receive)
         return {
             "Status": self.Status,
             "Name": self.Name,
