@@ -53,7 +53,7 @@ const saveRaw = async () => {
 						<h5 class="mb-0">
 							<LocaleText t="Edit Raw Configuration File"></LocaleText>
 						</h5>
-						<button type="button" class="btn-close ms-auto" @click="emits('close')"></button>
+						<button type="button" class="btn-close ms-auto" @click="emits('close')" aria-label="Close"></button>
 					</div>
 					<div class="card-body px-4 d-flex flex-column gap-3">
 						<div class="alert alert-danger rounded-3 mb-0" v-if="error">
