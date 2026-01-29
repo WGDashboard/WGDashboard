@@ -215,7 +215,7 @@ set_envvars() {
   database_vars=("database_type" "database_host" "database_port" "database_username" "database_password")
   for var in "${database_vars[@]}"; do
     if [ -n "${!var}" ]; then
-      echo "Configuring email settings:"
+      echo "Configuring database settings:"
       break
     fi
   done
@@ -226,7 +226,7 @@ set_envvars() {
 
   for field_pair in "${database_fields[@]}"; do
     IFS=: read -r field var <<< "$field_pair"
-    [[ -n "${!var}" ]] && set_ini Email "$field" "${!var}"
+    [[ -n "${!var}" ]] && set_ini Database "$field" "${!var}"
   done
 
   # Email (check if any settings need to be configured)
