@@ -6,6 +6,22 @@ from .DashboardLogger import DashboardLogger
 import sqlalchemy as db
 from .WireguardConfiguration import WireguardConfiguration
 
+def _safe_int(value) -> int:
+    try:
+        if value is None:
+            return 0
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, (int, float)):
+            return int(value)
+        if isinstance(value, str):
+            if value.strip() == "":
+                return 0
+            return int(float(value))
+        return int(value)
+    except Exception:
+        return 0
+
 class Assignment:
     def __init__(self, **kwargs):
         self.AssignmentID: str = kwargs.get('AssignmentID')
@@ -146,9 +162,9 @@ class DashboardClientsPeerAssignment:
                     'id': p.id,
                     'private_key': p.private_key,
                     'name': p.name,
-                    'received_data': p.total_receive + p.cumu_receive,
-                    'sent_data': p.total_sent + p.cumu_sent,
-                    'data': p.total_data + p.cumu_data,
+                    'received_data': _safe_int(p.total_receive) + _safe_int(p.cumu_receive),
+                    'sent_data': _safe_int(p.total_sent) + _safe_int(p.cumu_sent),
+                    'data': _safe_int(p.total_data) + _safe_int(p.cumu_data),
                     'status': p.status,
                     'latest_handshake': p.latest_handshake,
                     'allowed_ip': p.allowed_ip,
