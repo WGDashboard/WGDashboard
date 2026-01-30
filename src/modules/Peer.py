@@ -11,8 +11,7 @@ import jinja2
 import sqlalchemy as db
 from .PeerJob import PeerJob
 from .PeerShareLink import PeerShareLink
-from .Utilities import GenerateWireguardPublicKey, ValidateIPAddressesWithRange, ValidateDNSAddress, \
-    WgQuick, WgSetPeerAllowedIps
+from .Utilities import GenerateWireguardPublicKey, ValidateIPAddressesWithRange, ValidateDNSAddress
 
 
 class Peer:
@@ -95,21 +94,12 @@ class Peer:
                 with open(uid, "w+") as f:
                     f.write(preshared_key)
             psk_path = uid if pskExist else "/dev/null"
-            updateAllowedIp = WgSetPeerAllowedIps(
-                self.configuration.Protocol,
-                self.configuration.Name,
-                self.id,
-                allowed_ip,
-                psk_path
-            )
-
-            if pskExist: os.remove(uid)
-            if len(updateAllowedIp.decode().strip("\n")) != 0:
-                return False, "Update peer failed when updating Allowed IPs"
-            saveConfig = WgQuick(self.configuration.Protocol, "save", self.configuration.Name)
-            if f"wg showconf {self.configuration.Name}" not in saveConfig.decode().strip('\n'):
-                return False, "Update peer failed when saving the configuration"
             with self.configuration.engine.begin() as conn:
+                previous = conn.execute(
+                    self.configuration.peersTable.select().where(
+                        self.configuration.peersTable.c.id == self.id
+                    )
+                ).mappings().fetchone()
                 conn.execute(
                     self.configuration.peersTable.update().values({
                         "name": name,
@@ -118,11 +108,45 @@ class Peer:
                         "endpoint_allowed_ip": endpoint_allowed_ip,
                         "mtu": mtu,
                         "keepalive": keepalive,
-                        "preshared_key": preshared_key
+                        "preshared_key": preshared_key,
+                        "allowed_ip": allowed_ip.replace(" ", "")
                     }).where(
                         self.configuration.peersTable.c.id == self.id
                     )
                 )
+            try:
+                updateAllowedIp = self.configuration._wg_set_peer_allowed_ips(
+                    self.id,
+                    psk_path
+                )
+                if pskExist: os.remove(uid)
+                if len(updateAllowedIp.decode().strip("\n")) != 0:
+                    raise subprocess.CalledProcessError(1, "wg set peer")
+                saveConfig = self.configuration._wg_quick_save()
+                if f"wg showconf {self.configuration.Name}" not in saveConfig.decode().strip('\n'):
+                    raise subprocess.CalledProcessError(1, "wg-quick save")
+            except (subprocess.CalledProcessError, ValueError) as exc:
+                with self.configuration.engine.begin() as conn:
+                    if previous:
+                        conn.execute(
+                            self.configuration.peersTable.update().values({
+                                "name": previous["name"],
+                                "private_key": previous["private_key"],
+                                "DNS": previous["DNS"],
+                                "endpoint_allowed_ip": previous["endpoint_allowed_ip"],
+                                "mtu": previous["mtu"],
+                                "keepalive": previous["keepalive"],
+                                "preshared_key": previous["preshared_key"],
+                                "allowed_ip": previous["allowed_ip"]
+                            }).where(
+                                self.configuration.peersTable.c.id == self.id
+                            )
+                        )
+                if pskExist and os.path.exists(uid):
+                    os.remove(uid)
+                if isinstance(exc, subprocess.CalledProcessError):
+                    return False, str(exc)
+                return False, str(exc)
             return True, None
         except subprocess.CalledProcessError as exc:
             return False, exc.output.decode("UTF-8").strip()
