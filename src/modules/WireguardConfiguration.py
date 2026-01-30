@@ -57,7 +57,13 @@ class WireguardConfiguration:
         self.PreDown: str = ""
         self.PostDown: str = ""
         self.SaveConfig: bool = True
-        self.Name = name
+        if name is not None:
+            safe_name = os.path.basename(name)
+            if safe_name != name or not re.fullmatch(r"[A-Za-z0-9_=+.-]{1,15}", safe_name):
+                raise self.InvalidConfigurationFileException("Configuration name is invalid")
+            self.Name = safe_name
+        else:
+            self.Name = name
         self.Protocol = "wg" if wg else "awg"
         self.AllPeerJobs = AllPeerJobs
         self.DashboardConfig = DashboardConfig
@@ -83,7 +89,10 @@ class WireguardConfiguration:
             self.__parseConfigurationFile()
             self.__initPeersList()
         else:
-            self.Name = data["ConfigurationName"]
+            safe_name = os.path.basename(data["ConfigurationName"])
+            if safe_name != data["ConfigurationName"] or not re.fullmatch(r"[A-Za-z0-9_=+.-]{1,15}", safe_name):
+                raise self.InvalidConfigurationFileException("Configuration name is invalid")
+            self.Name = safe_name
             self.configPath = os.path.join(self.__getProtocolPath(), f'{self.Name}.conf')
             if not self.__isPathWithinBase(self.configPath, self.__getProtocolPath()):
                 raise self.InvalidConfigurationFileException("Configuration path is invalid")

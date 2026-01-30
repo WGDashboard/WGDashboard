@@ -392,8 +392,10 @@ def API_addWireguardConfiguration():
     if data.get("Protocol") not in ProtocolsEnabled():
         return ResponseObject(False, "Please provide a valid protocol: wg / awg.")
 
-    config_name = _safe_basename(data.get("ConfigurationName", ""))
-    if not config_name:
+    raw_name = data.get("ConfigurationName", "")
+    config_name = os.path.basename(raw_name)
+    if (not config_name or config_name != raw_name or
+            not re.fullmatch(r"[A-Za-z0-9_=+.-]{1,15}", config_name)):
         return ResponseObject(False, "Invalid configuration name", "ConfigurationName")
     data["ConfigurationName"] = config_name
 
@@ -420,21 +422,24 @@ def API_addWireguardConfiguration():
                 "wg": DashboardConfig.GetConfig("Server", "wg_conf_path")[1],
                 "awg": DashboardConfig.GetConfig("Server", "awg_conf_path")[1]
             }
-            backup_name = _safe_basename(data["Backup"])
-            if not backup_name or not backup_name.endswith(".conf"):
+            raw_backup = data["Backup"]
+            backup_name = os.path.basename(raw_backup)
+            if (not backup_name or backup_name != raw_backup or
+                    not backup_name.endswith(".conf") or
+                    not re.fullmatch(r"[A-Za-z0-9_=+.-]{1,255}\\.conf", backup_name)):
                 return ResponseObject(False, "Invalid backup filename")
             backup_dir_wg = os.path.join(path['wg'], 'WGDashboard_Backup')
             backup_dir_awg = os.path.join(path['awg'], 'WGDashboard_Backup')
-            wg_conf = os.path.join(backup_dir_wg, backup_name)
-            wg_sql = os.path.join(backup_dir_wg, backup_name.replace('.conf', '.sql'))
-            awg_conf = os.path.join(backup_dir_awg, backup_name)
-            awg_sql = os.path.join(backup_dir_awg, backup_name.replace('.conf', '.sql'))
-            if not (_is_path_within_base(wg_conf, backup_dir_wg) and _is_path_within_base(awg_conf, backup_dir_awg)):
-                return ResponseObject(False, "Invalid backup filename")
+            wg_files = {entry.name: entry.path for entry in os.scandir(backup_dir_wg) if entry.is_file()}
+            awg_files = {entry.name: entry.path for entry in os.scandir(backup_dir_awg) if entry.is_file()}
+            wg_conf = wg_files.get(backup_name)
+            wg_sql = wg_files.get(backup_name.replace('.conf', '.sql'))
+            awg_conf = awg_files.get(backup_name)
+            awg_sql = awg_files.get(backup_name.replace('.conf', '.sql'))
          
-            if (os.path.exists(wg_conf) and os.path.exists(wg_sql)):
+            if (wg_conf and wg_sql):
                 protocol = "wg"
-            elif (os.path.exists(awg_conf) and os.path.exists(awg_sql)):
+            elif (awg_conf and awg_sql):
                 protocol = "awg"
             else:
                 return ResponseObject(False, "Backup does not exist")
