@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 import sqlalchemy
 from jinja2 import Template
 from flask import Flask, request, render_template, session, send_file
+from werkzeug.utils import safe_join
 from flask_cors import CORS
 from icmplib import ping, traceroute
 from flask.json.provider import DefaultJSONProvider
@@ -445,12 +446,11 @@ def API_addWireguardConfiguration():
                 return ResponseObject(False, "Backup does not exist")
             
             dest_dir = path[protocol]
-            if not _is_path_within_base(dest_dir, path[protocol]):
+            dest_conf = safe_join(dest_dir, f'{data["ConfigurationName"]}.conf')
+            src_conf = safe_join(dest_dir, 'WGDashboard_Backup', backup_name)
+            if not dest_conf or not src_conf:
                 return ResponseObject(False, "Invalid configuration path")
-            dest_conf = os.path.join(dest_dir, f'{data["ConfigurationName"]}.conf')
-            if not _is_path_within_base(dest_conf, dest_dir):
-                return ResponseObject(False, "Invalid configuration path")
-            shutil.copy(os.path.join(dest_dir, 'WGDashboard_Backup', backup_name), dest_conf)
+            shutil.copy(src_conf, dest_conf)
             WireguardConfigurations[data['ConfigurationName']] = (
                 WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, data=data, name=data['ConfigurationName'])) if protocol == 'wg' else (
                 AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data, name=data['ConfigurationName']))

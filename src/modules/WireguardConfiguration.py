@@ -9,6 +9,7 @@ from zipfile import ZipFile
 from datetime import datetime, timedelta
 from itertools import islice
 from flask import current_app
+from werkzeug.utils import safe_join
 
 from .ConnectionString import ConnectionString
 from .DashboardConfig import DashboardConfig
@@ -69,8 +70,8 @@ class WireguardConfiguration:
         self.DashboardConfig = DashboardConfig
         self.AllPeerShareLinks = AllPeerShareLinks
         self.DashboardWebHooks = DashboardWebHooks
-        self.configPath = os.path.join(self.__getProtocolPath(), f'{self.Name}.conf')
-        if not self.__isPathWithinBase(self.configPath, self.__getProtocolPath()):
+        self.configPath = safe_join(self.__getProtocolPath(), f'{self.Name}.conf')
+        if not self.configPath:
             raise self.InvalidConfigurationFileException("Configuration path is invalid")
         self.engine: sqlalchemy.Engine = sqlalchemy.create_engine(ConnectionString("wgdashboard"))
         self.metadata: sqlalchemy.MetaData = sqlalchemy.MetaData()
@@ -93,8 +94,8 @@ class WireguardConfiguration:
             if safe_name != data["ConfigurationName"] or not re.fullmatch(r"[A-Za-z0-9_=+.-]{1,15}", safe_name):
                 raise self.InvalidConfigurationFileException("Configuration name is invalid")
             self.Name = safe_name
-            self.configPath = os.path.join(self.__getProtocolPath(), f'{self.Name}.conf')
-            if not self.__isPathWithinBase(self.configPath, self.__getProtocolPath()):
+            self.configPath = safe_join(self.__getProtocolPath(), f'{self.Name}.conf')
+            if not self.configPath:
                 raise self.InvalidConfigurationFileException("Configuration path is invalid")
 
             for i in dir(self):
