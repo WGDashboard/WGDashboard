@@ -72,6 +72,7 @@ class WireguardConfiguration:
         self.PostDown: str = ""
         self.SaveConfig: bool = True
         self.Name = name
+        self._trusted_name: str | None = None
         self.Protocol = "wg" if wg else "awg"
         self.AllPeerJobs = AllPeerJobs
         self.DashboardConfig = DashboardConfig
@@ -189,9 +190,14 @@ class WireguardConfiguration:
         return cmd
 
     def _validate_interface(self) -> str:
-        if not self.Name or not self._IFACE_RE.fullmatch(self.Name):
-            raise ValueError(f"Invalid interface name: {self.Name}")
-        return self.Name
+        if not self._trusted_name:
+            raise ValueError("Configuration name not trusted")
+        return self._trusted_name
+
+    def setTrustedName(self, name: str) -> None:
+        if not name or not self._IFACE_RE.fullmatch(name):
+            raise ValueError(f"Invalid configuration name: {name}")
+        self._trusted_name = name
 
     def _validate_peer_id(self, peer_id: str) -> str:
         if not peer_id or not self._PEER_RE.fullmatch(peer_id):

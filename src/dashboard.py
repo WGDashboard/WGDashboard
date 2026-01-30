@@ -145,9 +145,11 @@ def InitWireguardConfigurationsList(startup: bool = False):
                         if WireguardConfigurations[i].configurationFileChanged():
                             with app.app_context():
                                 WireguardConfigurations[i] = WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i)
+                        WireguardConfigurations[i].setTrustedName(i)
                     else:
                         with app.app_context():
                             WireguardConfigurations[i] = WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i, startup=startup)
+                        WireguardConfigurations[i].setTrustedName(i)
                 except WireguardConfiguration.InvalidConfigurationFileException as e:
                     app.logger.error(f"{i} have an invalid configuration file.")
 
@@ -162,9 +164,11 @@ def InitWireguardConfigurationsList(startup: bool = False):
                         if WireguardConfigurations[i].configurationFileChanged():
                             with app.app_context():
                                 WireguardConfigurations[i] = AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i)
+                        WireguardConfigurations[i].setTrustedName(i)
                     else:
                         with app.app_context():
                             WireguardConfigurations[i] = AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i, startup=startup)
+                        WireguardConfigurations[i].setTrustedName(i)
                 except WireguardConfiguration.InvalidConfigurationFileException as e:
                     app.logger.error(f"{i} have an invalid configuration file.")
 
