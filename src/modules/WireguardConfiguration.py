@@ -67,8 +67,6 @@ class WireguardConfiguration:
         self.engine: sqlalchemy.Engine = sqlalchemy.create_engine(ConnectionString("wgdashboard"))
         self.metadata: sqlalchemy.MetaData = sqlalchemy.MetaData()
         self.dbType = self.DashboardConfig.GetConfig("Database", "type")[1]
-        self._realtime_rate_samples: dict[str, dict] = {}
-        self._realtime_rates: dict[str, dict] = {}
         
         if name is not None:
             if data is not None and "Backup" in data.keys():
@@ -499,50 +497,6 @@ class WireguardConfiguration:
                         })
                     )
 
-    def getPeersDailyUsage(self, peer_ids: list[str], day: datetime.date):
-        if not peer_ids:
-            return {}
-        if not self.configurationInfo.PeerTrafficTracking:
-            return {pid: {"total": 0, "sent": 0, "receive": 0} for pid in peer_ids}
-
-        start = datetime(day.year, day.month, day.day, 0, 0, 0, 0)
-        end = start + timedelta(days=1) - timedelta(microseconds=1)
-
-        total_expr = self.peersTransferTable.c.cumu_data + self.peersTransferTable.c.total_data
-        sent_expr = self.peersTransferTable.c.cumu_sent + self.peersTransferTable.c.total_sent
-        receive_expr = self.peersTransferTable.c.cumu_receive + self.peersTransferTable.c.total_receive
-
-        usage = {pid: {"total": 0, "sent": 0, "receive": 0} for pid in peer_ids}
-        with self.engine.connect() as conn:
-            rows = conn.execute(
-                sqlalchemy.select(
-                    self.peersTransferTable.c.id.label("id"),
-                    sqlalchemy.func.max(total_expr).label("max_total"),
-                    sqlalchemy.func.min(total_expr).label("min_total"),
-                    sqlalchemy.func.max(sent_expr).label("max_sent"),
-                    sqlalchemy.func.min(sent_expr).label("min_sent"),
-                    sqlalchemy.func.max(receive_expr).label("max_receive"),
-                    sqlalchemy.func.min(receive_expr).label("min_receive"),
-                ).where(
-                    sqlalchemy.and_(
-                        self.peersTransferTable.c.id.in_(peer_ids),
-                        self.peersTransferTable.c.time >= start,
-                        self.peersTransferTable.c.time <= end,
-                    )
-                ).group_by(
-                    self.peersTransferTable.c.id
-                )
-            ).mappings().fetchall()
-        for row in rows:
-            pid = row["id"]
-            if pid in usage:
-                usage[pid] = {
-                    "total": max((row["max_total"] or 0) - (row["min_total"] or 0), 0),
-                    "sent": max((row["max_sent"] or 0) - (row["min_sent"] or 0), 0),
-                    "receive": max((row["max_receive"] or 0) - (row["min_receive"] or 0), 0),
-                }
-        return usage
-    
     def logPeersHistoryEndpoint(self):
         with self.engine.begin() as conn:
             for tempPeer in self.Peers:
@@ -838,11 +792,7 @@ class WireguardConfiguration:
                         cur_total_receive = float(data_usage[i][1]) / (1024 ** 3)
                         cumulative_receive = cur_i['cumu_receive'] + total_receive
                         cumulative_sent = cur_i['cumu_sent'] + total_sent
-                        # Allow minor floating-point drift to avoid false rollover.
-                        epsilon_gb = 0.0005  # ~0.5 MB
-                        sent_diff = cur_total_sent - total_sent
-                        recv_diff = cur_total_receive - total_receive
-                        if sent_diff >= -epsilon_gb and recv_diff >= -epsilon_gb:
+                        if total_sent <= cur_total_sent and total_receive <= cur_total_receive:
                             total_sent = cur_total_sent
                             total_receive = cur_total_receive
                         else:
@@ -872,49 +822,6 @@ class WireguardConfiguration:
                                 )
 
             
-    def getPeersRealtimeRates(self):
-        if not self.getStatus():
-            self.toggleConfiguration()
-        try:
-            data_usage = RunCommand([self.Protocol, "show", self.Name, "transfer"], require_root=True)
-        except subprocess.CalledProcessError:
-            return {}
-        now = time.time()
-        data_usage = data_usage.decode("UTF-8").split("\n")
-        data_usage = [p.split("\t") for p in data_usage]
-        rates = {}
-        for row in data_usage:
-            if len(row) == 3:
-                peer_id = row[0]
-                recv_bytes = float(row[1])
-                sent_bytes = float(row[2])
-                last = self._realtime_rate_samples.get(peer_id)
-                sent_bps = 0.0
-                recv_bps = 0.0
-                if last:
-                    dt = now - last.get("ts", now)
-                    if dt > 0:
-                        sent_delta = sent_bytes - last.get("sent", sent_bytes)
-                        recv_delta = recv_bytes - last.get("recv", recv_bytes)
-                        if sent_delta < 0:
-                            sent_delta = 0
-                        if recv_delta < 0:
-                            recv_delta = 0
-                        sent_bps = sent_delta / dt
-                        recv_bps = recv_delta / dt
-                rates[peer_id] = {
-                    "sent_bps": sent_bps,
-                    "recv_bps": recv_bps,
-                    "updated_at": now
-                }
-                self._realtime_rate_samples[peer_id] = {
-                    "sent": sent_bytes,
-                    "recv": recv_bytes,
-                    "ts": now
-                }
-        self._realtime_rates = rates
-        return rates
-
     def getPeersEndpoint(self):
         if not self.getStatus():
             self.toggleConfiguration()
