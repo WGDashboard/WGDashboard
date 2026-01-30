@@ -439,10 +439,13 @@ def API_addWireguardConfiguration():
             else:
                 return ResponseObject(False, "Backup does not exist")
             
-            shutil.copy(
-                os.path.join(path[protocol], 'WGDashboard_Backup', backup_name),
-                os.path.join(path[protocol], f'{data["ConfigurationName"]}.conf')
-            )
+            dest_dir = path[protocol]
+            if not _is_path_within_base(dest_dir, path[protocol]):
+                return ResponseObject(False, "Invalid configuration path")
+            dest_conf = os.path.join(dest_dir, f'{data["ConfigurationName"]}.conf')
+            if not _is_path_within_base(dest_conf, dest_dir):
+                return ResponseObject(False, "Invalid configuration path")
+            shutil.copy(os.path.join(dest_dir, 'WGDashboard_Backup', backup_name), dest_conf)
             WireguardConfigurations[data['ConfigurationName']] = (
                 WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, data=data, name=data['ConfigurationName'])) if protocol == 'wg' else (
                 AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data, name=data['ConfigurationName']))
