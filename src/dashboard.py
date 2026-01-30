@@ -134,12 +134,15 @@ def ProtocolsEnabled() -> list[str]:
     return protocols
 
 def InitWireguardConfigurationsList(startup: bool = False):
-    if os.path.exists(DashboardConfig.GetConfig("Server", "wg_conf_path")[1]):
-        confs = os.listdir(DashboardConfig.GetConfig("Server", "wg_conf_path")[1])
+    found_configs = set()
+    wg_path = DashboardConfig.GetConfig("Server", "wg_conf_path")[1]
+    if os.path.exists(wg_path):
+        confs = os.listdir(wg_path)
         confs.sort()
         for i in confs:
             if RegexMatch("^(.{1,}).(conf)$", i):
                 i = i.replace('.conf', '')
+                found_configs.add(i)
                 try:
                     if i in WireguardConfigurations.keys():
                         if WireguardConfigurations[i].configurationFileChanged():
@@ -152,21 +155,28 @@ def InitWireguardConfigurationsList(startup: bool = False):
                     app.logger.error(f"{i} have an invalid configuration file.")
 
     if "awg" in ProtocolsEnabled():
-        confs = os.listdir(DashboardConfig.GetConfig("Server", "awg_conf_path")[1])
-        confs.sort()
-        for i in confs:
-            if RegexMatch("^(.{1,}).(conf)$", i):
-                i = i.replace('.conf', '')
-                try:
-                    if i in WireguardConfigurations.keys():
-                        if WireguardConfigurations[i].configurationFileChanged():
+        awg_path = DashboardConfig.GetConfig("Server", "awg_conf_path")[1]
+        if os.path.exists(awg_path):
+            confs = os.listdir(awg_path)
+            confs.sort()
+            for i in confs:
+                if RegexMatch("^(.{1,}).(conf)$", i):
+                    i = i.replace('.conf', '')
+                    found_configs.add(i)
+                    try:
+                        if i in WireguardConfigurations.keys():
+                            if WireguardConfigurations[i].configurationFileChanged():
+                                with app.app_context():
+                                    WireguardConfigurations[i] = AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i)
+                        else:
                             with app.app_context():
-                                WireguardConfigurations[i] = AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i)
-                    else:
-                        with app.app_context():
-                            WireguardConfigurations[i] = AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i, startup=startup)
-                except WireguardConfiguration.InvalidConfigurationFileException as e:
-                    app.logger.error(f"{i} have an invalid configuration file.")
+                                WireguardConfigurations[i] = AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i, startup=startup)
+                    except WireguardConfiguration.InvalidConfigurationFileException as e:
+                        app.logger.error(f"{i} have an invalid configuration file.")
+
+    for name in list(WireguardConfigurations.keys()):
+        if name not in found_configs:
+            WireguardConfigurations.pop(name, None)
 
 def startThreads():
     bgThread = threading.Thread(target=peerInformationBackgroundThread, daemon=True)
