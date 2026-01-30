@@ -392,32 +392,35 @@ def API_addWireguardConfiguration():
                                   f"Already have a configuration with the address \"{data['Address']}\"",
                                   "Address")
 
-    if "Backup" in data.keys():
-        path = {
-            "wg": DashboardConfig.GetConfig("Server", "wg_conf_path")[1],
-            "awg": DashboardConfig.GetConfig("Server", "awg_conf_path")[1]
-        }
-     
-        if (os.path.exists(os.path.join(path['wg'], 'WGDashboard_Backup', data["Backup"])) and
-                os.path.exists(os.path.join(path['wg'], 'WGDashboard_Backup', data["Backup"].replace('.conf', '.sql')))):
-            protocol = "wg"
-        elif (os.path.exists(os.path.join(path['awg'], 'WGDashboard_Backup', data["Backup"])) and
-              os.path.exists(os.path.join(path['awg'], 'WGDashboard_Backup', data["Backup"].replace('.conf', '.sql')))):
-            protocol = "awg"
+    try:
+        if "Backup" in data.keys():
+            path = {
+                "wg": DashboardConfig.GetConfig("Server", "wg_conf_path")[1],
+                "awg": DashboardConfig.GetConfig("Server", "awg_conf_path")[1]
+            }
+         
+            if (os.path.exists(os.path.join(path['wg'], 'WGDashboard_Backup', data["Backup"])) and
+                    os.path.exists(os.path.join(path['wg'], 'WGDashboard_Backup', data["Backup"].replace('.conf', '.sql')))):
+                protocol = "wg"
+            elif (os.path.exists(os.path.join(path['awg'], 'WGDashboard_Backup', data["Backup"])) and
+                  os.path.exists(os.path.join(path['awg'], 'WGDashboard_Backup', data["Backup"].replace('.conf', '.sql')))):
+                protocol = "awg"
+            else:
+                return ResponseObject(False, "Backup does not exist")
+            
+            shutil.copy(
+                os.path.join(path[protocol], 'WGDashboard_Backup', data["Backup"]),
+                os.path.join(path[protocol], f'{data["ConfigurationName"]}.conf')
+            )
+            WireguardConfigurations[data['ConfigurationName']] = (
+                WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, data=data, name=data['ConfigurationName'])) if protocol == 'wg' else (
+                AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data, name=data['ConfigurationName']))
         else:
-            return ResponseObject(False, "Backup does not exist")
-        
-        shutil.copy(
-            os.path.join(path[protocol], 'WGDashboard_Backup', data["Backup"]),
-            os.path.join(path[protocol], f'{data["ConfigurationName"]}.conf')
-        )
-        WireguardConfigurations[data['ConfigurationName']] = (
-            WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, data=data, name=data['ConfigurationName'])) if protocol == 'wg' else (
-            AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data, name=data['ConfigurationName']))
-    else:
-        WireguardConfigurations[data['ConfigurationName']] = (
-            WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data)) if data.get('Protocol') == 'wg' else (
-            AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data))
+            WireguardConfigurations[data['ConfigurationName']] = (
+                WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data)) if data.get('Protocol') == 'wg' else (
+                AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data))
+    except WireguardConfiguration.InvalidConfigurationFileException as exc:
+        return ResponseObject(False, str(exc))
     return ResponseObject()
 
 @app.get(f'{APP_PREFIX}/api/toggleWireguardConfiguration')
