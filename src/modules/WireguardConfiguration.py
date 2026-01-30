@@ -16,7 +16,7 @@ from .Peer import Peer
 from .PeerJobs import PeerJobs
 from .PeerShareLinks import PeerShareLinks
 from .Utilities import StringToBoolean, GenerateWireguardPublicKey, RegexMatch, ValidateDNSAddress, \
-    ValidateEndpointAllowedIPs, RunCommand
+    ValidateEndpointAllowedIPs, WgShow, WgQuick, WgSetPeerAllowedIps, WgPeerRemove
 from .WireguardConfigurationInfo import WireguardConfigurationInfo, PeerGroupsClass
 from .DashboardWebHooks import DashboardWebHooks
 
@@ -560,14 +560,16 @@ class WireguardConfiguration:
                     with open(uid, "w+") as f:
                         f.write(p['preshared_key'])
 
-                cmd = [self.Protocol, "set", self.Name, "peer", p['id'], "allowed-ips",
-                       p['allowed_ip'].replace(' ', '')]
-                if presharedKeyExist:
-                    cmd += ["preshared-key", uid]
-                RunCommand(cmd, require_root=True)
+                WgSetPeerAllowedIps(
+                    self.Protocol,
+                    self.Name,
+                    p['id'],
+                    p['allowed_ip'],
+                    uid if presharedKeyExist else None
+                )
                 if presharedKeyExist:
                     os.remove(uid)
-            RunCommand([f"{self.Protocol}-quick", "save", self.Name], require_root=True)
+            WgQuick(self.Protocol, "save", self.Name)
             self.getPeers()
             for p in peers:
                 p = self.searchPeer(p['id'])
@@ -617,11 +619,13 @@ class WireguardConfiguration:
                         with open(uid, "w+") as f:
                             f.write(restrictedPeer['preshared_key'])
 
-                    cmd = [self.Protocol, "set", self.Name, "peer", restrictedPeer['id'], "allowed-ips",
-                           restrictedPeer['allowed_ip'].replace(' ', '')]
-                    if presharedKeyExist:
-                        cmd += ["preshared-key", uid]
-                    RunCommand(cmd, require_root=True)
+                    WgSetPeerAllowedIps(
+                        self.Protocol,
+                        self.Name,
+                        restrictedPeer['id'],
+                        restrictedPeer['allowed_ip'],
+                        uid if presharedKeyExist else None
+                    )
                     if presharedKeyExist: os.remove(uid)
                 else:
                     return False, "Failed to allow access of peer " + i
@@ -641,7 +645,7 @@ class WireguardConfiguration:
                 found, pf = self.searchPeer(p)
                 if found:
                     try:
-                        RunCommand([self.Protocol, "set", self.Name, "peer", pf.id, "remove"], require_root=True)
+                        WgPeerRemove(self.Protocol, self.Name, pf.id)
                         conn.execute(
                             self.peersRestrictedTable.insert().from_select(
                                 [c.name for c in self.peersTable.columns],
@@ -692,7 +696,7 @@ class WireguardConfiguration:
                     AllPeerShareLinks.updateLinkExpireDate(shareLink.ShareID, datetime.now())
                 if found:
                     try:
-                        RunCommand([self.Protocol, "set", self.Name, "peer", pf.id, "remove"], require_root=True)
+                        WgPeerRemove(self.Protocol, self.Name, pf.id)
                         conn.execute(
                             self.peersTable.delete().where(
                                 self.peersTable.columns.id == pf.id
@@ -722,7 +726,7 @@ class WireguardConfiguration:
 
     def __wgSave(self) -> tuple[bool, str] | tuple[bool, None]:
         try:
-            RunCommand([f"{self.Protocol}-quick", "save", self.Name], require_root=True)
+            WgQuick(self.Protocol, "save", self.Name)
             return True, None
         except subprocess.CalledProcessError as e:
             return False, str(e)
@@ -731,7 +735,7 @@ class WireguardConfiguration:
         if not self.getStatus():
             self.toggleConfiguration()
         try:
-            latestHandshake = RunCommand([self.Protocol, "show", self.Name, "latest-handshakes"], require_root=True)
+            latestHandshake = WgShow(self.Protocol, self.Name, "latest-handshakes")
         except subprocess.CalledProcessError:
             return "stopped"
         latestHandshake = latestHandshake.decode("UTF-8").split()
@@ -770,7 +774,7 @@ class WireguardConfiguration:
         if not self.getStatus():
             self.toggleConfiguration()
         # try:
-        data_usage = RunCommand([self.Protocol, "show", self.Name, "transfer"], require_root=True)
+        data_usage = WgShow(self.Protocol, self.Name, "transfer")
         data_usage = data_usage.decode("UTF-8").split("\n")
         
         data_usage = [p.split("\t") for p in data_usage]
@@ -826,7 +830,7 @@ class WireguardConfiguration:
         if not self.getStatus():
             self.toggleConfiguration()
         try:
-            data_usage = RunCommand([self.Protocol, "show", self.Name, "endpoints"], require_root=True)
+            data_usage = WgShow(self.Protocol, self.Name, "endpoints")
         except subprocess.CalledProcessError:
             return "stopped"
         data_usage = data_usage.decode("UTF-8").split()
@@ -846,13 +850,13 @@ class WireguardConfiguration:
         self.getStatus()
         if self.Status:
             try:
-                check = RunCommand([f"{self.Protocol}-quick", "down", self.Name], require_root=True)
+                check = WgQuick(self.Protocol, "down", self.Name)
                 self.removeAutostart()
             except subprocess.CalledProcessError as exc:
                 return False, str(exc.output.strip().decode("utf-8"))
         else:
             try:
-                check = RunCommand([f"{self.Protocol}-quick", "up", self.Name], require_root=True)
+                check = WgQuick(self.Protocol, "up", self.Name)
                 self.addAutostart()
             except subprocess.CalledProcessError as exc:
                 return False, str(exc.output.strip().decode("utf-8"))
