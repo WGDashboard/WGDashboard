@@ -64,6 +64,8 @@ class WireguardConfiguration:
         self.AllPeerShareLinks = AllPeerShareLinks
         self.DashboardWebHooks = DashboardWebHooks
         self.configPath = os.path.join(self.__getProtocolPath(), f'{self.Name}.conf')
+        if not self.__isPathWithinBase(self.configPath, self.__getProtocolPath()):
+            raise self.InvalidConfigurationFileException("Configuration path is invalid")
         self.engine: sqlalchemy.Engine = sqlalchemy.create_engine(ConnectionString("wgdashboard"))
         self.metadata: sqlalchemy.MetaData = sqlalchemy.MetaData()
         self.dbType = self.DashboardConfig.GetConfig("Database", "type")[1]
@@ -83,6 +85,8 @@ class WireguardConfiguration:
         else:
             self.Name = data["ConfigurationName"]
             self.configPath = os.path.join(self.__getProtocolPath(), f'{self.Name}.conf')
+            if not self.__isPathWithinBase(self.configPath, self.__getProtocolPath()):
+                raise self.InvalidConfigurationFileException("Configuration path is invalid")
 
             for i in dir(self):
                 if str(i) in data.keys():
