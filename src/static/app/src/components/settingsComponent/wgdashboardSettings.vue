@@ -11,6 +11,7 @@ import AccountSettingsMFA from "@/components/settingsComponent/accountSettingsMF
 import AccountSettingsInputUsername from "@/components/settingsComponent/accountSettingsInputUsername.vue";
 import DashboardEmailSettings from "@/components/settingsComponent/dashboardEmailSettings.vue";
 import DashboardWebHooks from "@/components/settingsComponent/dashboardWebHooks.vue";
+import DashboardAdminUsers from "@/components/settingsComponent/dashboardAdminUsers.vue";
 
 const dashboardConfigurationStore = DashboardConfigurationStore()
 
@@ -47,34 +48,9 @@ const dashboardConfigurationStore = DashboardConfigurationStore()
 				<DashboardIPPortInput></DashboardIPPortInput>
 			</div>
 		</div>
-		<div class="card rounded-3">
-			<div class="card-header">
-				<h6 class="my-2">
-					<i class="bi bi-people-fill me-2"></i>
-					<LocaleText t="Account Settings"></LocaleText>
-				</h6>
-			</div>
-			<div class="card-body d-flex flex-column gap-3">
-				<div>
-					<AccountSettingsInputUsername targetData="username"
-												  title="Username"
-					></AccountSettingsInputUsername>
-				</div>
-				<hr>
-				<div>
-					<AccountSettingsInputPassword
-						targetData="password">
-					</AccountSettingsInputPassword>
-				</div>
-				<hr>
-				<div>
-					<h6 >
-						<LocaleText t="Multi-Factor Authentication (MFA)"></LocaleText>
-					</h6>
-					<AccountSettingsMFA v-if="!dashboardConfigurationStore.getActiveCrossServer()"></AccountSettingsMFA>
-				</div>
-			</div>
-		</div>
+		
+		<!-- Admin Users Management (Multiple Admins) -->
+		<DashboardAdminUsers></DashboardAdminUsers>
 
 		<DashboardAPIKeys></DashboardAPIKeys>
 		<DashboardEmailSettings></DashboardEmailSettings>

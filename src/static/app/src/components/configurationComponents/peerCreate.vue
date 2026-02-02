@@ -31,10 +31,11 @@ export default {
 				allowed_ips: [],
 				private_key: "",
 				public_key: "",
-				DNS: this.dashboardStore.Configuration.Peers.peer_global_dns,
-				endpoint_allowed_ip: this.dashboardStore.Configuration.Peers.peer_endpoint_allowed_ip,
-				keepalive: parseInt(this.dashboardStore.Configuration.Peers.peer_keep_alive),
-				mtu: parseInt(this.dashboardStore.Configuration.Peers.peer_mtu),
+				// Will be set in mounted() with Override Peer Settings priority
+				DNS: "",
+				endpoint_allowed_ip: "",
+				keepalive: 0,
+				mtu: 0,
 				preshared_key: "",
 				preshared_key_bulkAdd: false,
 				advanced_security: "off",
@@ -46,11 +47,40 @@ export default {
 		}
 	},
 	mounted() {
+		// Load available IPs
 		fetchGet("/api/getAvailableIPs/" + this.$route.params.id, {}, (res) => {
 			if (res.status){
 				this.availableIp = res.data;
 			}
 		})
+		
+		// Find current configuration to get Override Peer Settings
+		const currentConfig = this.store.Configurations.find(
+			x => x.Name === this.$route.params.id
+		);
+		
+		// Get Override Peer Settings (if they exist and have values)
+		const override = currentConfig?.Info?.OverridePeerSettings || {};
+		
+		// Get global defaults
+		const globalDefaults = this.dashboardStore.Configuration.Peers;
+		
+		// Apply Override settings with fallback to global defaults
+		// DNS: Override if set, otherwise global default
+		this.data.DNS = override.DNS || globalDefaults.peer_global_dns;
+		
+		// Endpoint Allowed IPs: Override if set, otherwise global default
+		this.data.endpoint_allowed_ip = override.EndpointAllowedIPs || globalDefaults.peer_endpoint_allowed_ip;
+		
+		// MTU: Override if set (and > 0), otherwise global default
+		this.data.mtu = (override.MTU && parseInt(override.MTU) > 0) 
+			? parseInt(override.MTU) 
+			: parseInt(globalDefaults.peer_mtu);
+		
+		// Persistent Keepalive: Override if set (and > 0), otherwise global default
+		this.data.keepalive = (override.PersistentKeepalive && parseInt(override.PersistentKeepalive) > 0)
+			? parseInt(override.PersistentKeepalive)
+			: parseInt(globalDefaults.peer_keep_alive);
 	},
 	setup(){
 		const store = WireguardConfigurationsStore();
