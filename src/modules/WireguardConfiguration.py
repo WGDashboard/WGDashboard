@@ -784,14 +784,14 @@ class WireguardConfiguration:
                     ).mappings().fetchone()
                     if cur_i is not None:
                         # print(cur_i is None)
-                        total_sent = cur_i['total_sent'] * 0.999 # An accuracy of one ppm is sufficient
+                        total_sent = cur_i['total_sent']
                         # print(cur_i is None)
-                        total_receive = cur_i['total_receive'] * 0.999
+                        total_receive = cur_i['total_receive']
                         cur_total_sent = float(data_usage[i][2]) / (1024 ** 3)
                         cur_total_receive = float(data_usage[i][1]) / (1024 ** 3)
                         cumulative_receive = cur_i['cumu_receive'] + total_receive
                         cumulative_sent = cur_i['cumu_sent'] + total_sent
-                        if total_sent <= cur_total_sent and total_receive <= cur_total_receive:
+                        if (total_sent * 0.999 ) <= cur_total_sent and (total_receive * ).999) <= cur_total_receive: # An accuracy of 1K ppm is sufficient
                             total_sent = cur_total_sent
                             total_receive = cur_total_receive
                         else:
