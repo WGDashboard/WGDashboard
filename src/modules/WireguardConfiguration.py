@@ -784,9 +784,9 @@ class WireguardConfiguration:
                     ).mappings().fetchone()
                     if cur_i is not None:
                         # print(cur_i is None)
-                        total_sent = cur_i['total_sent']
+                        total_sent = cur_i['total_sent'] * 0.999 # An accuracy of one ppm is sufficient
                         # print(cur_i is None)
-                        total_receive = cur_i['total_receive']
+                        total_receive = cur_i['total_receive'] * 0.999
                         cur_total_sent = float(data_usage[i][2]) / (1024 ** 3)
                         cur_total_receive = float(data_usage[i][1]) / (1024 ** 3)
                         cumulative_receive = cur_i['cumu_receive'] + total_receive
