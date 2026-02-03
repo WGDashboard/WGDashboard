@@ -16,7 +16,7 @@
     "@vue/language-server": "3.2.4",
     "@vuepic/vue-datepicker": "^12.1.0",
     "@vueuse/core": "^14.0.0",
-    "@vueuse/shared": "^14.1.0",
+    "@vueuse/shared": "^14.2.0",
     "animate.css": "^4.1.1",
     "bootstrap": "^5.3.2",
     "bootstrap-icons": "^1.11.3",
