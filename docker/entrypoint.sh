@@ -102,23 +102,51 @@ ensure_installation() {
   echo "Removing clear command from wgd.sh for better Docker logging."
   sed -i '/clear/d' ./wgd.sh
 
+  # PERSISTENCE FOR databases directory
   # Create required directories and links
   if [ ! -d "/data/db" ]; then
     echo "Creating database dir"
     mkdir -p /data/db
   fi
 
-  if [ ! -d "${WGDASH}/src/db" ]; then
-    ln -s /data/db "${WGDASH}/src/db"
+  if [[ ! -L "${WGDASH}/src/db" ]] && [[ -d "${WGDASH}/src/db" ]]; then
+    echo "Removing ${WGDASH}/src/db since its not a symbolic link."
+    rm -rfv "${WGDASH}/src/db"
+  fi
+  if [[ -L "${WGDASH}/src/db" ]]; then
+    echo "${WGDASH}/src/db is a symbolic link."
+  else
+    ln -sv /data/db "${WGDASH}/src/db"
   fi
 
+  # PERSISTENCE FOR wg-dashboard-oidc-providers.json
+  if [ ! -f "/data/wg-dashboard-oidc-providers.json" ]; then
+    echo "Creating wg-dashboard-oidc-providers.json file"
+    touch "/data/wg-dashboard-oidc-providers.json"
+  fi
+  if [[ ! -L "${WGDASH}/src/wg-dashboard-oidc-providers.json" ]] && [[ -f "${WGDASH}/src/wg-dashboard-oidc-providers.json" ]]; then
+    echo "Removing ${WGDASH}/src/wg-dashboard-oidc-providers.json since its not a symbolic link."
+    rm -fv "${WGDASH}/src/wg-dashboard-oidc-providers.json"
+  fi
+  if [[ -L "${WGDASH}/src/wg-dashboard-oidc-providers.json" ]]; then
+    echo "${WGDASH}/src/wg-dashboard-oidc-providers.json is a symbolic link."
+  else
+    ln -sv /data/wg-dashboard-oidc-providers.json "${WGDASH}/src/wg-dashboard-oidc-providers.json"
+  fi
+
+  # PERSISTENCE FOR wg-dashboard.ini
   if [ ! -f "${config_file}" ]; then
     echo "Creating wg-dashboard.ini file"
     touch "${config_file}"
   fi
-
-  if [ ! -f "${WGDASH}/src/wg-dashboard.ini" ]; then
-    ln -s "${config_file}" "${WGDASH}/src/wg-dashboard.ini"
+  if [[ ! -L "${WGDASH}/src/wg-dashboard.ini" ]] && [[ -f "${WGDASH}/src/wg-dashboard.ini" ]]; then
+    echo "Removing ${WGDASH}/src/wg-dashboard.ini since its not a symbolic link."
+    rm -fv "${WGDASH}/src/wg-dashboard.ini"
+  fi
+  if [[ -L "${WGDASH}/src/wg-dashboard.ini" ]]; then
+    echo "${WGDASH}/src/wg-dashboard.ini is a symbolic link."
+  else
+    ln -sv "${config_file}" "${WGDASH}/src/wg-dashboard.ini"
   fi
 
   # Setup WireGuard if needed
@@ -183,6 +211,24 @@ set_envvars() {
     set_ini WireGuardConfiguration autostart "${wg_autostart}"
   fi
 
+  # Database (check if any settings need to be configured)
+  database_vars=("database_type" "database_host" "database_port" "database_username" "database_password")
+  for var in "${database_vars[@]}"; do
+    if [ -n "${!var}" ]; then
+      echo "Configuring database settings:"
+      break
+    fi
+  done
+
+  # Database (iterate through all possible fields)
+  database_fields=("type:database_type" "host:database_host" "port:database_port" 
+                "username:database_username" "password:database_password")
+
+  for field_pair in "${database_fields[@]}"; do
+    IFS=: read -r field var <<< "$field_pair"
+    [[ -n "${!var}" ]] && set_ini Database "$field" "${!var}"
+  done
+
   # Email (check if any settings need to be configured)
   email_vars=("email_server" "email_port" "email_encryption" "email_username" "email_password" "email_from" "email_template")
   for var in "${email_vars[@]}"; do
@@ -207,6 +253,10 @@ set_envvars() {
 start_and_monitor() {
   printf "\n---------------------- STARTING CORE -----------------------\n"
 
+  # Due to resolvconf resetting the DNS we echo back the one we defined (or fallback to default).
+  resolvconf -u
+  echo "nameserver ${global_dns}" >> /etc/resolv.conf
+
   # Due to some instances complaining about this, making sure its there every time.
   mkdir -p /dev/net
   mknod /dev/net/tun c 10 200
@@ -219,8 +269,6 @@ start_and_monitor() {
   [[ ! -d ${WGDASH}/src/download ]] && mkdir ${WGDASH}/src/download
 
   ${WGDASH}/src/venv/bin/gunicorn --config ${WGDASH}/src/gunicorn.conf.py
-
-  /usr/sbin/resolvconf -u
 
   if [ $? -ne 0 ]; then
     echo "Loading WGDashboard failed... Look above for details."

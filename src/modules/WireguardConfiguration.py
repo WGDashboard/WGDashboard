@@ -109,10 +109,17 @@ class WireguardConfiguration:
                 self.__parser["Interface"]["Jmax"] = self.Jmax
                 self.__parser["Interface"]["S1"] = self.S1
                 self.__parser["Interface"]["S2"] = self.S2
+                self.__parser["Interface"]["S3"] = self.S3
+                self.__parser["Interface"]["S4"] = self.S4
                 self.__parser["Interface"]["H1"] = self.H1
                 self.__parser["Interface"]["H2"] = self.H2
                 self.__parser["Interface"]["H3"] = self.H3
                 self.__parser["Interface"]["H4"] = self.H4
+                self.__parser["Interface"]["I1"] = self.I1
+                self.__parser["Interface"]["I2"] = self.I2
+                self.__parser["Interface"]["I3"] = self.I3
+                self.__parser["Interface"]["I4"] = self.I4
+                self.__parser["Interface"]["I5"] = self.I5
 
             if "Backup" not in data.keys():
                 self.createDatabase()
@@ -127,8 +134,11 @@ class WireguardConfiguration:
         current_app.logger.info(f"Initialized Configuration: {name}")
         self.__dumpDatabase()
         if self.getAutostartStatus() and not self.getStatus() and startup:
-            self.toggleConfiguration()
-            current_app.logger.info(f"Autostart Configuration: {name}")
+            status, ext = self.toggleConfiguration()
+            if not status:
+                current_app.logger.error(f"Failed to autostart configuration: {name}. Reason: {ext}")
+            else:
+                current_app.logger.info(f"Autostart Configuration: {name}")
             
         self.configurationInfo: WireguardConfigurationInfo | None = None
         configurationInfoJson = self.readConfigurationInfo()
@@ -404,6 +414,7 @@ class WireguardConfiguration:
                 try:
                     if "[Peer]" not in content:
                         current_app.logger.info(f"{self.Name} config has no [Peer] section")
+                        self.Peers = []
                         return
 
                     peerStarts = content.index("[Peer]")
@@ -665,9 +676,8 @@ class WireguardConfiguration:
 
         if not self.__wgSave():
             return False, "Failed to save configuration through WireGuard"
-
+        self.getRestrictedPeers()
         self.getPeers()
-
         if numOfRestrictedPeers == len(listOfPublicKeys):
             return True, f"Restricted {numOfRestrictedPeers} peer(s)"
         return False, f"Restricted {numOfRestrictedPeers} peer(s) successfully. Failed to restrict {numOfFailedToRestrictPeers} peer(s)"
@@ -783,9 +793,7 @@ class WireguardConfiguration:
                         )
                     ).mappings().fetchone()
                     if cur_i is not None:
-                        # print(cur_i is None)
                         total_sent = cur_i['total_sent']
-                        # print(cur_i is None)
                         total_receive = cur_i['total_receive']
                         cur_total_sent = float(data_usage[i][2]) / (1024 ** 3)
                         cur_total_receive = float(data_usage[i][1]) / (1024 ** 3)
@@ -995,7 +1003,7 @@ class WireguardConfiguration:
             original = [l.rstrip("\n") for l in f.readlines()]
             allowEdit = ["Address", "PreUp", "PostUp", "PreDown", "PostDown", "ListenPort", "Table"]
             if self.Protocol == 'awg':
-                allowEdit += ["Jc", "Jmin", "Jmax", "S1", "S2", "H1", "H2", "H3", "H4"]
+                allowEdit += ["Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4", "I1", "I2", "I3", "I4", "I5"]
             start = original.index("[Interface]")
             try:
                 end = original.index("[Peer]")
@@ -1226,7 +1234,6 @@ class WireguardConfiguration:
     def __validateOverridePeerSettings(self, key: str, value: str | int) -> tuple[bool, None] | tuple[bool, str]:
         status = True
         msg = None
-        print(value)
         if key == "DNS" and value:
             status, msg = ValidateDNSAddress(value)
         elif key == "EndpointAllowedIPs" and value:

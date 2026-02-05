@@ -20,7 +20,6 @@ const squareHeight = computed(() => {
 
 <template>
 	<div class="flex-grow-1 square rounded-3 border position-relative p-2"
-	     
 	     @mouseenter="show = true"
 	     @mouseleave="show = false"
 	     :style="{'background-color': `rgb(13 110 253 / ${percentage*10}%)`}">

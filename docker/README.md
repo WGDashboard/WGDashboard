@@ -95,23 +95,28 @@ Updating the WGDashboard container should be through 'The Docker Way' - by pulli
 
 ## ⚙️ Environment Variables
 
-| Variable           | Accepted Values                          | Default                 | Example                  | Description                                                             |
-| ------------------ | ---------------------------------------- | ----------------------- | ------------------------ | ----------------------------------------------------------------------- |
-| `tz`               | Timezone                                 | `Europe/Amsterdam`      | `America/New_York`       | Sets the container's timezone. Useful for accurate logs and scheduling. |
-| `global_dns`       | IPv4 and IPv6 addresses                  | `9.9.9.9`               | `8.8.8.8`, `1.1.1.1`     | Default DNS for WireGuard clients.                                      |
-| `public_ip`        | Public IP address                        | Retrieved automatically | `253.162.134.73`         | Used to generate accurate client configs. Needed if container is NAT’d. |
-| `wgd_port`         | Any port that is allowed for the process | `10086`                 | `443`                    | This port is used to set the WGDashboard web port.                      |
-| `username`         | Any non‐empty string                     | `-`                     | `admin`                  | Username for the WGDashboard web interface account.                     |
-| `password`         | Any non‐empty string                     | `-`                     | `s3cr3tP@ss`             | Password for the WGDashboard web interface account (stored hashed).     |
-| `enable_totp`      | `true`, `false`                          | `true`                  | `false`                  | Enable TOTP‐based two‐factor authentication for the account.            |
-| `wg_autostart`     | Wireguard interface name                 | `-`                     | `wg0` or `wg0\|\|wg1\|\|wg2` | Auto‐start the WireGuard interface when the container launches.         |
-| `email_server`     | SMTP server address                      | `-`                     | `smtp.gmail.com`         | SMTP server for sending email notifications.                            |
-| `email_port`       | SMTP port number                         | `-`                     | `587`                    | Port for connecting to the SMTP server.                                 |
-| `email_encryption` | `TLS`, `SSL`, etc.                       | `-`                     | `TLS`                    | Encryption method for email communication.                              |
-| `email_username`   | Any non-empty string                     | `-`                     | `user@example.com`       | Username for SMTP authentication.                                       |
-| `email_password`   | Any non-empty string                     | `-`                     | `app_password`           | Password for SMTP authentication.                                       |
-| `email_from`       | Valid email address                      | `-`                     | `noreply@example.com`    | Email address used as the sender for notifications.                     |
-| `email_template`   | Path to template file                    | `-`                     | `your-template`          | Custom template for email notifications.                                |
+| Variable           | Accepted Values                          | Default                 | Example               | Description                                                             |
+| ------------------ | ---------------------------------------- | ----------------------- | --------------------- | ----------------------------------------------------------------------- |
+| `tz`               | Timezone                                 | `Europe/Amsterdam`      | `America/New_York`    | Sets the container's timezone. Useful for accurate logs and scheduling. |
+| `global_dns`       | IPv4 and IPv6 addresses                  | `9.9.9.9`               | `8.8.8.8`, `1.1.1.1`  | Default DNS for WireGuard clients.                                      |
+| `public_ip`        | Public IP address                        | Retrieved automatically | `253.162.134.73`      | Used to generate accurate client configs. Needed if container is NAT’d. |
+| `wgd_port`         | Any port that is allowed for the process | `10086`                 | `443`                 | This port is used to set the WGDashboard web port.                      |
+| `username`         | Any non‐empty string                     | `-`                     | `admin`               | Username for the WGDashboard web interface account.                     |
+| `password`         | Any non‐empty string                     | `-`                     | `s3cr3tP@ss`          | Password for the WGDashboard web interface account (stored hashed).     |
+| `enable_totp`      | `true`, `false`                          | `true`                  | `false`               | Enable TOTP‐based two‐factor authentication for the account.            |
+| `wg_autostart`     | Wireguard interface name                 | `false`                 | `true`                | Auto‐start the WireGuard client when the container launches.            |
+| `email_server`     | SMTP server address                      | `-`                     | `smtp.gmail.com`      | SMTP server for sending email notifications.                            |
+| `email_port`       | SMTP port number                         | `-`                     | `587`                 | Port for connecting to the SMTP server.                                 |
+| `email_encryption` | `TLS`, `SSL`, etc.                       | `-`                     | `TLS`                 | Encryption method for email communication.                              |
+| `email_username`   | Any non-empty string                     | `-`                     | `user@example.com`    | Username for SMTP authentication.                                       |
+| `email_password`   | Any non-empty string                     | `-`                     | `app_password`        | Password for SMTP authentication.                                       |
+| `email_from`       | Valid email address                      | `-`                     | `noreply@example.com` | Email address used as the sender for notifications.                     |
+| `email_template`   | Path to template file                    | `-`                     | `your-template`       | Custom template for email notifications.                                |
+| `database_type`    | `sqlite`, `postgresql`, `mariadb+mariadbconnector`, etc.           | `-` | `postgresql` | Type of [sqlalchemy database engine](https://docs.sqlalchemy.org/en/21/core/engines.html). |
+| `database_host`    | Any non-empty string                     | `-`                     | `localhost`           | IP-Address or hostname of the SQL-database server.                       |
+| `database_port`    | Any non-empty string (or int for port)   | `-`                     | `5432`                | Port for the database communication.                                     |
+| `database_username`| Valid database username                  | `-`                     | `database_user`       | Database user username.                                                  |
+| `database_password`| Valid database password                  | `-`                     | `database_password`   | Database user password.                                                  |
 
 ---
 

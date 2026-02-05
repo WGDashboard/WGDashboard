@@ -40,5 +40,5 @@ export default defineConfig({
 			}
 		}
 	},
-	base: '/static/dist/WGDashboardClient'
+	base: './'
 })

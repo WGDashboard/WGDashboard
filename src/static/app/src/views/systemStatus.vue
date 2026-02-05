@@ -176,7 +176,7 @@ const memoryHistoricalChartData = computed(() => {
 		<div class="card rounded-3 h-100 shadow">
 			<div class="card-body p-4">
 				<div class="d-flex flex-column gap-3">
-					<div class="d-flex flex-column gap-3" style="height: 130px">
+					<div class="d-flex flex-column gap-3" style="min-height: 130px">
 						<div class="d-flex align-items-center">
 							<h3 class="text-muted mb-0">
 								<i class="bi bi-cpu-fill me-2"></i>
@@ -192,7 +192,7 @@ const memoryHistoricalChartData = computed(() => {
 						<div class="progress" role="progressbar" style="height: 10px">
 							<div class="progress-bar" :style="{width: `${data?.CPU.cpu_percent}%` }"></div>
 						</div>
-						<div class="d-flex gap-1">
+						<div class="d-grid gap-1" style="grid-template-columns: repeat(10, 1fr)">
 							<CpuCore
 								v-for="(cpu, count) in data?.CPU.cpu_percent_per_cpu"
 								:square="true"

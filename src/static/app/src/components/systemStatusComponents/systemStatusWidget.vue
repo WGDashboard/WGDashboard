@@ -49,7 +49,7 @@ const data = computed(() => {
 			<div class="progress" role="progressbar" style="height: 6px">
 				<div class="progress-bar" :style="{width: `${data?.CPU.cpu_percent}%` }"></div>
 			</div>
-			<div class="d-flex mt-2 gap-1">
+			<div class="d-grid mt-2 gap-1" style="grid-template-columns: repeat(10, 1fr)">
 				<CpuCore
 					v-for="(cpu, count) in data?.CPU.cpu_percent_per_cpu"
 				         :key="count"
@@ -74,7 +74,7 @@ const data = computed(() => {
 			<div class="progress" role="progressbar" style="height: 6px">
 				<div class="progress-bar bg-success" :style="{width: `${data?.Disks.find(x => x.mountPoint === '/') ? data?.Disks.find(x => x.mountPoint === '/').percent : data?.Disks[0].percent}%` }"></div>
 			</div>
-			<div class="d-flex mt-2 gap-1">
+			<div class="d-grid mt-2 gap-1" style="grid-template-columns: repeat(10, 1fr)">
 				<StorageMount v-for="(disk, count) in data?.Disks"
 				              v-if="data"
 				              :key="disk.mountPoint"

@@ -1,76 +1,101 @@
 import os.path
+import ssl
 import smtplib
+
+# Email libaries
 from email import encoders
-from email.header import Header
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.utils import formataddr
+from email.utils import formatdate
 
 class EmailSender:
     def __init__(self, DashboardConfig):
-        self.smtp = None
         self.DashboardConfig = DashboardConfig
+
         if not os.path.exists('./attachments'):
             os.mkdir('./attachments')
-        
-    def Server(self):
-        return self.DashboardConfig.GetConfig("Email", "server")[1]
-    
-    def Port(self):
-        return self.DashboardConfig.GetConfig("Email", "port")[1]
-    
-    def Encryption(self):
-        return self.DashboardConfig.GetConfig("Email", "encryption")[1]
-    
-    def Username(self):
-        return self.DashboardConfig.GetConfig("Email", "username")[1]
-    
-    def Password(self):
-        return self.DashboardConfig.GetConfig("Email", "email_password")[1]
-    
-    def SendFrom(self):
-        return self.DashboardConfig.GetConfig("Email", "send_from")[1]
-    
-    # Thank you, @gdeeble from GitHub
-    def AuthenticationRequired(self):
-        return self.DashboardConfig.GetConfig("Email", "authentication_required")[1]
 
-    def ready(self):
-        if self.AuthenticationRequired():
-            return all([self.Server(), self.Port(), self.Encryption(), self.Username(), self.Password(), self.SendFrom()])
-        return all([self.Server(), self.Port(), self.Encryption(), self.SendFrom()])
+        self.refresh_vals()
 
-    def send(self, receiver, subject, body, includeAttachment = False, attachmentName = "") -> tuple[bool, str] | tuple[bool, None]:
-        if self.ready():
-            try:
-                self.smtp = smtplib.SMTP(self.Server(), port=int(self.Port()))
-                self.smtp.ehlo()
-                if self.Encryption() == "STARTTLS":
-                    self.smtp.starttls()
-                if self.AuthenticationRequired():
-                    self.smtp.login(self.Username(), self.Password())
-                message = MIMEMultipart()
-                message['Subject'] = subject
-                message['From'] = self.SendFrom()
-                message["To"] = receiver
-                message.attach(MIMEText(body, "plain"))
+    def refresh_vals(self) -> None:
+        self.Server = self.DashboardConfig.GetConfig("Email", "server")[1]
+        self.Port = self.DashboardConfig.GetConfig("Email", "port")[1]
 
-                if includeAttachment and len(attachmentName) > 0:
-                    attachmentPath = os.path.join('./attachments', attachmentName)
-                    if os.path.exists(attachmentPath):
-                        attachment = MIMEBase("application", "octet-stream")
-                        with open(os.path.join('./attachments', attachmentName), 'rb') as f:
-                            attachment.set_payload(f.read())
-                        encoders.encode_base64(attachment)
-                        attachment.add_header("Content-Disposition", f"attachment; filename= {attachmentName}",)
-                        message.attach(attachment)
-                    else:
-                        self.smtp.close()
-                        return False, "Attachment does not exist"
-                self.smtp.sendmail(self.SendFrom(), receiver, message.as_string())
-                self.smtp.close()
-                return True, None
-            except Exception as e:
-                return False, f"Send failed | Reason: {e}"
-        return False, "SMTP not configured"
+        self.Encryption = self.DashboardConfig.GetConfig("Email", "encryption")[1]
+        self.AuthRequired = self.DashboardConfig.GetConfig("Email", "authentication_required")[1]
+        self.Username = self.DashboardConfig.GetConfig("Email", "username")[1]
+        self.Password = self.DashboardConfig.GetConfig("Email", "email_password")[1]
+
+        self.SendFrom = self.DashboardConfig.GetConfig("Email", "send_from")[1]
+
+    def is_ready(self) -> bool:
+        self.refresh_vals()
+
+        if self.AuthRequired:
+            ready = all([
+                self.Server, self.Port, self.Encryption,
+                self.Username, self.Password, self.SendFrom
+            ])
+        else:
+            ready = all([
+                self.Server, self.Port, self.Encryption, self.SendFrom
+            ])
+        return ready
+
+    def send(self, receiver, subject, body, includeAttachment: bool = False, attachmentName: str = "") -> tuple[bool, str | None]:
+        if not self.is_ready():
+            return False, "SMTP not configured"
+
+        message = MIMEMultipart()
+        message['Subject'] = subject
+        message['From'] = self.SendFrom
+        message["To"] = receiver
+        message["Date"] = formatdate(localtime=True)
+        message.attach(MIMEText(body, "plain"))
+
+        if includeAttachment and len(attachmentName) > 0:
+            attachmentPath = os.path.join('./attachments', attachmentName)
+
+            if not os.path.exists(attachmentPath):
+                return False, "Attachment does not exist"
+
+            attachment = MIMEBase("application", "octet-stream")
+            with open(os.path.join('./attachments', attachmentName), 'rb') as f:
+                attachment.set_payload(f.read())
+
+            encoders.encode_base64(attachment)
+            attachment.add_header("Content-Disposition", f"attachment; filename= {attachmentName}",)
+            message.attach(attachment)
+
+        smtp = None
+        try:
+            context = ssl.create_default_context()
+            if self.Encryption == "IMPLICITTLS":
+                smtp = smtplib.SMTP_SSL(self.Server, port=int(self.Port), context=context)
+            else:
+                smtp = smtplib.SMTP(self.Server, port=int(self.Port))
+            smtp.ehlo()
+
+            # Configure SMTP encryption type
+            if self.Encryption == "STARTTLS":
+                smtp.starttls(context=context)
+                smtp.ehlo()
+
+            # Log into the SMTP server if required
+            if self.AuthRequired:
+                smtp.login(self.Username, self.Password)
+
+            # Send the actual email from the SMTP object
+            smtp.sendmail(self.SendFrom, receiver, message.as_string())
+            return True, None
+
+        except Exception as e:
+            return False, f"Send failed | Reason: {e}"
+
+        finally:
+            if smtp:
+                try:
+                    smtp.quit()
+                except Exception:
+                    pass

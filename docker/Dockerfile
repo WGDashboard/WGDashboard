@@ -4,7 +4,7 @@
 #
 
 # Pull the current golang-alpine image.
-FROM golang:1.25-alpine AS awg-go
+FROM golang:1.25-alpine3.23 AS awg-go
 
 # Install build-dependencies.
 RUN apk add --no-cache \
@@ -30,7 +30,7 @@ RUN go version && \
 # AWG TOOLS BUILDING STAGE
 # Base: Alpine
 #
-FROM alpine:latest AS awg-tools
+FROM alpine:3.23 AS awg-tools
 
 # Install needed dependencies.
 RUN apk add --no-cache \
@@ -55,7 +55,7 @@ RUN make && chmod +x wg*
 #
 
 # Use the python-alpine image for building pip dependencies
-FROM python:3.14-alpine AS pip-builder
+FROM python:3.14-alpine3.23 AS pip-builder
 
 ARG TARGETPLATFORM
 
@@ -91,7 +91,7 @@ RUN . /opt/wgdashboard/src/venv/bin/activate && \
 #
 
 # Running with the python-alpine image.
-FROM python:3.14-alpine AS final
+FROM python:3.14-alpine3.23 AS final
 LABEL maintainer="dselen@nerthus.nl"
 
 # Install only the runtime dependencies

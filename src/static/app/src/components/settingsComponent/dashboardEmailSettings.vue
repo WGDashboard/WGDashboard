@@ -61,7 +61,7 @@ const sendTestEmail = async () => {
 		<div class="card-header">
 			<h6 class="my-2 d-flex">
 				<i class="bi bi-envelope-fill me-2"></i>
-				<LocaleText t="Email Account"></LocaleText>
+				<LocaleText t="Email Server Settings"></LocaleText>
 				<span class="text-success ms-auto" v-if="emailIsReady">
 					<i class="bi bi-check-circle-fill me-2"></i>
 					<LocaleText t="Ready"></LocaleText>
@@ -115,6 +115,9 @@ const sendTestEmail = async () => {
 							<select class="form-select rounded-3"
 							        v-model="store.Configuration.Email.encryption"
 							        id="encryption">
+								<option value="IMPLICITTLS">
+									IMPLICIT TLS
+								</option>
 								<option value="STARTTLS">
 									STARTTLS
 								</option>

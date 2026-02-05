@@ -72,7 +72,11 @@ def ResponseObject(status=True, message=None, data=None, status_code = 200) -> F
 '''
 Flask App
 '''
-app = Flask("WGDashboard", template_folder=os.path.abspath("./static/dist/WGDashboardAdmin"))
+_, APP_PREFIX_INIT = DashboardConfig().GetConfig("Server", "app_prefix")
+app = Flask("WGDashboard",
+            template_folder=os.path.abspath("./static/dist/WGDashboardAdmin"),
+            static_folder=os.path.abspath("./static/dist/WGDashboardAdmin"),
+            static_url_path=APP_PREFIX_INIT if APP_PREFIX_INIT else '')
 
 def peerInformationBackgroundThread():
     global WireguardConfigurations
@@ -92,11 +96,13 @@ def peerInformationBackgroundThread():
                             c.getPeersTransfer()
                             c.getPeersEndpoint()
                             c.getPeers()
-                            if delay == 6:
-                                if c.configurationInfo.PeerTrafficTracking:
-                                    c.logPeersTraffic()
-                                if c.configurationInfo.PeerHistoricalEndpointTracking:
-                                    c.logPeersHistoryEndpoint()
+                            if DashboardConfig.GetConfig('WireGuardConfiguration', 'peer_tracking')[1] is True:
+                                print("[WGDashboard] Tracking Peers")
+                                if delay == 6:
+                                    if c.configurationInfo.PeerTrafficTracking:
+                                        c.logPeersTraffic()
+                                    if c.configurationInfo.PeerHistoricalEndpointTracking:
+                                        c.logPeersHistoryEndpoint()
                             c.getRestrictedPeersList()
             except Exception as e:
                 app.logger.error(f"[WGDashboard] Background Thread #1 Error", e)
@@ -250,7 +256,9 @@ def auth_req():
                 '/static/', 'validateAuthentication', 'authenticate', 'getDashboardConfiguration',
                 'getDashboardTheme', 'getDashboardVersion', 'sharePeer/get', 'isTotpEnabled', 'locale',
                 '/fileDownload',
-                '/client'
+                '/client',
+                '/assets/', '/img/', '/json/',
+                '/client/assets/', '/client/img/'
             ]
             
             if (("username" not in session or session.get("role") != "admin") 
@@ -1109,13 +1117,24 @@ def API_GetPeerTraffics():
 @app.get(f'{APP_PREFIX}/api/getPeerTrackingTableCounts')
 def API_GetPeerTrackingTableCounts():
     configurationName = request.args.get("configurationName")
-    if configurationName not in WireguardConfigurations.keys():
+    if configurationName and configurationName not in WireguardConfigurations.keys():
         return ResponseObject(False, "Configuration does not exist")
-    c = WireguardConfigurations.get(configurationName)
-    return ResponseObject(data={
-        "TrafficTrackingTableSize": c.getTransferTableSize(),
-        "HistoricalTrackingTableSize": c.getHistoricalEndpointTableSize()
-    })
+    
+    if configurationName:
+        c = WireguardConfigurations.get(configurationName)
+        return ResponseObject(data={
+            "TrafficTrackingTableSize": c.getTransferTableSize(),
+            "HistoricalTrackingTableSize": c.getHistoricalEndpointTableSize()
+        })
+    
+    d = {}
+    for i in WireguardConfigurations.keys():
+        c = WireguardConfigurations.get(i)
+        d[i] = {
+            "TrafficTrackingTableSize": c.getTransferTableSize(),
+            "HistoricalTrackingTableSize": c.getHistoricalEndpointTableSize()
+        }
+    return ResponseObject(data=d)
 
 @app.get(f'{APP_PREFIX}/api/downloadPeerTrackingTable')
 def API_DownloadPeerTackingTable():
@@ -1323,12 +1342,17 @@ def API_traceroute_execute():
                                   data=json.dumps([x['ip'] for x in result]))
                 d = r.json()
                 for i in range(len(result)):
-                    result[i]['geo'] = d[i]  
+                    result[i]['geo'] = d[i]
+
+                return ResponseObject(data=result)
+
             except Exception as e:
+                app.logger.error(f"Failed to gather the geolocation data: {e}")
                 return ResponseObject(data=result, message="Failed to request IP address geolocation")
-            return ResponseObject(data=result)
-        except Exception as exp:
-            return ResponseObject(False, exp)
+    
+        except Exception as e:
+            app.logger.error(f"Failed to execute the traceroute: {e}")
+            return ResponseObject(data=[], message="Failed to traceroute the given parameter")
     else:
         return ResponseObject(False, "Please provide ipAddress")
 
@@ -1444,7 +1468,7 @@ def API_Locale_Update():
 
 @app.get(f'{APP_PREFIX}/api/email/ready')
 def API_Email_Ready():
-    return ResponseObject(EmailSender.ready())
+    return ResponseObject(EmailSender.is_ready())
 
 @app.post(f'{APP_PREFIX}/api/email/send')
 def API_Email_Send():
@@ -1698,7 +1722,7 @@ Index Page
 
 @app.get(f'{APP_PREFIX}/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html', APP_PREFIX=APP_PREFIX)
 
 if __name__ == "__main__":
     startThreads()
