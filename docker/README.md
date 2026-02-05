@@ -55,7 +55,7 @@ docker run -d \
 
 ---
 
-### 📦 Docker Compose Alternative
+### 📦 Docker Compose Alternative (see the [compose file](./compose.yaml))
 
 You can also use Docker Compose for easier configuration:
 
@@ -65,7 +65,6 @@ services:
     image: ghcr.io/wgdashboard/wgdashboard:latest
     restart: unless-stopped
     container_name: wgdashboard
-
     ports:
       - 10086:10086/tcp
       - 51820:51820/udp
