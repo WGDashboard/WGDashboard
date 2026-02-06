@@ -55,7 +55,8 @@ class DashboardConfig:
                 "peer_display_mode": "grid",
                 "remote_endpoint": GetRemoteEndpoint(),
                 "peer_MTU": "1420",
-                "peer_keep_alive": "21"
+                "peer_keep_alive": "21",
+                "peer_preshared_key_default": "false"
             },
             "Other": {
                 "welcome_session": "true"
