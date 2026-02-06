@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: WGDashboard Community Support (Github)
+    url: https://github.com/orgs/WGDashboard/discussions
+    about: Please ask and answer questions here.
+
+  - name: WGDashboard Community Support (Discord)
+    url: https://discord.gg/72TwzjeuWm
+    about: Discord Server about WGDashboard
+
+  - name: WGDashboard Issue reporting (Bugs and Feature Requests (FR))
+    url: https://github.com/WGDashboard/WGDashboard/issues
+    about: Please report bugs or feature requests here so they can be tracked
+
