@@ -23,7 +23,7 @@ To get the container running you either pull the pre-made image from a remote re
 - ghcr.io/wgdashboard/wgdashboard:<tag>
 - docker.io/donaldzou/wgdashboard:<tag>
 
-> tags should be either: latest, main, <version> or <commit-sha>.
+> tags should be either: latest, main, <version>, <branch-name> (if built) or <commit-sha>.
 
 From there either use the environment variables described below as parameters or use the Docker Compose file: `compose.yaml`.<br>
 Be careful, the default generated WireGuard configuration file uses port 51820/udp. So make sure to use this port if you want to use it out of the box.<br>
