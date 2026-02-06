@@ -15,6 +15,11 @@
         "lang_name_localized": "Беларуская (Беларусь)"
     },
     {
+        "lang_id": "bg-BG",
+        "lang_name": "Bulgarian (Bulgaria)",
+        "lang_name_localized": "Български (България)"
+    },
+    {
         "lang_id": "ca-ES",
         "lang_name": "Catalan (Spain)",
         "lang_name_localized": "Català (Espanya)"
