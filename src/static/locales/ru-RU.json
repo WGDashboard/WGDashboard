@@ -365,5 +365,21 @@
 	"or": "или",
 	"or click the button below to download the ": "Так же, вы можете скачать ",
 	"then": "тогда",
-	"to add your server": "чтобы добавить свой сервер"
+	"to add your server": "чтобы добавить свой сервер",
+	"Admin Users": "Администраторы",
+	"Add Admin": "Добавить администратора",
+	"Change My Password": "Сменить мой пароль",
+	"Created": "Создан",
+	"Last Login": "Последний вход",
+	"TOTP": "TOTP",
+	"Actions": "Действия",
+	"You": "Вы",
+	"Add New Admin": "Добавить нового администратора",
+	"Edit Admin": "Редактировать администратора",
+	"Change Password": "Сменить пароль",
+	"Reset Password": "Сбросить пароль",
+	"Delete Admin": "Удалить администратора",
+	"Confirm Password": "Подтвердить пароль",
+	"Confirm New Password": "Подтвердить новый пароль",
+	"Save Changes": "Сохранить изменения"
 }
