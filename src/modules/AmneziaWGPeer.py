@@ -17,7 +17,7 @@ class AmneziaWGPeer(Peer):
     def updatePeer(self, name: str, private_key: str,
                    preshared_key: str,
                    dns_addresses: str, allowed_ip: str, endpoint_allowed_ip: str, mtu: int,
-                   keepalive: int, advanced_security: str) -> tuple[bool, str] or tuple[bool, None]:
+                   keepalive: int, advanced_security: str, notes: str = "") -> tuple[bool, str] or tuple[bool, None]:
         if not self.configuration.getStatus():
             self.configuration.toggleConfiguration()
 
@@ -81,7 +81,8 @@ class AmneziaWGPeer(Peer):
                         "mtu": mtu,
                         "keepalive": keepalive,
                         "preshared_key": preshared_key,
-                        "advanced_security": advanced_security
+                        "advanced_security": advanced_security,
+                        "notes": notes
                     }).where(
                         self.configuration.peersTable.c.id == self.id
                     )

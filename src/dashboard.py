@@ -690,15 +690,16 @@ def API_updatePeerSettings(configName):
         preshared_key = data['preshared_key']
         mtu = data['mtu']
         keepalive = data['keepalive']
+        notes = data.get('notes', "")
         wireguardConfig = WireguardConfigurations[configName]
         foundPeer, peer = wireguardConfig.searchPeer(id)
         if foundPeer:
             if wireguardConfig.Protocol == 'wg':
                 status, msg = peer.updatePeer(name, private_key, preshared_key, dns_addresses,
-                                       allowed_ip, endpoint_allowed_ip, mtu, keepalive)
+                                       allowed_ip, endpoint_allowed_ip, mtu, keepalive, notes)
             else:
                 status, msg = peer.updatePeer(name, private_key, preshared_key, dns_addresses,
-                    allowed_ip, endpoint_allowed_ip, mtu, keepalive, "off")
+                    allowed_ip, endpoint_allowed_ip, mtu, keepalive, "off", notes)
             wireguardConfig.getPeers()
             DashboardWebHooks.RunWebHook('peer_updated', {
                 "configuration": wireguardConfig.Name,
@@ -849,6 +850,7 @@ def API_addPeers(configName):
             mtu: int = data.get('mtu', None)
             keep_alive: int = data.get('keepalive', None)
             preshared_key: str = data.get('preshared_key', "")            
+            notes: str = data.get('notes', "")
     
             if type(mtu) is not int or mtu < 0 or mtu > 1460:
                 default: str = DashboardConfig.GetConfig("Peers", "peer_mtu")[1]
@@ -900,6 +902,7 @@ def API_addPeers(configName):
                             "allowed_ip": ip,
                             "name": f"BulkPeer_{(addedCount + 1)}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
                             "DNS": dns_addresses,
+                            "notes": "",
                             "endpoint_allowed_ip": endpoint_allowed_ip,
                             "mtu": mtu,
                             "keepalive": keep_alive,
@@ -963,6 +966,7 @@ def API_addPeers(configName):
                         "preshared_key": preshared_key,
                         "endpoint_allowed_ip": endpoint_allowed_ip,
                         "DNS": dns_addresses,
+                        "notes": notes,
                         "mtu": mtu,
                         "keepalive": keep_alive,
                         "advanced_security": "off"

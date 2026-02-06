@@ -25,6 +25,9 @@ export default {
 		reset(){
 			if (this.selectedPeer){
 				this.data = JSON.parse(JSON.stringify(this.selectedPeer))
+				if (this.data.notes === undefined || this.data.notes === null){
+					this.data.notes = ""
+				}
 				this.dataChanged = false;
 			}
 		},
@@ -60,7 +63,7 @@ export default {
 		this.reset();
 	},
 	mounted() {
-		this.$el.querySelectorAll("input").forEach(x => {
+		this.$el.querySelectorAll("input, textarea").forEach(x => {
 			x.addEventListener("change", () => {
 				this.dataChanged = true;
 			});
@@ -98,6 +101,19 @@ export default {
 								       :disabled="this.saving"
 								       v-model="this.data.name"
 								       id="peer_name_textbox" placeholder="">
+							</div>
+							<div>
+								<label for="peer_notes_textbox" class="form-label">
+									<small class="text-muted">
+										<LocaleText t="Notes"></LocaleText>
+									</small>
+								</label>
+								<textarea class="form-control form-control-sm rounded-3"
+								          :disabled="this.saving"
+								          v-model="this.data.notes"
+								          id="peer_notes_textbox"
+								          rows="3"
+								          placeholder=""></textarea>
 							</div>
 							<div>
 								<div class="d-flex position-relative">

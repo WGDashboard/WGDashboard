@@ -22,6 +22,7 @@ class Peer:
         self.DNS = tableData["DNS"]
         self.endpoint_allowed_ip = tableData["endpoint_allowed_ip"]
         self.name = tableData["name"]
+        self.notes = tableData.get("notes", "")
         self.total_receive = tableData["total_receive"]
         self.total_sent = tableData["total_sent"]
         self.total_data = tableData["total_data"]
@@ -52,7 +53,7 @@ class Peer:
     def updatePeer(self, name: str, private_key: str,
                    preshared_key: str,
                    dns_addresses: str, allowed_ip: str, endpoint_allowed_ip: str, mtu: int,
-                   keepalive: int) -> tuple[bool, str] or tuple[bool, None]:
+                   keepalive: int, notes: str = "") -> tuple[bool, str] or tuple[bool, None]:
         if not self.configuration.getStatus():
             self.configuration.toggleConfiguration()
 
@@ -114,7 +115,8 @@ class Peer:
                         "endpoint_allowed_ip": endpoint_allowed_ip,
                         "mtu": mtu,
                         "keepalive": keepalive,
-                        "preshared_key": preshared_key
+                        "preshared_key": preshared_key,
+                        "notes": notes
                     }).where(
                         self.configuration.peersTable.c.id == self.id
                     )
