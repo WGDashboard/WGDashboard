@@ -117,7 +117,8 @@ ENV TZ="Europe/Amsterdam" \
     WGDASH=/opt/wgdashboard
 
 # Create directories needed for operation
-RUN mkdir /data /configs -p ${WGDASH}/src /etc/amnezia/amneziawg
+RUN mkdir /data /configs -p ${WGDASH}/src /etc/amnezia/amneziawg \
+    && echo "name_servers=${global_dns}" >> /etc/resolvconf.conf
 
 # Copy the venv and source files from local compiled locations or repos
 COPY ./src ${WGDASH}/src

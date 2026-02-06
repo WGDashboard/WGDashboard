@@ -204,7 +204,7 @@ const deleteConfigurationModal = ref(false)
 																<LocaleText :t="key"></LocaleText>
 															</small>
 														</label>
-														<input type="number" class="form-control form-control-sm rounded-3"
+														<input type="text" class="form-control form-control-sm rounded-3"
 														       :disabled="saving"
 														       v-model="data[key]"
 														       :id="'configuration_' + key">

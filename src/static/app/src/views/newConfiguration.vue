@@ -49,11 +49,11 @@ export default {
 				H2: 0,
 				H3: 0,
 				H4: 0,
-				I1: 0,
-				I2: 0,
-				I3: 0,
-				I4: 0,
-				I5: 0
+				I1: "",
+				I2: "",
+				I3: "",
+				I4: "",
+				I5: ""
 			},
 			numberOfAvailableIPs: "0",
 			error: false,

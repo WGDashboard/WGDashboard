@@ -255,7 +255,6 @@ start_and_monitor() {
 
   # Due to resolvconf resetting the DNS we echo back the one we defined (or fallback to default).
   resolvconf -u
-  echo "nameserver ${global_dns}" >> /etc/resolv.conf
 
   # Due to some instances complaining about this, making sure its there every time.
   mkdir -p /dev/net

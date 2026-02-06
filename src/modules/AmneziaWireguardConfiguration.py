@@ -28,11 +28,11 @@ class AmneziaWireguardConfiguration(WireguardConfiguration):
         self.H2 = 2
         self.H3 = 3
         self.H4 = 4
-        self.I1 = 0
-        self.I2 = 0
-        self.I3 = 0
-        self.I4 = 0
-        self.I5 = 0
+        self.I1 = ""
+        self.I2 = ""
+        self.I3 = ""
+        self.I4 = ""
+        self.I5 = ""
 
         super().__init__(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, name, data, backup, startup, wg=False)
 
