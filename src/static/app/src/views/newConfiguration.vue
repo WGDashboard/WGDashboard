@@ -54,7 +54,9 @@ export default {
 			success: false,
 			loading: false,
 			parseInterfaceResult: undefined,
-			parsePeersResult: undefined
+			parsePeersResult: undefined,
+			rawConfiguration: "",
+			rawConfigHasPeers: false
 		}
 	},
 	created() {
@@ -81,7 +83,11 @@ export default {
 		async saveNewConfiguration(){
 			if (this.goodToSubmit){
 				this.loading = true;
-				await fetchPost("/api/addWireguardConfiguration", this.newConfiguration, async (res) => {
+				const payload = {...this.newConfiguration};
+				if (this.rawConfiguration && this.rawConfigHasPeers){
+					payload.RawConfiguration = this.rawConfiguration;
+				}
+				await fetchPost("/api/addWireguardConfiguration", payload, async (res) => {
 					if (res.status){
 						this.success = true
 						await this.store.getConfigurations()
@@ -104,8 +110,11 @@ export default {
 			if (!file) return false;
 			const reader = new FileReader();
 			reader.onload = (evt) => {
-				this.parseInterfaceResult = parseInterface(evt.target.result);
-				this.parsePeersResult = parsePeers(evt.target.result);
+				const raw = evt.target.result;
+				this.rawConfiguration = raw;
+				this.parseInterfaceResult = parseInterface(raw);
+				this.parsePeersResult = parsePeers(raw);
+				this.rawConfigHasPeers = Array.isArray(this.parsePeersResult) && this.parsePeersResult.length > 0;
 				let appliedFields = 0;
 				if (this.parseInterfaceResult){
 					this.newConfiguration.ConfigurationName = file.name.replace('.conf', '')
@@ -118,6 +127,9 @@ export default {
 				}
 				if (appliedFields > 0){
 					this.dashboardStore.newMessage("WGDashboard", `Parse successful! Updated ${appliedFields} field(s)`, "success")
+					if (this.rawConfigHasPeers){
+						this.dashboardStore.newMessage("WGDashboard", "Peers detected. The uploaded file will be imported as-is to preserve peer definitions.", "info")
+					}
 				}else {
 					this.dashboardStore.newMessage("WGDashboard", `Parse failed`, "danger")
 				}

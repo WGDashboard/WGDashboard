@@ -9,6 +9,7 @@ from zipfile import ZipFile
 from datetime import datetime, timedelta
 from itertools import islice
 from flask import current_app
+from werkzeug.utils import safe_join
 
 from .ConnectionString import ConnectionString
 from .DashboardConfig import DashboardConfig
@@ -57,13 +58,21 @@ class WireguardConfiguration:
         self.PreDown: str = ""
         self.PostDown: str = ""
         self.SaveConfig: bool = True
-        self.Name = name
+        if name is not None:
+            safe_name = os.path.basename(name)
+            if safe_name != name or not re.fullmatch(r"[A-Za-z0-9_=+.-]{1,15}", safe_name):
+                raise self.InvalidConfigurationFileException("Configuration name is invalid")
+            self.Name = safe_name
+        else:
+            self.Name = name
         self.Protocol = "wg" if wg else "awg"
         self.AllPeerJobs = AllPeerJobs
         self.DashboardConfig = DashboardConfig
         self.AllPeerShareLinks = AllPeerShareLinks
         self.DashboardWebHooks = DashboardWebHooks
-        self.configPath = os.path.join(self.__getProtocolPath(), f'{self.Name}.conf')
+        self.configPath = safe_join(self.__getProtocolPath(), f'{self.Name}.conf')
+        if not self.configPath:
+            raise self.InvalidConfigurationFileException("Configuration path is invalid")
         self.engine: sqlalchemy.Engine = sqlalchemy.create_engine(ConnectionString("wgdashboard"))
         self.metadata: sqlalchemy.MetaData = sqlalchemy.MetaData()
         self.dbType = self.DashboardConfig.GetConfig("Database", "type")[1]
@@ -81,8 +90,13 @@ class WireguardConfiguration:
             self.__parseConfigurationFile()
             self.__initPeersList()
         else:
-            self.Name = data["ConfigurationName"]
-            self.configPath = os.path.join(self.__getProtocolPath(), f'{self.Name}.conf')
+            safe_name = os.path.basename(data["ConfigurationName"])
+            if safe_name != data["ConfigurationName"] or not re.fullmatch(r"[A-Za-z0-9_=+.-]{1,15}", safe_name):
+                raise self.InvalidConfigurationFileException("Configuration name is invalid")
+            self.Name = safe_name
+            self.configPath = safe_join(self.__getProtocolPath(), f'{self.Name}.conf')
+            if not self.configPath:
+                raise self.InvalidConfigurationFileException("Configuration path is invalid")
 
             for i in dir(self):
                 if str(i) in data.keys():
@@ -91,35 +105,58 @@ class WireguardConfiguration:
                     else:
                         setattr(self, i, str(data[i]))
 
-            self.__parser["Interface"] = {
-                "PrivateKey": self.PrivateKey,
-                "Address": self.Address,
-                "ListenPort": self.ListenPort,
-                "PreUp": f"{self.PreUp}",
-                "PreDown": f"{self.PreDown}",
-                "PostUp": f"{self.PostUp}",
-                "PostDown": f"{self.PostDown}",
-                "SaveConfig": "true"
-            }
+            raw_configuration = data.get("RawConfiguration") if data else None
+            if raw_configuration:
+                try:
+                    if not self.__isPathWithinBase(self.configPath, self.__getProtocolPath()):
+                        raise self.InvalidConfigurationFileException("Configuration path is invalid")
+                    if not raw_configuration.lstrip().startswith("[Interface]"):
+                        raise self.InvalidConfigurationFileException("Invalid configuration file: missing [Interface]")
+                    if any(ord(ch) == 0 for ch in raw_configuration):
+                        raise self.InvalidConfigurationFileException("Invalid configuration file: binary content detected")
+                    self.createDatabase()
+                    with open(self.configPath, "w+") as configFile:
+                        configFile.write(raw_configuration)
+                        current_app.logger.info(f"Configuration file {self.configPath} created from upload")
+                    self.__parseConfigurationFile()
+                    self.__initPeersList()
+                except Exception:
+                    try:
+                        os.remove(self.configPath)
+                    except OSError:
+                        pass
+                    self.__dropDatabase()
+                    raise
+            else:
+                self.__parser["Interface"] = {
+                    "PrivateKey": self.PrivateKey,
+                    "Address": self.Address,
+                    "ListenPort": self.ListenPort,
+                    "PreUp": f"{self.PreUp}",
+                    "PreDown": f"{self.PreDown}",
+                    "PostUp": f"{self.PostUp}",
+                    "PostDown": f"{self.PostDown}",
+                    "SaveConfig": "true"
+                }
 
-            if self.Protocol == 'awg':
-                self.__parser["Interface"]["Jc"] = self.Jc
-                self.__parser["Interface"]["Jc"] = self.Jc
-                self.__parser["Interface"]["Jmin"] = self.Jmin
-                self.__parser["Interface"]["Jmax"] = self.Jmax
-                self.__parser["Interface"]["S1"] = self.S1
-                self.__parser["Interface"]["S2"] = self.S2
-                self.__parser["Interface"]["H1"] = self.H1
-                self.__parser["Interface"]["H2"] = self.H2
-                self.__parser["Interface"]["H3"] = self.H3
-                self.__parser["Interface"]["H4"] = self.H4
+                if self.Protocol == 'awg':
+                    self.__parser["Interface"]["Jc"] = self.Jc
+                    self.__parser["Interface"]["Jc"] = self.Jc
+                    self.__parser["Interface"]["Jmin"] = self.Jmin
+                    self.__parser["Interface"]["Jmax"] = self.Jmax
+                    self.__parser["Interface"]["S1"] = self.S1
+                    self.__parser["Interface"]["S2"] = self.S2
+                    self.__parser["Interface"]["H1"] = self.H1
+                    self.__parser["Interface"]["H2"] = self.H2
+                    self.__parser["Interface"]["H3"] = self.H3
+                    self.__parser["Interface"]["H4"] = self.H4
 
-            if "Backup" not in data.keys():
-                self.createDatabase()
-                with open(self.configPath, "w+") as configFile:
-                    self.__parser.write(configFile)
-                    current_app.logger.info(f"Configuration file {self.configPath} created")
-                self.__initPeersList()
+                if "Backup" not in data.keys():
+                    self.createDatabase()
+                    with open(self.configPath, "w+") as configFile:
+                        self.__parser.write(configFile)
+                        current_app.logger.info(f"Configuration file {self.configPath} created")
+                    self.__initPeersList()
 
         if not os.path.exists(os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup')):
             os.mkdir(os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup'))
@@ -146,6 +183,12 @@ class WireguardConfiguration:
         _, path = self.DashboardConfig.GetConfig("Server", "wg_conf_path") if self.Protocol == "wg" \
             else self.DashboardConfig.GetConfig("Server", "awg_conf_path")
         return path
+
+    def __isPathWithinBase(self, path: str, base: str) -> bool:
+        try:
+            return os.path.commonpath([os.path.realpath(path), os.path.realpath(base)]) == os.path.realpath(base)
+        except ValueError:
+            return False
 
     def __initPeersList(self):
         self.Peers: list[Peer] = []
