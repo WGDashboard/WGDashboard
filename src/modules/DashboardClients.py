@@ -8,7 +8,7 @@ import pyotp
 import sqlalchemy as db
 import requests
 
-from .ConnectionString import ConnectionString
+from .DatabaseConnection import ConnectionString
 from .DashboardClientsPeerAssignment import DashboardClientsPeerAssignment
 from .DashboardClientsTOTP import DashboardClientsTOTP
 from .DashboardOIDC import DashboardOIDC
