@@ -6,6 +6,7 @@ import LocaleText from "@/components/text/localeText.vue";
 import {GetLocale} from "@/utilities/locale.js";
 import HelpModal from "@/components/navbarComponents/helpModal.vue";
 import AgentModal from "@/components/navbarComponents/agentModal.vue";
+import {initSystemThemeWatcher, resolveTheme} from "@/utilities/theme.js";
 
 export default {
 	name: "navbar",
@@ -25,6 +26,9 @@ export default {
 		}
 	},
 	computed: {
+		resolvedTheme(){
+			return resolveTheme(this.dashboardConfigurationStore.Configuration.Server.dashboard_theme)
+		},
 		getActiveCrossServer(){
 			if (this.dashboardConfigurationStore.ActiveServerConfiguration){
 				return new URL(this.dashboardConfigurationStore.CrossServerConfiguration.ServerList
@@ -34,6 +38,7 @@ export default {
 		}
 	},
 	async mounted() {
+		initSystemThemeWatcher();
 		await this.wireguardConfigurationsStore.getConfigurations();
 		await fetchGet("/api/getDashboardUpdate", {}, (res) => {
 			if (res.status){
@@ -57,7 +62,7 @@ export default {
 <template>
 	<div class="col-md-3 col-lg-2 d-md-block p-2 navbar-container bg-transparent"
 	     :class="{active: this.dashboardConfigurationStore.ShowNavBar}"
-	     :data-bs-theme="dashboardConfigurationStore.Configuration.Server.dashboard_theme"
+	     :data-bs-theme="resolvedTheme"
 	>
 		<nav id="sidebarMenu" class=" bg-body-tertiary sidebar border h-100 rounded-3 shadow overflow-y-scroll" >
 			<div class="sidebar-sticky ">

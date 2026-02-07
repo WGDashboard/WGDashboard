@@ -1,7 +1,8 @@
 <script setup async>
 import {RouterView, useRoute} from 'vue-router'
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
-import {computed, watch} from "vue";
+import {computed, onMounted, watch} from "vue";
+import {initSystemThemeWatcher, resolveTheme} from "@/utilities/theme.js";
 const store = DashboardConfigurationStore();
 import "@/utilities/wireguard.js"
 import {fetchGet} from "@/utilities/fetch.js";
@@ -25,11 +26,16 @@ watch(store.CrossServerConfiguration, () => {
 	deep: true
 });
 const route = useRoute()
+const resolvedTheme = computed(() => resolveTheme(store.Configuration?.Server?.dashboard_theme ?? "dark"));
+
+onMounted(() => {
+	initSystemThemeWatcher();
+});
 
 </script>
 
 <template>
-	<div class="h-100 bg-body" :data-bs-theme="store.Configuration?.Server.dashboard_theme">
+	<div class="h-100 bg-body" :data-bs-theme="resolvedTheme">
 		<div style="z-index: 9999; height: 5px" class="position-absolute loadingBar top-0 start-0"></div>
 		<nav class="navbar bg-dark sticky-top" data-bs-theme="dark" v-if="!route.meta.hideTopNav">
 			<div class="container-fluid d-flex text-body align-items-center">

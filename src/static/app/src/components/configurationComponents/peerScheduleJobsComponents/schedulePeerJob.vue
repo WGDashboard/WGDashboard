@@ -6,6 +6,7 @@ import {fetchPost} from "@/utilities/fetch.js";
 import { VueDatePicker } from "@vuepic/vue-datepicker";
 import dayjs from "dayjs";
 import LocaleText from "@/components/text/localeText.vue";
+import {initSystemThemeWatcher, resolveTheme} from "@/utilities/theme.js";
 
 export default {
 	name: "schedulePeerJob",
@@ -31,6 +32,14 @@ export default {
 		return {
 			inputType: undefined,
 		}
+	},
+	computed: {
+		isDark(){
+			return resolveTheme(this.store.Configuration.Server.dashboard_theme) === "dark"
+		}
+	},
+	mounted() {
+		initSystemThemeWatcher();
 	},
 	watch:{
 		pjob: {
@@ -151,7 +160,7 @@ export default {
 					:clearable="false"
 					:disabled="!edit"
 					v-if="this.job.Field === 'date'"
-					:dark="this.store.Configuration.Server.dashboard_theme === 'dark'"
+					:dark="isDark"
 				/>
 				
 				<input class="form-control form-control-sm form-control-dark rounded-3 flex-grow-1" 

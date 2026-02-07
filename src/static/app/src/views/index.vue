@@ -2,6 +2,7 @@
 import Navbar from "@/components/navbar.vue";
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
 import Message from "@/components/messageCentreComponent/message.vue";
+import {initSystemThemeWatcher, resolveTheme} from "@/utilities/theme.js";
 
 export default {
 	name: "index",
@@ -11,15 +12,21 @@ export default {
 		return {dashboardConfigurationStore}
 	},
 	computed: {
+		resolvedTheme(){
+			return resolveTheme(this.dashboardConfigurationStore.Configuration.Server.dashboard_theme)
+		},
 		getMessages(){
 			return this.dashboardConfigurationStore.Messages.filter(x => x.show)
 		}
+	},
+	mounted() {
+		initSystemThemeWatcher();
 	}
 }
 </script>
 
 <template>
-	<div class="container-fluid flex-grow-1 main" :data-bs-theme="this.dashboardConfigurationStore.Configuration.Server.dashboard_theme">
+	<div class="container-fluid flex-grow-1 main" :data-bs-theme="resolvedTheme">
 		<div class="row h-100">
 			<Navbar></Navbar>
 			<main class="col-md-9 col-lg-10 overflow-y-scroll mb-0 pt-2">

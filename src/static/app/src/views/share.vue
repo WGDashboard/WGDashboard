@@ -2,9 +2,10 @@
 import {useRoute} from "vue-router";
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
 import {fetchGet} from "@/utilities/fetch.js";
-import {ref} from "vue";
+import {computed, onMounted, ref} from "vue";
 import QRCode from "qrcode";
 import LocaleText from "@/components/text/localeText.vue";
+import {initSystemThemeWatcher, resolveTheme} from "@/utilities/theme.js";
 
 export default {
 	name: "share",
@@ -13,7 +14,7 @@ export default {
 		const route = useRoute();
 		const loaded = ref(false)
 		const store = DashboardConfigurationStore();
-		const theme = ref("");
+		const theme = ref("dark");
 		const peerConfiguration = ref(undefined);
 		const blob = ref(new Blob())
 		await fetchGet("/api/getDashboardTheme", {}, (res) => {
@@ -37,7 +38,11 @@ export default {
 				loaded.value = true;
 			})
 		}
-		return {store, theme, peerConfiguration, blob}
+		const resolvedTheme = computed(() => resolveTheme(theme.value))
+		onMounted(() => {
+			initSystemThemeWatcher();
+		})
+		return {store, theme, resolvedTheme, peerConfiguration, blob}
 	},
 	mounted() {
 		if(this.peerConfiguration){
@@ -67,7 +72,7 @@ export default {
 
 <template>
 	<div class="container-fluid login-container-fluid d-flex main pt-5 overflow-scroll"
-	     :data-bs-theme="this.theme">
+	     :data-bs-theme="this.resolvedTheme">
 		<div class="m-auto text-body" style="width: 500px">
 			<div class="text-center position-relative" style=""
 			     v-if="!this.peerConfiguration">
