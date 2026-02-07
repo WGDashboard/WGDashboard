@@ -97,7 +97,7 @@ watch(() => {
 						<h4 class="mb-0">
 							<LocaleText t="Add Peers"></LocaleText>
 						</h4>
-						<button type="button" class="btn-close ms-auto" @click="emits('close')"></button>
+						<button type="button" class="btn-close ms-auto" @click="emits('close')" aria-label="Close"></button>
 					</div>
 					<div class="card-body px-4 pb-4">
 						<div class="d-flex flex-column gap-2">

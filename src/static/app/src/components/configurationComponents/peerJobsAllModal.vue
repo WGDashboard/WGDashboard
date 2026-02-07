@@ -31,7 +31,7 @@ export default {
 						<h4 class="mb-0 fw-normal">
 							<LocaleText t="All Active Jobs"></LocaleText>
 						</h4>
-						<button type="button" class="btn-close ms-auto" @click="this.$emit('close')"></button>
+						<button type="button" class="btn-close ms-auto" @click="this.$emit('close')" aria-label="Close"></button>
 					</div>
 					<div class="card-body px-4 pb-4 pt-2 ">
 						<button class="btn bg-primary-subtle border-1 border-primary-subtle text-primary-emphasis rounded-3 shadow mb-2"

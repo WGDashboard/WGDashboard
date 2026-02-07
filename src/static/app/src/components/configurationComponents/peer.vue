@@ -111,8 +111,9 @@ export default {
 					     :class="{active: this.subMenuOpened}"
 					>
 						<a role="button" class="text-body"
+						   aria-label="Peer actions"
 						   @click="this.subMenuOpened = true">
-							<h5 class="mb-0"><i class="bi bi-three-dots"></i></h5>
+							<h5 class="mb-0"><i class="bi bi-three-dots" aria-hidden="true"></i></h5>
 						</a>
 						<Transition name="slide-fade">
 							<PeerSettingsDropdown
@@ -137,7 +138,7 @@ export default {
 		<div class="card-footer" role="button" @click="$emit('details')">
 			<small class="d-flex align-items-center">
 				<LocaleText t="Details"></LocaleText>
-				<i class="bi bi-chevron-right ms-auto"></i>
+				<i class="bi bi-chevron-right ms-auto" aria-hidden="true"></i>
 			</small>
 		</div>
 	</div>

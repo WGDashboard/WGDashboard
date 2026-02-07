@@ -78,7 +78,7 @@ export default {
 						<h4 class="mb-0">
 							<LocaleText t="Peer Settings"></LocaleText>
 						</h4>
-						<button type="button" class="btn-close ms-auto" @click="this.$emit('close')"></button>
+						<button type="button" class="btn-close ms-auto" @click="this.$emit('close')" aria-label="Close"></button>
 					</div>
 					<div class="card-body px-4" v-if="this.data">
 						<div class="d-flex flex-column gap-2 mb-4">

@@ -33,7 +33,7 @@ const assignClient = async (clientID) => {
 						<h4 class="mb-0">
 							<LocaleText t="Assign Peer to Client"></LocaleText>
 						</h4>
-						<button type="button" class="btn-close ms-auto" @click="emits('close')"></button>
+						<button type="button" class="btn-close ms-auto" @click="emits('close')" aria-label="Close"></button>
 					</div>
 					<div class="card-body px-4 pb-4 d-flex gap-2 flex-column">
 						<AssignedClients

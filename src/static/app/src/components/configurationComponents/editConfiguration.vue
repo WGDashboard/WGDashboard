@@ -97,7 +97,7 @@ const deleteConfigurationModal = ref(false)
 							<h4 class="mb-0">
 								<LocaleText t="Configuration Settings"></LocaleText>
 							</h4>
-							<button type="button" class="btn-close ms-auto" @click="$emit('close')"></button>
+							<button type="button" class="btn-close ms-auto" @click="$emit('close')" aria-label="Close"></button>
 						</div>
 						<div class="card-body px-4 pb-4">
 							<div class="d-flex gap-2 flex-column">

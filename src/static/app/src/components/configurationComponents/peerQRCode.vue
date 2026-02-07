@@ -69,7 +69,7 @@ export default {
 						<h4 class="mb-0">
 							<LocaleText t="QR Code"></LocaleText>
 						</h4>
-						<button type="button" class="btn-close ms-auto" @click="this.$emit('close')"></button>
+						<button type="button" class="btn-close ms-auto" @click="this.$emit('close')" aria-label="Close"></button>
 					</div>
 					<div class="card-body p-4">
 						<div class="d-flex gap-2 flex-column">

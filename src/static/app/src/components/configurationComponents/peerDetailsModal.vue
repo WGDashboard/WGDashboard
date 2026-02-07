@@ -46,7 +46,7 @@ defineEmits(['close'])
 						<h4 class="mb-0 fw-normal">
 							<LocaleText t="Peer Details"></LocaleText>
 						</h4>
-						<button type="button" class="btn-close ms-auto" @click="$emit('close')"></button>
+						<button type="button" class="btn-close ms-auto" @click="$emit('close')" aria-label="Close"></button>
 					</div>
 					<div class="card-body px-4">
 						<div>

@@ -45,7 +45,7 @@ const createBackup = () => {
 						<h4 class="mb-0">
 							<LocaleText t="Backup & Restore"></LocaleText>
 						</h4>
-						<button type="button" class="btn-close ms-auto" @click="$emit('close')"></button>
+						<button type="button" class="btn-close ms-auto" @click="$emit('close')" aria-label="Close"></button>
 					</div>
 					<button 
 						@click="createBackup()"
