@@ -137,6 +137,9 @@ class WireguardConfiguration:
             self.initConfigurationInfo()
         else:
             self.configurationInfo = WireguardConfigurationInfo.model_validate_json(configurationInfoJson.get("Info"))
+
+        self._realtime_rate_samples = {}
+        self._realtime_rates = {}
         
         if self.Status:
             self.addAutostart()
@@ -817,10 +820,55 @@ class WireguardConfiguration:
                                         "total_data": total_receive + total_sent
                                     }).where(
                                         self.peersTable.c.id == data_usage[i][0]
-                                    )
                                 )
+                            )
 
             
+
+    def getPeersRealtimeRates(self):
+        if not self.getStatus():
+            self.toggleConfiguration()
+        try:
+            data_usage = subprocess.check_output(f"{self.Protocol} show {self.Name} transfer",
+                                                 shell=True, stderr=subprocess.STDOUT)
+        except subprocess.CalledProcessError:
+            return {}
+        now = time.time()
+        data_usage = data_usage.decode("UTF-8").split("\n")
+        data_usage = [p.split("\t") for p in data_usage]
+
+        rates = {}
+        for row in data_usage:
+            if len(row) != 3:
+                continue
+            peer_id = row[0]
+            recv_bytes = float(row[1])
+            sent_bytes = float(row[2])
+            sample = self._realtime_rate_samples.get(peer_id)
+            if sample:
+                dt = now - sample["ts"]
+                if dt > 0:
+                    recv_bps = max(0.0, recv_bytes - sample["recv_bytes"]) / dt
+                    sent_bps = max(0.0, sent_bytes - sample["sent_bytes"]) / dt
+                else:
+                    recv_bps = 0.0
+                    sent_bps = 0.0
+            else:
+                recv_bps = 0.0
+                sent_bps = 0.0
+
+            rates[peer_id] = {
+                "recv_bps": recv_bps,
+                "sent_bps": sent_bps
+            }
+            self._realtime_rate_samples[peer_id] = {
+                "recv_bytes": recv_bytes,
+                "sent_bytes": sent_bytes,
+                "ts": now
+            }
+
+        self._realtime_rates = rates
+        return rates
 
     def getPeersEndpoint(self):
         if not self.getStatus():
