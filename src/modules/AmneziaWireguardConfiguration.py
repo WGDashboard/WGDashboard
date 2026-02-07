@@ -293,13 +293,13 @@ class AmneziaWireguardConfiguration(WireguardConfiguration):
                     with open(uid, "w+") as f:
                         f.write(p['preshared_key'])
 
-                subprocess.check_output(
-                    f"{self.Protocol} set {self.Name} peer {p['id']} allowed-ips {p['allowed_ip'].replace(' ', '')}{f' preshared-key {uid}' if presharedKeyExist else ''}",
-                    shell=True, stderr=subprocess.STDOUT)
+                self._wg_set_peer_allowed_ips(
+                    p['id'],
+                    uid if presharedKeyExist else None
+                )
                 if presharedKeyExist:
                     os.remove(uid)
-            subprocess.check_output(
-                f"{self.Protocol}-quick save {self.Name}", shell=True, stderr=subprocess.STDOUT)
+            self._wg_quick_save()
             self.getPeers()
             for p in peers:
                 p = self.searchPeer(p['id'])

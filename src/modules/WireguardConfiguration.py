@@ -22,6 +22,20 @@ from .DashboardWebHooks import DashboardWebHooks
 
 
 class WireguardConfiguration:
+    _WG_BINARIES = {
+        "wg": {
+            "exe": ("/usr/sbin/wg", "/usr/bin/wg"),
+            "quick": ("/usr/sbin/wg-quick", "/usr/bin/wg-quick"),
+        },
+        "awg": {
+            "exe": ("/usr/sbin/awg", "/usr/bin/awg"),
+            "quick": ("/usr/sbin/awg-quick", "/usr/bin/awg-quick"),
+        },
+    }
+    _SUDO_BINARIES = ("/usr/sbin/sudo", "/usr/bin/sudo")
+    _IFACE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,15}$")
+    _PEER_RE = re.compile(r"^[A-Za-z0-9+/=]{32,64}$")
+
     class InvalidConfigurationFileException(Exception):
         def __init__(self, m):
             self.message = m
@@ -58,6 +72,7 @@ class WireguardConfiguration:
         self.PostDown: str = ""
         self.SaveConfig: bool = True
         self.Name = name
+        self._trusted_name: str | None = None
         self.Protocol = "wg" if wg else "awg"
         self.AllPeerJobs = AllPeerJobs
         self.DashboardConfig = DashboardConfig
@@ -141,6 +156,127 @@ class WireguardConfiguration:
         if self.Status:
             self.addAutostart()
         
+
+    def _resolve_executable(self, quick: bool) -> str:
+        if self.Protocol not in self._WG_BINARIES:
+            raise ValueError(f"Unsupported protocol: {self.Protocol}")
+        key = "quick" if quick else "exe"
+        candidates = self._WG_BINARIES[self.Protocol][key]
+        for path in candidates:
+            if os.path.exists(path):
+                return path
+        fallback = shutil.which(f"{self.Protocol}-quick" if quick else self.Protocol)
+        if fallback:
+            fallback = os.path.realpath(fallback)
+            if fallback in candidates:
+                return fallback
+        raise FileNotFoundError(f"{self.Protocol} binary not found in allowed paths")
+
+    def _resolve_sudo(self) -> str:
+        for path in self._SUDO_BINARIES:
+            if os.path.exists(path):
+                return path
+        fallback = shutil.which("sudo")
+        if fallback:
+            fallback = os.path.realpath(fallback)
+            if fallback in self._SUDO_BINARIES:
+                return fallback
+        raise FileNotFoundError("sudo not found in allowed paths")
+
+    def _apply_sudo(self, cmd: list[str]) -> list[str]:
+        if os.geteuid() != 0:
+            sudo_path = self._resolve_sudo()
+            return [sudo_path, "--non-interactive"] + cmd
+        return cmd
+
+    def _validate_interface(self) -> str:
+        if not self._trusted_name:
+            raise ValueError("Configuration name not trusted")
+        return self._trusted_name
+
+    def setTrustedName(self, name: str) -> None:
+        if not name or not self._IFACE_RE.fullmatch(name):
+            raise ValueError(f"Invalid configuration name: {name}")
+        self._trusted_name = name
+
+    def _validate_peer_id(self, peer_id: str) -> str:
+        if not peer_id or not self._PEER_RE.fullmatch(peer_id):
+            raise ValueError("Invalid peer public key")
+        return peer_id
+
+    def _normalize_allowed_ips(self, allowed_ips: str) -> str:
+        cleaned = str(allowed_ips or "").replace(" ", "")
+        ok, err = ValidateEndpointAllowedIPs(cleaned)
+        if not ok:
+            raise ValueError(err or "Invalid AllowedIPs")
+        return cleaned
+
+    def _wg_show_transfer(self) -> bytes:
+        exe = self._resolve_executable(quick=False)
+        iface = self._validate_interface()
+        cmd = self._apply_sudo([exe, "show", iface, "transfer"])
+        return subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+
+    def _wg_show_endpoints(self) -> bytes:
+        exe = self._resolve_executable(quick=False)
+        iface = self._validate_interface()
+        cmd = self._apply_sudo([exe, "show", iface, "endpoints"])
+        return subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+
+    def _wg_show_latest_handshakes(self) -> bytes:
+        exe = self._resolve_executable(quick=False)
+        iface = self._validate_interface()
+        cmd = self._apply_sudo([exe, "show", iface, "latest-handshakes"])
+        return subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+
+    def _wg_quick_up(self) -> bytes:
+        exe = self._resolve_executable(quick=True)
+        iface = self._validate_interface()
+        cmd = self._apply_sudo([exe, "up", iface])
+        return subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+
+    def _wg_quick_down(self) -> bytes:
+        exe = self._resolve_executable(quick=True)
+        iface = self._validate_interface()
+        cmd = self._apply_sudo([exe, "down", iface])
+        return subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+
+    def _wg_quick_save(self) -> bytes:
+        exe = self._resolve_executable(quick=True)
+        iface = self._validate_interface()
+        cmd = self._apply_sudo([exe, "save", iface])
+        return subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+
+    def _wg_set_peer_allowed_ips(self, peer_id: str,
+                                 preshared_key_path: str | None = None) -> bytes:
+        exe = self._resolve_executable(quick=False)
+        iface = self._validate_interface()
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                self.peersTable.select().where(self.peersTable.c.id == peer_id)
+            ).mappings().fetchone()
+        if not row:
+            raise ValueError("Peer not found")
+        peer = self._validate_peer_id(row["id"])
+        allowed = self._normalize_allowed_ips(row.get("allowed_ip"))
+        cmd = [exe, "set", iface, "peer", peer, "allowed-ips", allowed]
+        if preshared_key_path:
+            cmd += ["preshared-key", preshared_key_path]
+        cmd = self._apply_sudo(cmd)
+        return subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+
+    def _wg_peer_remove(self, peer_id: str) -> bytes:
+        exe = self._resolve_executable(quick=False)
+        iface = self._validate_interface()
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                self.peersTable.select().where(self.peersTable.c.id == peer_id)
+            ).mappings().fetchone()
+        if not row:
+            raise ValueError("Peer not found")
+        peer = self._validate_peer_id(row["id"])
+        cmd = self._apply_sudo([exe, "set", iface, "peer", peer, "remove"])
+        return subprocess.check_output(cmd, stderr=subprocess.STDOUT)
 
     def __getProtocolPath(self) -> str:
         _, path = self.DashboardConfig.GetConfig("Server", "wg_conf_path") if self.Protocol == "wg" \
@@ -496,7 +632,7 @@ class WireguardConfiguration:
                             "time": datetime.now()
                         })
                     )
-    
+
     def logPeersHistoryEndpoint(self):
         with self.engine.begin() as conn:
             for tempPeer in self.Peers:
@@ -560,12 +696,13 @@ class WireguardConfiguration:
                     with open(uid, "w+") as f:
                         f.write(p['preshared_key'])
 
-                subprocess.check_output(f"{self.Protocol} set {self.Name} peer {p['id']} allowed-ips {p['allowed_ip'].replace(' ', '')}{f' preshared-key {uid}' if presharedKeyExist else ''}",
-                                        shell=True, stderr=subprocess.STDOUT)
+                self._wg_set_peer_allowed_ips(
+                    p['id'],
+                    uid if presharedKeyExist else None
+                )
                 if presharedKeyExist:
                     os.remove(uid)
-            subprocess.check_output(
-                f"{self.Protocol}-quick save {self.Name}", shell=True, stderr=subprocess.STDOUT)
+            self._wg_quick_save()
             self.getPeers()
             for p in peers:
                 p = self.searchPeer(p['id'])
@@ -615,8 +752,10 @@ class WireguardConfiguration:
                         with open(uid, "w+") as f:
                             f.write(restrictedPeer['preshared_key'])
 
-                    subprocess.check_output(f"{self.Protocol} set {self.Name} peer {restrictedPeer['id']} allowed-ips {restrictedPeer['allowed_ip'].replace(' ', '')}{f' preshared-key {uid}' if presharedKeyExist else ''}",
-                                            shell=True, stderr=subprocess.STDOUT)
+                    self._wg_set_peer_allowed_ips(
+                        restrictedPeer['id'],
+                        uid if presharedKeyExist else None
+                    )
                     if presharedKeyExist: os.remove(uid)
                 else:
                     return False, "Failed to allow access of peer " + i
@@ -636,8 +775,7 @@ class WireguardConfiguration:
                 found, pf = self.searchPeer(p)
                 if found:
                     try:
-                        subprocess.check_output(f"{self.Protocol} set {self.Name} peer {pf.id} remove",
-                                                shell=True, stderr=subprocess.STDOUT)
+                        self._wg_peer_remove(pf.id)
                         conn.execute(
                             self.peersRestrictedTable.insert().from_select(
                                 [c.name for c in self.peersTable.columns],
@@ -688,8 +826,7 @@ class WireguardConfiguration:
                     AllPeerShareLinks.updateLinkExpireDate(shareLink.ShareID, datetime.now())
                 if found:
                     try:
-                        subprocess.check_output(f"{self.Protocol} set {self.Name} peer {pf.id} remove",
-                                                shell=True, stderr=subprocess.STDOUT)
+                        self._wg_peer_remove(pf.id)
                         conn.execute(
                             self.peersTable.delete().where(
                                 self.peersTable.columns.id == pf.id
@@ -719,7 +856,7 @@ class WireguardConfiguration:
 
     def __wgSave(self) -> tuple[bool, str] | tuple[bool, None]:
         try:
-            subprocess.check_output(f"{self.Protocol}-quick save {self.Name}", shell=True, stderr=subprocess.STDOUT)
+            self._wg_quick_save()
             return True, None
         except subprocess.CalledProcessError as e:
             return False, str(e)
@@ -728,8 +865,7 @@ class WireguardConfiguration:
         if not self.getStatus():
             self.toggleConfiguration()
         try:
-            latestHandshake = subprocess.check_output(f"{self.Protocol} show {self.Name} latest-handshakes",
-                                                      shell=True, stderr=subprocess.STDOUT)
+            latestHandshake = self._wg_show_latest_handshakes()
         except subprocess.CalledProcessError:
             return "stopped"
         latestHandshake = latestHandshake.decode("UTF-8").split()
@@ -768,8 +904,7 @@ class WireguardConfiguration:
         if not self.getStatus():
             self.toggleConfiguration()
         # try:
-        data_usage = subprocess.check_output(f"{self.Protocol} show {self.Name} transfer",
-                                             shell=True, stderr=subprocess.STDOUT)
+        data_usage = self._wg_show_transfer()
         data_usage = data_usage.decode("UTF-8").split("\n")
         
         data_usage = [p.split("\t") for p in data_usage]
@@ -821,13 +956,11 @@ class WireguardConfiguration:
                                 )
 
             
-
     def getPeersEndpoint(self):
         if not self.getStatus():
             self.toggleConfiguration()
         try:
-            data_usage = subprocess.check_output(f"{self.Protocol} show {self.Name} endpoints",
-                                                 shell=True, stderr=subprocess.STDOUT)
+            data_usage = self._wg_show_endpoints()
         except subprocess.CalledProcessError:
             return "stopped"
         data_usage = data_usage.decode("UTF-8").split()
@@ -847,14 +980,13 @@ class WireguardConfiguration:
         self.getStatus()
         if self.Status:
             try:
-                check = subprocess.check_output(f"{self.Protocol}-quick down {self.Name}",
-                                                shell=True, stderr=subprocess.STDOUT)
+                check = self._wg_quick_down()
                 self.removeAutostart()
             except subprocess.CalledProcessError as exc:
                 return False, str(exc.output.strip().decode("utf-8"))
         else:
             try:
-                check = subprocess.check_output(f"{self.Protocol}-quick up {self.Name}", shell=True, stderr=subprocess.STDOUT)
+                check = self._wg_quick_up()
                 self.addAutostart()
             except subprocess.CalledProcessError as exc:
                 return False, str(exc.output.strip().decode("utf-8"))
