@@ -220,7 +220,6 @@ start_and_monitor() {
 
   ${WGDASH}/src/venv/bin/gunicorn --config ${WGDASH}/src/gunicorn.conf.py
 
-  /usr/sbin/resolvconf -u
 
   if [ $? -ne 0 ]; then
     echo "Loading WGDashboard failed... Look above for details."
