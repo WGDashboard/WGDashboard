@@ -40,6 +40,7 @@ from modules.DashboardClients import DashboardClients
 from modules.DashboardPlugins import DashboardPlugins
 from modules.DashboardWebHooks import DashboardWebHooks
 from modules.NewConfigurationTemplates import NewConfigurationTemplates
+from modules.PeerHealthMonitor import PeerHealthMonitor
 
 class CustomJsonEncoder(DefaultJSONProvider):
     def __init__(self, app):
@@ -174,6 +175,10 @@ def startThreads():
     scheduleJobThread = threading.Thread(target=peerJobScheduleBackgroundThread, daemon=True)
     scheduleJobThread.start()
 
+    # Health Monitor - start if enabled
+    if DashboardConfig.GetConfig("Health", "enabled")[1] == "true":
+        PeerHealthMonitorInstance.start()
+
 dictConfig({
     'version': 1,
     'formatters': {'default': {
@@ -203,6 +208,7 @@ with app.app_context():
     NewConfigurationTemplates: NewConfigurationTemplates = NewConfigurationTemplates()
     InitWireguardConfigurationsList(startup=True)
     DashboardClients: DashboardClients = DashboardClients(WireguardConfigurations)
+    PeerHealthMonitorInstance: PeerHealthMonitor = PeerHealthMonitor(DashboardConfig, WireguardConfigurations, app.logger)
     app.register_blueprint(createClientBlueprint(WireguardConfigurations, DashboardConfig, DashboardClients))
 
 _, APP_PREFIX = DashboardConfig.GetConfig("Server", "app_prefix")
@@ -1219,6 +1225,80 @@ def API_download():
         return send_file(os.path.join('download', file), as_attachment=True)
     else:
         return ResponseObject(False, "File does not exist")
+
+# =====================================================
+# Health Monitor API Endpoints
+# =====================================================
+
+@app.get(f'{APP_PREFIX}/api/health/status')
+def API_Health_Status():
+    """Get health monitoring status"""
+    return ResponseObject(data=PeerHealthMonitorInstance.get_all_health())
+
+@app.get(f'{APP_PREFIX}/api/health/peer/<public_key>')
+def API_Health_Peer(public_key: str):
+    """Get health info for specific peer"""
+    health = PeerHealthMonitorInstance.get_peer_health(public_key)
+    if health:
+        return ResponseObject(data=health)
+    return ResponseObject(False, "Peer not found in health data", status_code=404)
+
+@app.post(f'{APP_PREFIX}/api/health/peer/<public_key>/ping')
+def API_Health_PingPeer(public_key: str):
+    """Ping specific peer immediately"""
+    result = PeerHealthMonitorInstance.ping_peer_now(public_key)
+    if result:
+        return ResponseObject(data=result)
+    return ResponseObject(False, "Peer not found", status_code=404)
+
+@app.post(f'{APP_PREFIX}/api/health/cycle')
+def API_Health_ForceCycle():
+    """Force a health check cycle"""
+    result = PeerHealthMonitorInstance.force_cycle()
+    return ResponseObject(data=result)
+
+@app.get(f'{APP_PREFIX}/api/health/stats')
+def API_Health_Stats():
+    """Get health monitoring statistics"""
+    return ResponseObject(data=PeerHealthMonitorInstance.get_stats())
+
+@app.post(f'{APP_PREFIX}/api/health/start')
+def API_Health_Start():
+    """Start health monitoring"""
+    if PeerHealthMonitorInstance.start():
+        return ResponseObject(True, "Health monitoring started")
+    return ResponseObject(False, "Health monitoring already running")
+
+@app.post(f'{APP_PREFIX}/api/health/stop')
+def API_Health_Stop():
+    """Stop health monitoring"""
+    if PeerHealthMonitorInstance.stop():
+        return ResponseObject(True, "Health monitoring stopped")
+    return ResponseObject(False, "Health monitoring not running")
+
+@app.get(f'{APP_PREFIX}/api/health/config/<interface>')
+def API_Health_GetInterfaceConfig(interface: str):
+    """Get health monitoring config for interface"""
+    if interface not in WireguardConfigurations:
+        return ResponseObject(False, "Interface not found", status_code=404)
+    cfg = PeerHealthMonitorInstance.get_interface_config(interface)
+    return ResponseObject(data={
+        "interface": interface,
+        "enabled": cfg.enabled,
+        "ping_interval": cfg.ping_interval,
+        "set_keepalive": cfg.set_keepalive,
+        "keepalive_value": cfg.keepalive_value
+    })
+
+@app.post(f'{APP_PREFIX}/api/health/config/<interface>')
+def API_Health_SetInterfaceConfig(interface: str):
+    """Set health monitoring config for interface"""
+    if interface not in WireguardConfigurations:
+        return ResponseObject(False, "Interface not found", status_code=404)
+    data = request.get_json()
+    if PeerHealthMonitorInstance.set_interface_config(interface, data):
+        return ResponseObject(True, "Configuration updated")
+    return ResponseObject(False, "Failed to update configuration")
 
 
 '''
