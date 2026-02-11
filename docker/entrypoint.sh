@@ -220,7 +220,9 @@ start_and_monitor() {
 
   ${WGDASH}/src/venv/bin/gunicorn --config ${WGDASH}/src/gunicorn.conf.py
 
+  cp /etc/resolv.conf /etc/resolv.conf.docker
   /usr/sbin/resolvconf -u
+  cat /etc/resolv.conf.docker | resolvconf -a docker.inet
 
   if [ $? -ne 0 ]; then
     echo "Loading WGDashboard failed... Look above for details."
