@@ -1,4 +1,4 @@
-import re, ipaddress
+import re, ipaddress, os, shutil
 import subprocess
 
 
@@ -68,18 +68,41 @@ def ValidateEndpointAllowedIPs(IPs) -> tuple[bool, str] | tuple[bool, None]:
             return False, str(e)
     return True, None
 
+_WG_EXE = ("/usr/sbin/wg", "/usr/bin/wg")
+_WG_QUICK_EXE = ("/usr/sbin/wg-quick", "/usr/bin/wg-quick")
+
+
+def _resolve_wg_exe() -> str:
+    for path in _WG_EXE:
+        if os.path.exists(path):
+            return path
+    fallback = shutil.which("wg")
+    if fallback:
+        fallback = os.path.realpath(fallback)
+        if fallback in _WG_EXE:
+            return fallback
+    raise FileNotFoundError("wg binary not found in allowed paths")
+
+
+def WgPubkey(private_key: bytes) -> bytes:
+    exe = _resolve_wg_exe()
+    return subprocess.check_output([exe, "pubkey"], input=private_key, stderr=subprocess.STDOUT)
+
+
+def WgGenkey() -> bytes:
+    exe = _resolve_wg_exe()
+    return subprocess.check_output([exe, "genkey"], stderr=subprocess.STDOUT)
+
 def GenerateWireguardPublicKey(privateKey: str) -> tuple[bool, str] | tuple[bool, None]:
     try:
-        publicKey = subprocess.check_output(f"wg pubkey", input=privateKey.encode(), shell=True,
-                                            stderr=subprocess.STDOUT)
+        publicKey = WgPubkey(privateKey.encode())
         return True, publicKey.decode().strip('\n')
     except subprocess.CalledProcessError:
         return False, None
     
 def GenerateWireguardPrivateKey() -> tuple[bool, str] | tuple[bool, None]:
     try:
-        publicKey = subprocess.check_output(f"wg genkey", shell=True,
-                                            stderr=subprocess.STDOUT)
+        publicKey = WgGenkey()
         return True, publicKey.decode().strip('\n')
     except subprocess.CalledProcessError:
         return False, None
