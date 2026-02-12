@@ -526,6 +526,13 @@ def API_getWireguardConfigurationRealtimeTraffic():
         return ResponseObject(False, "Configuration does not exist", status_code=404)
     return ResponseObject(data=WireguardConfigurations[configurationName].getRealtimeTrafficUsage())
 
+@app.get(f'{APP_PREFIX}/api/getWireguardConfigurationPeersRealtimeSpeed')
+def API_getWireguardConfigurationPeersRealtimeSpeed():
+    configurationName = request.args.get('configurationName')
+    if configurationName is None or configurationName not in WireguardConfigurations.keys():
+        return ResponseObject(False, "Configuration does not exist", status_code=404)
+    return ResponseObject(data=WireguardConfigurations[configurationName].getPeersRealtimeSpeed())
+
 @app.get(f'{APP_PREFIX}/api/getWireguardConfigurationBackup')
 def API_getWireguardConfigurationBackup():
     configurationName = request.args.get('configurationName')
