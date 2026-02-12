@@ -92,6 +92,16 @@ defineEmits(['close'])
 									</div>
 								</div>
 							</div>
+							<div class="col-12" v-if="selectedPeer.notes && selectedPeer.notes.length > 0">
+								<div class="card rounded-3 bg-transparent h-100">
+									<div class="card-body py-2">
+										<p class="mb-1 text-muted"><small>
+											<LocaleText t="Notes"></LocaleText>
+										</small></p>
+										<p class="mb-0" style="white-space: pre-wrap">{{selectedPeer.notes}}</p>
+									</div>
+								</div>
+							</div>
 
 							<div class="col-12 col-lg-3">
 								<div class="card rounded-3 bg-transparent  h-100">
