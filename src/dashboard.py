@@ -40,6 +40,7 @@ from modules.DashboardClients import DashboardClients
 from modules.DashboardPlugins import DashboardPlugins
 from modules.DashboardWebHooks import DashboardWebHooks
 from modules.NewConfigurationTemplates import NewConfigurationTemplates
+from modules.DashboardAdmins import DashboardAdmins
 
 class CustomJsonEncoder(DefaultJSONProvider):
     def __init__(self, app):
@@ -201,6 +202,31 @@ with app.app_context():
     DashboardPlugins: DashboardPlugins = DashboardPlugins(app, WireguardConfigurations)
     DashboardWebHooks: DashboardWebHooks = DashboardWebHooks(DashboardConfig)
     NewConfigurationTemplates: NewConfigurationTemplates = NewConfigurationTemplates()
+    
+    # Initialize DashboardAdmins
+    DashboardAdmins: DashboardAdmins = DashboardAdmins(
+        DashboardConfig.engine, 
+        DashboardConfig.GetConfig('Database', 'type')[1]
+    )
+    
+    # Migrate admin from config file to database (first-time only)
+    if DashboardAdmins.getAdminCount() == 0:
+        _, configUsername = DashboardConfig.GetConfig("Account", "username")
+        _, configPassword = DashboardConfig.GetConfig("Account", "password")
+        _, enableTotp = DashboardConfig.GetConfig("Account", "enable_totp")
+        _, totpKey = DashboardConfig.GetConfig("Account", "totp_key")
+        
+        success, msg = DashboardAdmins.migrateFromConfig(
+            username=configUsername,
+            passwordHash=configPassword,
+            enableTotp=enableTotp,
+            totpKey=totpKey
+        )
+        if success:
+            print(f"[WGDashboard] Admin migrated to database: {configUsername}")
+        else:
+            print(f"[WGDashboard] Admin migration warning: {msg}")
+    
     InitWireguardConfigurationsList(startup=True)
     DashboardClients: DashboardClients = DashboardClients(WireguardConfigurations)
     app.register_blueprint(createClientBlueprint(WireguardConfigurations, DashboardConfig, DashboardClients))
@@ -297,30 +323,31 @@ def API_AuthenticateLogin():
         resp.set_cookie("authToken", authToken)
         session.permanent = True
         return resp
-    valid = bcrypt.checkpw(data['password'].encode("utf-8"),
-                           DashboardConfig.GetConfig("Account", "password")[1].encode("utf-8"))
-    totpEnabled = DashboardConfig.GetConfig("Account", "enable_totp")[1]
-    totpValid = False
-    if totpEnabled:
-        totpValid = pyotp.TOTP(DashboardConfig.GetConfig("Account", "totp_key")[1]).now() == data['totp']
-
-    if (valid
-            and data['username'] == DashboardConfig.GetConfig("Account", "username")[1]
-            and ((totpEnabled and totpValid) or not totpEnabled)
-    ):
-        authToken = hashlib.sha256(f"{data['username']}{datetime.now()}".encode()).hexdigest()
-        session['role'] = 'admin'
-        session['username'] = authToken
-        resp = ResponseObject(True, DashboardConfig.GetConfig("Other", "welcome_session")[1])
-        resp.set_cookie("authToken", authToken)
-        session.permanent = True
-        DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login success: {data['username']}")
-        return resp
-    DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login failed: {data['username']}")
-    if totpEnabled:
-        return ResponseObject(False, "Sorry, your username, password or OTP is incorrect.")
-    else:
+    
+    # Authenticate using DashboardAdmins
+    success, admin, msg = DashboardAdmins.authenticate(data['username'], data['password'])
+    
+    if not success:
+        DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login failed: {data['username']}")
         return ResponseObject(False, "Sorry, your username or password is incorrect.")
+    
+    # Check TOTP if enabled
+    if admin['enable_totp'] and admin['totp_verified']:
+        totpValid = pyotp.TOTP(admin['totp_key']).now() == data.get('totp', '')
+        if not totpValid:
+            DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login failed (TOTP): {data['username']}")
+            return ResponseObject(False, "Sorry, your username, password or OTP is incorrect.")
+    
+    authToken = hashlib.sha256(f"{data['username']}{datetime.now()}".encode()).hexdigest()
+    session['role'] = 'admin'
+    session['username'] = authToken
+    session['admin_id'] = admin['id']
+    session['admin_username'] = admin['username']
+    resp = ResponseObject(True, DashboardConfig.GetConfig("Other", "welcome_session")[1])
+    resp.set_cookie("authToken", authToken)
+    session.permanent = True
+    DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login success: {data['username']}")
+    return resp
 
 @app.get(f'{APP_PREFIX}/api/signout')
 def API_SignOut():
@@ -328,6 +355,129 @@ def API_SignOut():
     resp.delete_cookie("authToken")
     session.clear()
     return resp
+
+# =====================================================
+# Admin Management API Endpoints
+# =====================================================
+
+@app.get(f'{APP_PREFIX}/api/admins')
+def API_GetAdmins():
+    """Get all admin users"""
+    admins = DashboardAdmins.getAllAdmins()
+    return ResponseObject(True, data=[admin.toDict() for admin in admins])
+
+@app.post(f'{APP_PREFIX}/api/admins/add')
+def API_AddAdmin():
+    """Add a new admin user"""
+    data = request.get_json()
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+    email = data.get('email', '').strip()
+    
+    if not username or not password:
+        return ResponseObject(False, "Username and password are required")
+    
+    success, msg = DashboardAdmins.addAdmin(username, password, email)
+    if success:
+        DashboardLogger.log(str(request.url), str(request.remote_addr), 
+                          Message=f"Admin created: {username} by {session.get('admin_username', 'unknown')}")
+    return ResponseObject(success, msg)
+
+@app.post(f'{APP_PREFIX}/api/admins/update')
+def API_UpdateAdmin():
+    """Update admin details (username, email)"""
+    data = request.get_json()
+    adminId = data.get('id')
+    username = data.get('username')
+    email = data.get('email')
+    
+    if not adminId:
+        return ResponseObject(False, "Admin ID is required")
+    
+    success, msg = DashboardAdmins.updateAdmin(adminId, username, email)
+    if success:
+        DashboardLogger.log(str(request.url), str(request.remote_addr), 
+                          Message=f"Admin updated: ID {adminId} by {session.get('admin_username', 'unknown')}")
+    return ResponseObject(success, msg)
+
+@app.post(f'{APP_PREFIX}/api/admins/changePassword')
+def API_ChangeAdminPassword():
+    """Change password for current logged-in admin"""
+    data = request.get_json()
+    currentPassword = data.get('currentPassword', '')
+    newPassword = data.get('newPassword', '')
+    
+    adminId = session.get('admin_id')
+    if not adminId:
+        return ResponseObject(False, "Not authenticated")
+    
+    if not currentPassword or not newPassword:
+        return ResponseObject(False, "Current password and new password are required")
+    
+    success, msg = DashboardAdmins.changePassword(adminId, currentPassword, newPassword)
+    if success:
+        DashboardLogger.log(str(request.url), str(request.remote_addr), 
+                          Message=f"Password changed: {session.get('admin_username', 'unknown')}")
+    return ResponseObject(success, msg)
+
+@app.post(f'{APP_PREFIX}/api/admins/resetPassword')
+def API_ResetAdminPassword():
+    """Reset password for any admin (admin action)"""
+    data = request.get_json()
+    adminId = data.get('id')
+    newPassword = data.get('newPassword', '')
+    
+    if not adminId or not newPassword:
+        return ResponseObject(False, "Admin ID and new password are required")
+    
+    success, msg = DashboardAdmins.resetPassword(adminId, newPassword)
+    if success:
+        admin = DashboardAdmins.getAdminById(adminId)
+        DashboardLogger.log(str(request.url), str(request.remote_addr), 
+                          Message=f"Password reset for: {admin['username'] if admin else adminId} by {session.get('admin_username', 'unknown')}")
+    return ResponseObject(success, msg)
+
+@app.post(f'{APP_PREFIX}/api/admins/delete')
+def API_DeleteAdmin():
+    """Delete an admin user"""
+    data = request.get_json()
+    adminId = data.get('id')
+    
+    if not adminId:
+        return ResponseObject(False, "Admin ID is required")
+    
+    # Prevent self-deletion
+    if adminId == session.get('admin_id'):
+        return ResponseObject(False, "Cannot delete your own account")
+    
+    admin = DashboardAdmins.getAdminById(adminId)
+    success, msg = DashboardAdmins.deleteAdmin(adminId)
+    if success:
+        DashboardLogger.log(str(request.url), str(request.remote_addr), 
+                          Message=f"Admin deleted: {admin['username'] if admin else adminId} by {session.get('admin_username', 'unknown')}")
+    return ResponseObject(success, msg)
+
+@app.get(f'{APP_PREFIX}/api/admins/current')
+def API_GetCurrentAdmin():
+    """Get current logged-in admin info"""
+    adminId = session.get('admin_id')
+    if not adminId:
+        return ResponseObject(False, "Not authenticated")
+    
+    admin = DashboardAdmins.getAdminById(adminId)
+    if admin:
+        # Don't return sensitive data
+        return ResponseObject(True, data={
+            'id': admin['id'],
+            'username': admin['username'],
+            'email': admin['email'],
+            'enable_totp': admin['enable_totp']
+        })
+    return ResponseObject(False, "Admin not found")
+
+# =====================================================
+# End Admin Management API Endpoints
+# =====================================================
 
 @app.get(f'{APP_PREFIX}/api/getWireguardConfigurations')
 def API_getWireguardConfigurations():

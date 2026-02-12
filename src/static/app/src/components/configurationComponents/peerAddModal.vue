@@ -18,6 +18,20 @@ import {WireguardConfigurationsStore} from "@/stores/WireguardConfigurationsStor
 
 const dashboardStore = DashboardConfigurationStore()
 const wireguardStore = WireguardConfigurationsStore()
+const route = useRoute()
+
+// Find current configuration to get Override Peer Settings
+const currentConfig = wireguardStore.Configurations.find(
+	x => x.Name === route.params.id
+);
+
+// Get Override Peer Settings (if they exist and have values)
+const override = currentConfig?.Info?.OverridePeerSettings || {};
+
+// Get global defaults
+const globalDefaults = dashboardStore.Configuration.Peers;
+
+// Initialize peerData with Override settings, falling back to global defaults
 const peerData = ref({
 	bulkAdd: false,
 	bulkAddAmount: 0,
@@ -25,10 +39,18 @@ const peerData = ref({
 	allowed_ips: [],
 	private_key: "",
 	public_key: "",
-	DNS: dashboardStore.Configuration.Peers.peer_global_dns,
-	endpoint_allowed_ip: dashboardStore.Configuration.Peers.peer_endpoint_allowed_ip,
-	keepalive: parseInt(dashboardStore.Configuration.Peers.peer_keep_alive),
-	mtu: parseInt(dashboardStore.Configuration.Peers.peer_mtu),
+	// DNS: Override if set, otherwise global default
+	DNS: override.DNS || globalDefaults.peer_global_dns,
+	// Endpoint Allowed IPs: Override if set, otherwise global default
+	endpoint_allowed_ip: override.EndpointAllowedIPs || globalDefaults.peer_endpoint_allowed_ip,
+	// Persistent Keepalive: Override if set (and > 0), otherwise global default
+	keepalive: (override.PersistentKeepalive && parseInt(override.PersistentKeepalive) > 0)
+		? parseInt(override.PersistentKeepalive)
+		: parseInt(globalDefaults.peer_keep_alive),
+	// MTU: Override if set (and > 0), otherwise global default
+	mtu: (override.MTU && parseInt(override.MTU) > 0)
+		? parseInt(override.MTU)
+		: parseInt(globalDefaults.peer_mtu),
 	preshared_key: "",
 	preshared_key_bulkAdd: false,
 	advanced_security: "off",
@@ -37,7 +59,6 @@ const peerData = ref({
 const availableIp = ref([])
 const saving = ref(false)
 
-const route = useRoute()
 await fetchGet("/api/getAvailableIPs/" + route.params.id, {}, (res) => {
 	if (res.status){
 		availableIp.value = res.data;
