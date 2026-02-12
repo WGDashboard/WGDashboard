@@ -50,6 +50,10 @@ export default {
 				{
 					id: "wireguard_settings",
 					title: "WireGuard Configuration Settings"
+				},
+				{
+					id: "health_monitor",
+					title: "Peer Health Monitor"
 				}
 			]
 		}

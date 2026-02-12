@@ -86,6 +86,13 @@ class DashboardConfig:
             },
             "WireGuardConfiguration": {
                 "autostart": ""
+            },
+            "Health": {
+                "enabled": "true",
+                "ping_interval": "30",
+                "ping_timeout": "2",
+                "auto_keepalive": "true",
+                "keepalive_value": "25"
             }
         }
 

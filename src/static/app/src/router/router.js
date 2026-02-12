@@ -65,6 +65,14 @@ const router = createRouter({
                             meta: {
                                 title: "WireGuard Configuration Settings"
                             }
+                        },
+                        {
+                            name: "Peer Health Monitor",
+                            path: "health_monitor",
+                            component: () => import("@/components/settingsComponent/peerHealthMonitor.vue"),
+                            meta: {
+                                title: "Peer Health Monitor"
+                            }
                         }
                     ],
 					meta: {
