@@ -36,7 +36,7 @@ export default {
 				keepalive: parseInt(this.dashboardStore.Configuration.Peers.peer_keep_alive),
 				mtu: parseInt(this.dashboardStore.Configuration.Peers.peer_mtu),
 				preshared_key: "",
-				preshared_key_bulkAdd: false,
+				preshared_key_bulkAdd: Boolean(this.dashboardStore.Configuration.Peers.peer_preshared_key_default),
 				advanced_security: "off",
 			},
 			availableIp: undefined,
@@ -134,7 +134,8 @@ export default {
 			<hr class="mb-0 mt-2">
 			<div class="row gy-3">
 				<div class="col-sm" v-if="!this.data.bulkAdd">
-					<PresharedKeyInput :saving="saving" :data="data" :bulk="this.data.bulkAdd"></PresharedKeyInput>
+					<PresharedKeyInput :saving="saving" :data="data" :bulk="this.data.bulkAdd"
+						:defaultEnabled="Boolean(this.dashboardStore.Configuration.Peers.peer_preshared_key_default)"></PresharedKeyInput>
 				</div>
 				
 				<div class="col-sm">

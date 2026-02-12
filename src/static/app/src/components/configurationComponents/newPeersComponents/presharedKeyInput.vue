@@ -6,17 +6,26 @@ export default {
 	components: {LocaleText},
 	props: {
 		data: Object,
-		saving: Boolean
+		saving: Boolean,
+		defaultEnabled: Boolean
 	},
 	data(){
 		return{
 			enable: false
 		}
 	},
+	mounted() {
+		const hasKey = !!(this.data && this.data.preshared_key && this.data.preshared_key.length > 0)
+		if (hasKey || this.defaultEnabled){
+			this.enable = true
+		}
+	},
 	watch:{
 		enable(){
 			if (this.enable){
-				this.data.preshared_key = window.wireguard.generateKeypair().presharedKey
+				if (!this.data.preshared_key){
+					this.data.preshared_key = window.wireguard.generateKeypair().presharedKey
+				}
 			}else {
 				this.data.preshared_key = ""
 			}
