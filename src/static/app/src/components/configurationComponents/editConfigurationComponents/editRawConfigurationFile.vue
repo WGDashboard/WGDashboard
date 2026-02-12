@@ -3,8 +3,9 @@ import LocaleText from "@/components/text/localeText.vue";
 import CodeEditor from "@/utilities/simple-code-editor/CodeEditor.vue";
 import {fetchGet, fetchPost} from "@/utilities/fetch.js";
 import {useRoute} from "vue-router";
-import {ref} from "vue";
+import {computed, onMounted, ref} from "vue";
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
+import {initSystemThemeWatcher, resolveTheme} from "@/utilities/theme.js";
 const emits = defineEmits(['close'])
 const route = useRoute()
 
@@ -25,6 +26,13 @@ const getRaw = async () => {
 await getRaw()
 const dashboardStore = DashboardConfigurationStore();
 const saving = ref(false)
+const editorTheme = computed(() => {
+	return resolveTheme(dashboardStore.Configuration.Server.dashboard_theme) === "dark" ? "github-dark" : "github";
+});
+
+onMounted(() => {
+	initSystemThemeWatcher();
+});
 
 const saveRaw = async () => {
 	saving.value = true
@@ -70,7 +78,7 @@ const saveRaw = async () => {
 							:disabled="true"
 							:read-only="saving"
 							v-model="content"
-							:theme="dashboardStore.Configuration.Server.dashboard_theme === 'dark' ? 'github-dark':'github'"
+							:theme="editorTheme"
 							:languages="[['ini', path]]"
 							width="100%" height="600px">
 						</CodeEditor>

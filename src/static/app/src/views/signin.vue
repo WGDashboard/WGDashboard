@@ -7,19 +7,21 @@ import {GetLocale} from "@/utilities/locale.js";
 import LocaleText from "@/components/text/localeText.vue";
 import SignInInput from "@/components/signIn/signInInput.vue";
 import SignInTOTP from "@/components/signIn/signInTOTP.vue";
+import {computed, onMounted, ref} from "vue";
+import {initSystemThemeWatcher, resolveTheme} from "@/utilities/theme.js";
 
 export default {
 	name: "signin",
 	components: {SignInTOTP, SignInInput, LocaleText, RemoteServerList, Message},
 	async setup(){
 		const store = DashboardConfigurationStore()
-		let theme = "dark"
+		const theme = ref("dark")
 		let totpEnabled = false;
 		let version = undefined;
 		if (!store.IsElectronApp){
 			await Promise.all([
 				fetchGet("/api/getDashboardTheme", {}, (res) => {
-					theme = res.data
+					theme.value = res.data
 				}),
 				fetchGet("/api/isTotpEnabled", {}, (res) => {
 					totpEnabled = res.data
@@ -30,7 +32,11 @@ export default {
 			]);
 		}
 		store.removeActiveCrossServer();
-		return {store, theme, totpEnabled, version}
+		const resolvedTheme = computed(() => resolveTheme(theme.value))
+		onMounted(() => {
+			initSystemThemeWatcher();
+		})
+		return {store, theme, resolvedTheme, totpEnabled, version}
 	},
 	data(){
 		return {
@@ -102,7 +108,7 @@ export default {
 <template>
 	<div class="container-fluid login-container-fluid d-flex main flex-column py-4 text-body h-100" 
 	     style="overflow-y: scroll"
-	     :data-bs-theme="this.theme">
+	     :data-bs-theme="this.resolvedTheme">
 		<div class="login-box m-auto" >
 			<div class="m-auto signInContainer" style="width: 700px;">
 				<h4 class="mb-0 text-body">

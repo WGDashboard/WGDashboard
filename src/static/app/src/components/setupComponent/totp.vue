@@ -3,6 +3,7 @@ import {fetchGet, fetchPost} from "@/utilities/fetch.js";
 import QRCode from "qrcode";
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
 import LocaleText from "@/components/text/localeText.vue";
+import {initSystemThemeWatcher, resolveTheme} from "@/utilities/theme.js";
 
 export default {
 	name: "totp",
@@ -16,8 +17,14 @@ export default {
 		return {l, store}
 	},
 	mounted() {
+		initSystemThemeWatcher();
 		if (this.l) {
 			QRCode.toCanvas(document.getElementById('qrcode'), this.l, function (error) {})
+		}
+	},
+	computed: {
+		resolvedTheme(){
+			return resolveTheme(this.store.Configuration.Server.dashboard_theme)
 		}
 	},
 	data(){
@@ -63,7 +70,7 @@ export default {
 
 <template>
 	<div class="container-fluid login-container-fluid d-flex main pt-5 overflow-scroll"
-	     :data-bs-theme="this.store.Configuration.Server.dashboard_theme">
+	     :data-bs-theme="resolvedTheme">
 		<div class="m-auto text-body" style="width: 500px">
 			<div  class="d-flex flex-column">
 				<div>
