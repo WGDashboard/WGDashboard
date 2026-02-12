@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 import sqlalchemy
 from jinja2 import Template
 from flask import Flask, request, render_template, session, send_file
+from werkzeug.utils import safe_join
 from flask_cors import CORS
 from icmplib import ping, traceroute
 from flask.json.provider import DefaultJSONProvider
@@ -68,6 +69,23 @@ def ResponseObject(status=True, message=None, data=None, status_code = 200) -> F
     response.status_code = status_code
     response.content_type = "application/json"
     return response
+
+def _safe_basename(value: str) -> str | None:
+    if not value or value in (".", ".."):
+        return None
+    if "\x00" in value:
+        return None
+    if os.path.basename(value) != value:
+        return None
+    if os.sep in value or (os.altsep and os.altsep in value):
+        return None
+    return value
+
+def _is_path_within_base(path: str, base: str) -> bool:
+    try:
+        return os.path.commonpath([os.path.realpath(path), os.path.realpath(base)]) == os.path.realpath(base)
+    except ValueError:
+        return False
 
 '''
 Flask App
@@ -375,6 +393,13 @@ def API_addWireguardConfiguration():
     if data.get("Protocol") not in ProtocolsEnabled():
         return ResponseObject(False, "Please provide a valid protocol: wg / awg.")
 
+    raw_name = data.get("ConfigurationName", "")
+    config_name = os.path.basename(raw_name)
+    if (not config_name or config_name != raw_name or
+            not re.fullmatch(r"[A-Za-z0-9_=+.-]{1,15}", config_name)):
+        return ResponseObject(False, "Invalid configuration name", "ConfigurationName")
+    data["ConfigurationName"] = config_name
+
     # Check duplicate names, ports, address
     for i in WireguardConfigurations.values():
         if i.Name == data['ConfigurationName']:
@@ -392,32 +417,49 @@ def API_addWireguardConfiguration():
                                   f"Already have a configuration with the address \"{data['Address']}\"",
                                   "Address")
 
-    if "Backup" in data.keys():
-        path = {
-            "wg": DashboardConfig.GetConfig("Server", "wg_conf_path")[1],
-            "awg": DashboardConfig.GetConfig("Server", "awg_conf_path")[1]
-        }
-     
-        if (os.path.exists(os.path.join(path['wg'], 'WGDashboard_Backup', data["Backup"])) and
-                os.path.exists(os.path.join(path['wg'], 'WGDashboard_Backup', data["Backup"].replace('.conf', '.sql')))):
-            protocol = "wg"
-        elif (os.path.exists(os.path.join(path['awg'], 'WGDashboard_Backup', data["Backup"])) and
-              os.path.exists(os.path.join(path['awg'], 'WGDashboard_Backup', data["Backup"].replace('.conf', '.sql')))):
-            protocol = "awg"
+    try:
+        if "Backup" in data.keys():
+            path = {
+                "wg": DashboardConfig.GetConfig("Server", "wg_conf_path")[1],
+                "awg": DashboardConfig.GetConfig("Server", "awg_conf_path")[1]
+            }
+            raw_backup = data["Backup"]
+            backup_name = os.path.basename(raw_backup)
+            if (not backup_name or backup_name != raw_backup or
+                    not backup_name.endswith(".conf") or
+                    not re.fullmatch(r"[A-Za-z0-9_=+.-]{1,255}\\.conf", backup_name)):
+                return ResponseObject(False, "Invalid backup filename")
+            backup_dir_wg = os.path.join(path['wg'], 'WGDashboard_Backup')
+            backup_dir_awg = os.path.join(path['awg'], 'WGDashboard_Backup')
+            wg_files = {entry.name: entry.path for entry in os.scandir(backup_dir_wg) if entry.is_file()}
+            awg_files = {entry.name: entry.path for entry in os.scandir(backup_dir_awg) if entry.is_file()}
+            wg_conf = wg_files.get(backup_name)
+            wg_sql = wg_files.get(backup_name.replace('.conf', '.sql'))
+            awg_conf = awg_files.get(backup_name)
+            awg_sql = awg_files.get(backup_name.replace('.conf', '.sql'))
+         
+            if (wg_conf and wg_sql):
+                protocol = "wg"
+            elif (awg_conf and awg_sql):
+                protocol = "awg"
+            else:
+                return ResponseObject(False, "Backup does not exist")
+            
+            dest_dir = path[protocol]
+            dest_conf = safe_join(dest_dir, f'{data["ConfigurationName"]}.conf')
+            src_conf = safe_join(dest_dir, 'WGDashboard_Backup', backup_name)
+            if not dest_conf or not src_conf:
+                return ResponseObject(False, "Invalid configuration path")
+            shutil.copy(src_conf, dest_conf)
+            WireguardConfigurations[data['ConfigurationName']] = (
+                WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, data=data, name=data['ConfigurationName'])) if protocol == 'wg' else (
+                AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data, name=data['ConfigurationName']))
         else:
-            return ResponseObject(False, "Backup does not exist")
-        
-        shutil.copy(
-            os.path.join(path[protocol], 'WGDashboard_Backup', data["Backup"]),
-            os.path.join(path[protocol], f'{data["ConfigurationName"]}.conf')
-        )
-        WireguardConfigurations[data['ConfigurationName']] = (
-            WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, data=data, name=data['ConfigurationName'])) if protocol == 'wg' else (
-            AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data, name=data['ConfigurationName']))
-    else:
-        WireguardConfigurations[data['ConfigurationName']] = (
-            WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data)) if data.get('Protocol') == 'wg' else (
-            AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data))
+            WireguardConfigurations[data['ConfigurationName']] = (
+                WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data)) if data.get('Protocol') == 'wg' else (
+                AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data))
+    except WireguardConfiguration.InvalidConfigurationFileException as exc:
+        return ResponseObject(False, str(exc))
     return ResponseObject()
 
 @app.get(f'{APP_PREFIX}/api/toggleWireguardConfiguration')
