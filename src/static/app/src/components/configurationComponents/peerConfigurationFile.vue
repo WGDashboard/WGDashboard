@@ -68,7 +68,7 @@ const copy = async () => {
 							<LocaleText t="Peer Configuration File"></LocaleText>
 						</h4>
 						<button type="button" class="btn-close ms-auto" 
-						        @click="emit('close')"></button>
+						        @click="emit('close')" aria-label="Close"></button>
 					</div>
 					<div class="card-body p-4 d-flex flex-column gap-3">
 						<div style="height: 300px" class="d-flex">

@@ -14,10 +14,11 @@ const show = ref(false)
 
 <template>
 	<a class="dropdown-item text-center px-0 rounded-3 position-relative" role="button"
+	   :aria-label="title"
 	   @mouseenter="show = true"
 	   @mouseleave="show = false"
 	   @click="emit('click')">
-		<i class="me-auto bi" :class="icon"></i>
+		<i class="me-auto bi" :class="icon" aria-hidden="true"></i>
 		<Transition name="zoomReversed">
 			<span
 				v-if="show"

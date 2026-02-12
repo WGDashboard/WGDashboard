@@ -54,7 +54,7 @@ const emits = defineEmits(["backup", "close"])
 						<h5 class="mb-0">
 							<LocaleText t="Are you sure to delete this configuration?"></LocaleText>
 						</h5>
-						<button type="button" class="btn-close ms-auto" @click="emits('close')"></button>
+						<button type="button" class="btn-close ms-auto" @click="emits('close')" aria-label="Close"></button>
 					</div>
 					<div class="card-body px-4 text-muted">
 						<p class="mb-0">

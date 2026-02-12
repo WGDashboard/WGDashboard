@@ -110,7 +110,7 @@ const clearDownload = () => {
 								<LocaleText t="Select Peers"></LocaleText>
 							</h4>
 							<button type="button" class="btn-close ms-auto"
-							        @click="emit('close')"></button>
+							        @click="emit('close')" aria-label="Close"></button>
 						</div>
 						<div class="d-flex w-100 align-items-center gap-2">
 							<div class="d-flex gap-3">
