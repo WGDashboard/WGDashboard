@@ -11,6 +11,23 @@ from .WireguardConfiguration import WireguardConfiguration
 from .DashboardWebHooks import DashboardWebHooks
 
 
+def _safe_float(value) -> float:
+    try:
+        if value is None:
+            return 0.0
+        if isinstance(value, bool):
+            return float(value)
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            if value.strip() == "":
+                return 0.0
+            return float(value)
+        return float(value)
+    except Exception:
+        return 0.0
+
+
 class AmneziaWireguardConfiguration(WireguardConfiguration):
     def __init__(self, DashboardConfig,
                  AllPeerJobs: PeerJobs,
@@ -31,6 +48,12 @@ class AmneziaWireguardConfiguration(WireguardConfiguration):
 
     def toJson(self):
         self.Status = self.getStatus()
+        def peer_total(peer):
+            return _safe_float(peer.cumu_data) + _safe_float(peer.total_data)
+        def peer_sent(peer):
+            return _safe_float(peer.cumu_sent) + _safe_float(peer.total_sent)
+        def peer_receive(peer):
+            return _safe_float(peer.cumu_receive) + _safe_float(peer.total_receive)
         return {
             "Status": self.Status,
             "Name": self.Name,
@@ -45,9 +68,9 @@ class AmneziaWireguardConfiguration(WireguardConfiguration):
             "SaveConfig": self.SaveConfig,
             "Info": self.configurationInfo.model_dump(),
             "DataUsage": {
-                "Total": sum(list(map(lambda x: x.cumu_data + x.total_data, self.Peers))),
-                "Sent": sum(list(map(lambda x: x.cumu_sent + x.total_sent, self.Peers))),
-                "Receive": sum(list(map(lambda x: x.cumu_receive + x.total_receive, self.Peers)))
+                "Total": sum(list(map(peer_total, self.Peers))),
+                "Sent": sum(list(map(peer_sent, self.Peers))),
+                "Receive": sum(list(map(peer_receive, self.Peers)))
             },
             "ConnectedPeers": len(list(filter(lambda x: x.status == "running", self.Peers))),
             "TotalPeers": len(self.Peers),
