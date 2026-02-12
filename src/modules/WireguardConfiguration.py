@@ -66,6 +66,8 @@ class WireguardConfiguration:
         self.configPath = os.path.join(self.__getProtocolPath(), f'{self.Name}.conf')
         self.engine: sqlalchemy.Engine = sqlalchemy.create_engine(ConnectionString("wgdashboard"))
         self.metadata: sqlalchemy.MetaData = sqlalchemy.MetaData()
+        self.__last_transfer: dict = {}
+        self.__last_transfer_time: float = 0
         self.dbType = self.DashboardConfig.GetConfig("Database", "type")[1]
         
         if name is not None:
@@ -1155,7 +1157,70 @@ class WireguardConfiguration:
                 return { "sent": 0, "recv": 0 }
         else:
             return { "sent": 0, "recv": 0 }
-    
+
+    def getPeersRealtimeSpeed(self):
+        """
+        Calculate per-peer bandwidth speed (MB/s) by comparing two successive
+        'wg show <interface> transfer' snapshots taken ~1 second apart.
+        Returns dict: { peer_id: { "name": str, "sent": float, "recv": float } }
+        """
+        if not self.getStatus():
+            return {}
+
+        def _parse_transfer(raw: str) -> dict:
+            result = {}
+            for line in raw.strip().split("\n"):
+                parts = line.split("\t")
+                if len(parts) == 3:
+                    peer_id = parts[0]
+                    recv_bytes = int(parts[1])
+                    sent_bytes = int(parts[2])
+                    result[peer_id] = {"recv": recv_bytes, "sent": sent_bytes}
+            return result
+
+        try:
+            snap1_raw = subprocess.check_output(
+                f"{self.Protocol} show {self.Name} transfer",
+                shell=True, stderr=subprocess.STDOUT
+            ).decode("UTF-8")
+            snap1 = _parse_transfer(snap1_raw)
+
+            time.sleep(1)
+
+            snap2_raw = subprocess.check_output(
+                f"{self.Protocol} show {self.Name} transfer",
+                shell=True, stderr=subprocess.STDOUT
+            ).decode("UTF-8")
+            snap2 = _parse_transfer(snap2_raw)
+        except subprocess.CalledProcessError:
+            return {}
+
+        peers_speed = {}
+        for peer_id in snap2:
+            if peer_id in snap1:
+                delta_recv = snap2[peer_id]["recv"] - snap1[peer_id]["recv"]
+                delta_sent = snap2[peer_id]["sent"] - snap1[peer_id]["sent"]
+                # Convert bytes to MB/s
+                speed_recv = round(max(delta_recv, 0) / (1024 * 1024), 4)
+                speed_sent = round(max(delta_sent, 0) / (1024 * 1024), 4)
+            else:
+                speed_recv = 0
+                speed_sent = 0
+
+            # Find peer name
+            peer_name = ""
+            found, p = self.searchPeer(peer_id)
+            if found:
+                peer_name = p.name or ""
+
+            peers_speed[peer_id] = {
+                "name": peer_name,
+                "recv": speed_recv,
+                "sent": speed_sent
+            }
+
+        return peers_speed
+
     '''
     Manager WireGuard Configuration Information
     '''

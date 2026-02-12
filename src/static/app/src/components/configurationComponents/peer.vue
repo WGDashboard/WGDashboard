@@ -15,7 +15,7 @@ export default {
 		PeerTagBadge, LocaleText, PeerSettingsDropdown
 	},
 	props: {
-		Peer: Object, ConfigurationInfo: Object, order: Number, searchPeersLength: Number
+		Peer: Object, ConfigurationInfo: Object, order: Number, searchPeersLength: Number, peerSpeed: Object
 	},
 	setup(){
 		const target = ref(null);
@@ -58,7 +58,7 @@ export default {
 				</div>
 				
 				
-				<div style="font-size: 0.8rem" class="ms-auto d-flex gap-2">
+				<div style="font-size: 0.8rem" class="ms-auto d-flex gap-2 flex-wrap justify-content-end">
 					<span class="text-primary">
 						<i class="bi bi-arrow-down"></i><strong>
 						{{(Peer.cumu_receive + Peer.total_receive).toFixed(4)}}</strong> GB
@@ -70,6 +70,13 @@ export default {
 					<span class="text-secondary" v-if="Peer.latest_handshake !== 'No Handshake'">
 						<i class="bi bi-arrows-angle-contract"></i>
 						{{getLatestHandshake}} ago
+					</span>
+					<span class="badge bg-info-subtle text-info-emphasis d-flex align-items-center gap-1" 
+						  v-if="peerSpeed && (peerSpeed.recv > 0 || peerSpeed.sent > 0)">
+						<i class="bi bi-speedometer2"></i>
+						<span class="text-primary">↓{{peerSpeed.recv}} </span>
+						<span class="text-success">↑{{peerSpeed.sent}} </span>
+						MB/s
 					</span>
 				</div>
 			</div>

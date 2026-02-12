@@ -102,18 +102,39 @@ const fetchPeerList = async () => {
 }
 await fetchPeerList()
 
+// Per-Peer Realtime Speed =====================================
+const peerSpeeds = ref({})
+const fetchPeerSpeeds = async () => {
+	if (!configurationInfo.value.Status) return
+	await fetchGet("/api/getWireguardConfigurationPeersRealtimeSpeed", {
+		configurationName: route.params.id
+	}, (res) => {
+		if (res.status && res.data) {
+			peerSpeeds.value = res.data
+		}
+	})
+}
+
 // Fetch Peer Interval =====================================
 const fetchPeerListInterval = ref(undefined)
+const fetchPeerSpeedInterval = ref(undefined)
 const setFetchPeerListInterval = () => {
 	clearInterval(fetchPeerListInterval.value)
+	clearInterval(fetchPeerSpeedInterval.value)
+	const interval = parseInt(dashboardStore.Configuration.Server.dashboard_refresh_interval)
 	fetchPeerListInterval.value = setInterval(async () => {
 		await fetchPeerList()
-	},  parseInt(dashboardStore.Configuration.Server.dashboard_refresh_interval))
+	}, interval)
+	fetchPeerSpeedInterval.value = setInterval(async () => {
+		await fetchPeerSpeeds()
+	}, interval)
 }
 setFetchPeerListInterval()
 onBeforeUnmount(() => {
 	clearInterval(fetchPeerListInterval.value);
+	clearInterval(fetchPeerSpeedInterval.value);
 	fetchPeerListInterval.value = undefined;
+	fetchPeerSpeedInterval.value = undefined;
 	wireguardConfigurationStore.Filter.HiddenTags = []
 })
 
@@ -414,10 +435,11 @@ watch(() => route.query.id, (newValue) => {
 			     :class="{'col-lg-6 col-xl-4': dashboardStore.Configuration.Server.dashboard_peer_list_display === 'grid'}"
 			     :key="peer.id"
 			     v-for="(peer, order) in searchPeers">
-				<Peer :Peer="peer"
-					  :searchPeersLength="searchPeers.length"
-					  :order="order"
-					  :ConfigurationInfo="configurationInfo"
+			<Peer :Peer="peer"
+				  :searchPeersLength="searchPeers.length"
+				  :order="order"
+				  :ConfigurationInfo="configurationInfo"
+				  :peerSpeed="peerSpeeds[peer.id]"
 					  @details="configurationModals.peerDetails.modalOpen = true; configurationModalSelectedPeer = peer"
 				      @share="configurationModals.peerShare.modalOpen = true; configurationModalSelectedPeer = peer"
 				      @refresh="fetchPeerList()"
