@@ -83,21 +83,22 @@ def peerInformationBackgroundThread():
     while True:
         with app.app_context():
             try:
-                curKeys = list(WireguardConfigurations.keys())
-                for name in curKeys:
-                    if name in WireguardConfigurations.keys() and WireguardConfigurations.get(name) is not None:
-                        c = WireguardConfigurations.get(name)
-                        if c.getStatus():
-                            c.getPeersLatestHandshake()
-                            c.getPeersTransfer()
-                            c.getPeersEndpoint()
-                            c.getPeers()
-                            if delay == 6:
-                                if c.configurationInfo.PeerTrafficTracking:
-                                    c.logPeersTraffic()
-                                if c.configurationInfo.PeerHistoricalEndpointTracking:
-                                    c.logPeersHistoryEndpoint()
-                            c.getRestrictedPeersList()
+                with WireguardConfigurationsLock:
+                    current_configs = list(WireguardConfigurations.values())
+                for c in current_configs:
+                    if c is None:
+                        continue
+                    if c.getStatus():
+                        c.getPeersLatestHandshake()
+                        c.getPeersTransfer()
+                        c.getPeersEndpoint()
+                        c.getPeers()
+                        if delay == 6:
+                            if c.configurationInfo.PeerTrafficTracking:
+                                c.logPeersTraffic()
+                            if c.configurationInfo.PeerHistoricalEndpointTracking:
+                                c.logPeersHistoryEndpoint()
+                        c.getRestrictedPeersList()
             except Exception as e:
                 app.logger.error(f"[WGDashboard] Background Thread #1 Error", e)
 
@@ -134,39 +135,72 @@ def ProtocolsEnabled() -> list[str]:
     return protocols
 
 def InitWireguardConfigurationsList(startup: bool = False):
-    if os.path.exists(DashboardConfig.GetConfig("Server", "wg_conf_path")[1]):
-        confs = os.listdir(DashboardConfig.GetConfig("Server", "wg_conf_path")[1])
+    found_wg = set()
+    found_awg = set()
+    scanned_wg = False
+    scanned_awg = False
+    wg_path = DashboardConfig.GetConfig("Server", "wg_conf_path")[1]
+    if os.path.exists(wg_path):
+        scanned_wg = True
+        confs = os.listdir(wg_path)
         confs.sort()
         for i in confs:
             if RegexMatch("^(.{1,}).(conf)$", i):
                 i = i.replace('.conf', '')
+                found_wg.add(i)
                 try:
-                    if i in WireguardConfigurations.keys():
-                        if WireguardConfigurations[i].configurationFileChanged():
+                    with WireguardConfigurationsLock:
+                        existing = WireguardConfigurations.get(i)
+                    if existing is not None:
+                        if existing.configurationFileChanged():
                             with app.app_context():
-                                WireguardConfigurations[i] = WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i)
+                                new_config = WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i)
+                            with WireguardConfigurationsLock:
+                                WireguardConfigurations[i] = new_config
                     else:
                         with app.app_context():
-                            WireguardConfigurations[i] = WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i, startup=startup)
+                            new_config = WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i, startup=startup)
+                        with WireguardConfigurationsLock:
+                            WireguardConfigurations[i] = new_config
                 except WireguardConfiguration.InvalidConfigurationFileException as e:
                     app.logger.error(f"{i} have an invalid configuration file.")
 
     if "awg" in ProtocolsEnabled():
-        confs = os.listdir(DashboardConfig.GetConfig("Server", "awg_conf_path")[1])
-        confs.sort()
-        for i in confs:
-            if RegexMatch("^(.{1,}).(conf)$", i):
-                i = i.replace('.conf', '')
-                try:
-                    if i in WireguardConfigurations.keys():
-                        if WireguardConfigurations[i].configurationFileChanged():
+        awg_path = DashboardConfig.GetConfig("Server", "awg_conf_path")[1]
+        if os.path.exists(awg_path):
+            scanned_awg = True
+            confs = os.listdir(awg_path)
+            confs.sort()
+            for i in confs:
+                if RegexMatch("^(.{1,}).(conf)$", i):
+                    i = i.replace('.conf', '')
+                    found_awg.add(i)
+                    try:
+                        with WireguardConfigurationsLock:
+                            existing = WireguardConfigurations.get(i)
+                        if existing is not None:
+                            if existing.configurationFileChanged():
+                                with app.app_context():
+                                    new_config = AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i)
+                                with WireguardConfigurationsLock:
+                                    WireguardConfigurations[i] = new_config
+                        else:
                             with app.app_context():
-                                WireguardConfigurations[i] = AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i)
-                    else:
-                        with app.app_context():
-                            WireguardConfigurations[i] = AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i, startup=startup)
-                except WireguardConfiguration.InvalidConfigurationFileException as e:
-                    app.logger.error(f"{i} have an invalid configuration file.")
+                                new_config = AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i, startup=startup)
+                            with WireguardConfigurationsLock:
+                                WireguardConfigurations[i] = new_config
+                    except WireguardConfiguration.InvalidConfigurationFileException as e:
+                        app.logger.error(f"{i} have an invalid configuration file.")
+
+    with WireguardConfigurationsLock:
+        for name, config in list(WireguardConfigurations.items()):
+            protocol = getattr(config, "Protocol", None)
+            if protocol == "wg":
+                if scanned_wg and name not in found_wg:
+                    WireguardConfigurations.pop(name, None)
+            elif protocol == "awg":
+                if scanned_awg and name not in found_awg:
+                    WireguardConfigurations.pop(name, None)
 
 def startThreads():
     bgThread = threading.Thread(target=peerInformationBackgroundThread, daemon=True)
@@ -186,6 +220,7 @@ dictConfig({
 
 
 WireguardConfigurations: dict[str, WireguardConfiguration] = {}
+WireguardConfigurationsLock = threading.RLock()
 CONFIGURATION_PATH = os.getenv('CONFIGURATION_PATH', '.')
 
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 5206928
