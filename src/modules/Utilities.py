@@ -1,6 +1,6 @@
 import re, ipaddress
 import subprocess
-
+import sqlalchemy
 
 def RegexMatch(regex, text) -> bool:
     """
@@ -41,31 +41,32 @@ def StringToBoolean(value: str):
     return (value.strip().replace(" ", "").lower() in 
             ("yes", "true", "t", "1", 1))
 
-def ValidateIPAddressesWithRange(ips: str) -> bool:
-    s = ips.replace(" ", "").split(",")
-    for ip in s:
+def CheckAddress(ips_str: str) -> bool:
+    if len(ips_str) == 0:
+        return False
+
+    for ip in ips_str.split(','):
+        stripped_ip = ip.strip()
         try:
-            ipaddress.ip_network(ip)
-        except ValueError as e:
+            # Verify the IP-address, with the strict flag as false also allows for /32 and /128
+            ipaddress.ip_network(stripped_ip, strict=False)
+        except ValueError:
             return False
     return True
 
-def ValidateIPAddresses(ips) -> bool:
-    s = ips.replace(" ", "").split(",")
-    for ip in s:
-        try:
-            ipaddress.ip_address(ip)
-        except ValueError as e:
-            return False
-    return True
+def ValidateDNSAddress(addresses_str: str) -> tuple[bool, str | None]:
+    if len(addresses_str) == 0:
+        return False, "Got an empty list/string to check for valid DNS-addresses"
 
-def ValidateDNSAddress(addresses) -> tuple[bool, str]:
-    s = addresses.replace(" ", "").split(",")
-    for address in s:
-        if not ValidateIPAddresses(address) and not RegexMatch(
-                r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z]{0,61}[a-z]", address):
-            return False, f"{address} does not appear to be an valid DNS address"
-    return True, ""
+    addresses = addresses_str.split(',')
+    for address in addresses:
+        stripped_address = address.strip()
+
+        if not CheckAddress(stripped_address) and not RegexMatch(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z]{0,61}[a-z]", stripped_address):
+            return False, f"{stripped_address} does not appear to be a valid IP-address or FQDN"
+
+    return True, None
+
 
 def ValidateEndpointAllowedIPs(IPs) -> tuple[bool, str] | tuple[bool, None]:
     ips = IPs.replace(" ", "").split(",")

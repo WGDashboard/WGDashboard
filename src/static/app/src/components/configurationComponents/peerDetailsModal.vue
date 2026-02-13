@@ -49,13 +49,16 @@ defineEmits(['close'])
 						<button type="button" class="btn-close ms-auto" @click="$emit('close')"></button>
 					</div>
 					<div class="card-body px-4">
-						<div>
-							<p class="mb-0 text-muted"><small>
-								<LocaleText t="Peer"></LocaleText>
-							</small></p>
-							<h2>
-								{{ selectedPeer.name }}
-							</h2>
+						<div class="d-flex justify-content-between align-items-start mb-2">
+							<div>
+								<p class="mb-0 text-muted"><small><LocaleText t="Peer" /></small></p>
+								<h2 class="mb-0">{{ selectedPeer.name }}</h2>
+							</div>
+
+							<div v-if="selectedPeer.notes" class="text-end">
+								<p class="mb-0 text-muted"><small><LocaleText t="Notes" /></small></p>
+								<p class="mb-0" style="white-space: pre-wrap">{{ selectedPeer.notes }}</p>
+							</div>
 						</div>
 						<div class="row mt-3 gy-2 gx-2 mb-2">
 							<div class="col-12 col-lg-3">

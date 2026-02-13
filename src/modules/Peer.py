@@ -11,7 +11,7 @@ import jinja2
 import sqlalchemy as db
 from .PeerJob import PeerJob
 from .PeerShareLink import PeerShareLink
-from .Utilities import GenerateWireguardPublicKey, ValidateIPAddressesWithRange, ValidateDNSAddress
+from .Utilities import GenerateWireguardPublicKey, CheckAddress, ValidateDNSAddress
 
 
 class Peer:
@@ -34,6 +34,7 @@ class Peer:
         self.cumu_data = tableData["cumu_data"]
         self.mtu = tableData["mtu"]
         self.keepalive = tableData["keepalive"]
+        self.notes = tableData.get("notes", "")
         self.remote_endpoint = tableData["remote_endpoint"]
         self.preshared_key = tableData["preshared_key"]
         self.jobs: list[PeerJob] = []
@@ -49,56 +50,75 @@ class Peer:
     def __repr__(self):
         return str(self.toJson())
 
-    def updatePeer(self, name: str, private_key: str,
+    def updatePeer(self, name: str,
+                   private_key: str,
                    preshared_key: str,
-                   dns_addresses: str, allowed_ip: str, endpoint_allowed_ip: str, mtu: int,
-                   keepalive: int) -> tuple[bool, str] or tuple[bool, None]:
+                   dns_addresses: str,
+                   allowed_ip: str,
+                   endpoint_allowed_ip: str,
+                   mtu: int,
+                   keepalive: int,
+                   notes: str
+                   ) -> tuple[bool, str | None]:
+
         if not self.configuration.getStatus():
             self.configuration.toggleConfiguration()
 
-        existingAllowedIps = [item for row in list(
-            map(lambda x: [q.strip() for q in x.split(',')],
-                map(lambda y: y.allowed_ip,
-                    list(filter(lambda k: k.id != self.id, self.configuration.getPeersList()))))) for item in row]
+        # Before we do any compute, let us check if the given endpoint allowed ip is valid at all
+        if not CheckAddress(endpoint_allowed_ip):
+            return False, f"Endpoint Allowed IPs format is incorrect"
 
-        if allowed_ip in existingAllowedIps:
+        peers = []
+        for peer in self.configuration.getPeersList():
+            # Make sure to exclude your own data when updating since its not really relevant
+            if peer.id != self.id:
+                continue
+            peers.append(peer)
+
+        used_allowed_ips = []
+        for peer in peers:
+            ips = peer.allowed_ip.split(',')
+            ips = [ip.strip() for ip in ips]
+            used_allowed_ips.append(ips)
+
+        if allowed_ip in used_allowed_ips:
             return False, "Allowed IP already taken by another peer"
         
-        if not ValidateIPAddressesWithRange(endpoint_allowed_ip):
-            return False, f"Endpoint Allowed IPs format is incorrect"
+        if not ValidateDNSAddress(dns_addresses):
+            return False, f"DNS IP-Address or FQDN is incorrect"
         
-        if len(dns_addresses) > 0 and not ValidateDNSAddress(dns_addresses):
-            return False, f"DNS format is incorrect"
-        
-        if type(mtu) is str or mtu is None:
+        if isinstance(mtu, str):
             mtu = 0
-        
-        if mtu < 0 or mtu > 1460:
-            return False, "MTU format is not correct"
-        
-        if type(keepalive) is str or keepalive is None:
+
+        if isinstance(keepalive, str):
             keepalive = 0
+        
+        if mtu not in range(0, 1461):
+            return False, "MTU format is not correct"
         
         if keepalive < 0:
             return False, "Persistent Keepalive format is not correct"
+
         if len(private_key) > 0:
             pubKey = GenerateWireguardPublicKey(private_key)
             if not pubKey[0] or pubKey[1] != self.id:
                 return False, "Private key does not match with the public key"
-        try:
-            rd = random.Random()
-            uid = str(uuid.UUID(int=rd.getrandbits(128), version=4))
-            pskExist = len(preshared_key) > 0
 
-            if pskExist:
+        try:
+            rand = random.Random()
+            uid = str(uuid.UUID(int=rand.getrandbits(128), version=4))
+            psk_exist = len(preshared_key) > 0
+
+            if psk_exist:
                 with open(uid, "w+") as f:
                     f.write(preshared_key)
+
             newAllowedIPs = allowed_ip.replace(" ", "")
             updateAllowedIp = subprocess.check_output(
-                f"{self.configuration.Protocol} set {self.configuration.Name} peer {self.id} allowed-ips {newAllowedIPs} {f'preshared-key {uid}' if pskExist else 'preshared-key /dev/null'}",
+                f"{self.configuration.Protocol} set {self.configuration.Name} peer {self.id} allowed-ips {newAllowedIPs} {f'preshared-key {uid}' if psk_exist else 'preshared-key /dev/null'}",
                 shell=True, stderr=subprocess.STDOUT)
 
-            if pskExist: os.remove(uid)
+            if psk_exist: os.remove(uid)
             if len(updateAllowedIp.decode().strip("\n")) != 0:
                 return False, "Update peer failed when updating Allowed IPs"
             saveConfig = subprocess.check_output(f"{self.configuration.Protocol}-quick save {self.configuration.Name}",
@@ -114,6 +134,7 @@ class Peer:
                         "endpoint_allowed_ip": endpoint_allowed_ip,
                         "mtu": mtu,
                         "keepalive": keepalive,
+                        "notes": notes,
                         "preshared_key": preshared_key
                     }).where(
                         self.configuration.peersTable.c.id == self.id

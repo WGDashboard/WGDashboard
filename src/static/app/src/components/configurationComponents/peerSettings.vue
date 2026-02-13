@@ -100,6 +100,17 @@ export default {
 								       id="peer_name_textbox" placeholder="">
 							</div>
 							<div>
+								<label for="peer_notes_textbox" class="form-label">
+									<small class="text-muted">
+										<LocaleText t="Notes"></LocaleText>
+									</small>
+								</label>
+								<input type="text" class="form-control form-control-sm rounded-3"
+								       :disabled="this.saving"
+								       v-model="this.data.notes"
+								       id="peer_notes_textbox" placeholder="">
+							</div>
+							<div>
 								<div class="d-flex position-relative">
 									<label for="peer_private_key_textbox" class="form-label">
 										<small class="text-muted"><LocaleText t="Private Key"></LocaleText> 

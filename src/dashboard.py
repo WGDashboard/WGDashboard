@@ -17,8 +17,7 @@ from itertools import islice
 from sqlalchemy import RowMapping
 
 from modules.Utilities import (
-    RegexMatch, StringToBoolean,
-    ValidateIPAddressesWithRange, ValidateDNSAddress,
+    RegexMatch, StringToBoolean, ValidateDNSAddress,
     GenerateWireguardPublicKey, GenerateWireguardPrivateKey
 )
 from packaging import version
@@ -30,7 +29,7 @@ from modules.PeerShareLinks import PeerShareLinks
 from modules.PeerJobs import PeerJobs
 from modules.DashboardConfig import DashboardConfig
 from modules.WireguardConfiguration import WireguardConfiguration
-from modules.AmneziaWireguardConfiguration import AmneziaWireguardConfiguration
+from modules.AmneziaConfiguration import AmneziaConfiguration
 
 from client import createClientBlueprint
 
@@ -167,10 +166,10 @@ def InitWireguardConfigurationsList(startup: bool = False):
                     if i in WireguardConfigurations.keys():
                         if WireguardConfigurations[i].configurationFileChanged():
                             with app.app_context():
-                                WireguardConfigurations[i] = AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i)
+                                WireguardConfigurations[i] = AmneziaConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i)
                     else:
                         with app.app_context():
-                            WireguardConfigurations[i] = AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i, startup=startup)
+                            WireguardConfigurations[i] = AmneziaConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i, startup=startup)
                 except WireguardConfiguration.InvalidConfigurationFileException as e:
                     app.logger.error(f"{i} have an invalid configuration file.")
 
@@ -421,11 +420,11 @@ def API_addWireguardConfiguration():
         )
         WireguardConfigurations[data['ConfigurationName']] = (
             WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, data=data, name=data['ConfigurationName'])) if protocol == 'wg' else (
-            AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data, name=data['ConfigurationName']))
+            AmneziaConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data, name=data['ConfigurationName']))
     else:
         WireguardConfigurations[data['ConfigurationName']] = (
             WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data)) if data.get('Protocol') == 'wg' else (
-            AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data))
+            AmneziaConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data))
     return ResponseObject()
 
 @app.get(f'{APP_PREFIX}/api/toggleWireguardConfiguration')
@@ -522,7 +521,7 @@ def API_renameWireguardConfiguration():
     
     status, message = rc.renameConfiguration(data.get("NewConfigurationName"))
     if status:
-        WireguardConfigurations[data.get("NewConfigurationName")] = (WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data.get("NewConfigurationName")) if rc.Protocol == 'wg' else AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data.get("NewConfigurationName")))
+        WireguardConfigurations[data.get("NewConfigurationName")] = (WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data.get("NewConfigurationName")) if rc.Protocol == 'wg' else AmneziaConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data.get("NewConfigurationName")))
     else:
         WireguardConfigurations[data.get("ConfigurationName")] = rc
     return ResponseObject(status, message)
@@ -698,15 +697,30 @@ def API_updatePeerSettings(configName):
         preshared_key = data['preshared_key']
         mtu = data['mtu']
         keepalive = data['keepalive']
+        notes = data.get('notes', '')
         wireguardConfig = WireguardConfigurations[configName]
         foundPeer, peer = wireguardConfig.searchPeer(id)
         if foundPeer:
             if wireguardConfig.Protocol == 'wg':
-                status, msg = peer.updatePeer(name, private_key, preshared_key, dns_addresses,
-                                       allowed_ip, endpoint_allowed_ip, mtu, keepalive)
+                status, msg = peer.updatePeer(name,
+                                              private_key,
+                                              preshared_key, 
+                                              dns_addresses,
+                                              allowed_ip,
+                                              endpoint_allowed_ip,
+                                              mtu,
+                                              keepalive,
+                                              notes)
             else:
-                status, msg = peer.updatePeer(name, private_key, preshared_key, dns_addresses,
-                    allowed_ip, endpoint_allowed_ip, mtu, keepalive, "off")
+                status, msg = peer.updatePeer(name,
+                                              private_key,
+                                              preshared_key,
+                                              dns_addresses,
+                                              allowed_ip,
+                                              endpoint_allowed_ip,
+                                              mtu,
+                                              keepalive,
+                                              notes)
             wireguardConfig.getPeers()
             DashboardWebHooks.RunWebHook('peer_updated', {
                 "configuration": wireguardConfig.Name,
@@ -856,6 +870,7 @@ def API_addPeers(configName):
             
             mtu: int = data.get('mtu', None)
             keep_alive: int = data.get('keepalive', None)
+            notes: str = data.get('notes', '')
             preshared_key: str = data.get('preshared_key', "")            
     
             if type(mtu) is not int or mtu < 0 or mtu > 1460:
@@ -911,7 +926,7 @@ def API_addPeers(configName):
                             "endpoint_allowed_ip": endpoint_allowed_ip,
                             "mtu": mtu,
                             "keepalive": keep_alive,
-                            "advanced_security": "off"
+                            "notes": ""
                         })
                         if addedCount == bulkAddAmount:
                             break
@@ -973,7 +988,7 @@ def API_addPeers(configName):
                         "DNS": dns_addresses,
                         "mtu": mtu,
                         "keepalive": keep_alive,
-                        "advanced_security": "off"
+                        "notes": notes
                     }]
                 )
                 return ResponseObject(status=status, message=message, data=addedPeers)
