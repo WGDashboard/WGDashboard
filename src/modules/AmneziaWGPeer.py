@@ -1,4 +1,5 @@
 import os
+from flask import current_app
 import random
 import re
 import subprocess
@@ -58,18 +59,25 @@ class AmneziaWGPeer(Peer):
                 with open(uid, "w+") as f:
                     f.write(preshared_key)
             newAllowedIPs = allowed_ip.replace(" ", "")
-            updateAllowedIp = subprocess.check_output(
-                f"{self.configuration.Protocol} set {self.configuration.Name} peer {self.id} allowed-ips {newAllowedIPs} {f'preshared-key {uid}' if pskExist else 'preshared-key /dev/null'}",
-                shell=True, stderr=subprocess.STDOUT)
+
+            if not re.match(r"^[0-9a-fA-F\.\,:/ ]+$", newAllowedIPs):
+                return False, "Allowed IPs entry format is incorrect"
+
+            command = [self.configuration.Protocol, "set", self.configuration.Name, "peer", self.id, "allowed-ips", newAllowedIPs, "preshared-key", uid if pskExist else "/dev/null"]
+            updateAllowedIp = subprocess.check_output(command, stderr=subprocess.STDOUT)
 
             if pskExist: os.remove(uid)
 
             if len(updateAllowedIp.decode().strip("\n")) != 0:
-                return False, "Update peer failed when updating Allowed IPs"
-            saveConfig = subprocess.check_output(f"{self.configuration.Protocol}-quick save {self.configuration.Name}",
-                                                 shell=True, stderr=subprocess.STDOUT)
+                current_app.logger.error("Update peer failed when updating Allowed IPs")
+                return False, "Internal server error"
+
+            command = [f"{self.configuration.Protocol}-quick", "save", self.configuration.Name]
+            saveConfig = subprocess.check_output(command, stderr=subprocess.STDOUT)
+
             if f"wg showconf {self.configuration.Name}" not in saveConfig.decode().strip('\n'):
-                return False, "Update peer failed when saving the configuration"
+                current_app.logger.error("Update peer failed when saving the configuration")
+                return False, "Internal server error"
 
             with self.configuration.engine.begin() as conn:
                 conn.execute(
@@ -89,4 +97,5 @@ class AmneziaWGPeer(Peer):
             self.configuration.getPeers()
             return True, None
         except subprocess.CalledProcessError as exc:
-            return False, exc.output.decode("UTF-8").strip()
+            current_app.logger.error(f"Subprocess call failed:\n{exc.output.decode("UTF-8")}")
+            return False, "Internal server error"

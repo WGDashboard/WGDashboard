@@ -14,6 +14,7 @@ public_key.txt
 *venv*
 log/**
 release/*
+src/download/*
 src/db/wgdashboard.db
 .jshintrc
 node_modules/**

@@ -249,7 +249,6 @@ def auth_req():
             whiteList = [
                 '/static/', 'validateAuthentication', 'authenticate', 'getDashboardConfiguration',
                 'getDashboardTheme', 'getDashboardVersion', 'sharePeer/get', 'isTotpEnabled', 'locale',
-                '/fileDownload',
                 '/client'
             ]
             
@@ -601,12 +600,13 @@ def API_deleteWireguardConfigurationBackup():
 
 @app.get(f'{APP_PREFIX}/api/downloadWireguardConfigurationBackup')
 def API_downloadWireguardConfigurationBackup():
-    configurationName = request.args.get('configurationName')
-    backupFileName = request.args.get('backupFileName')
+    configurationName = os.path.basename(request.args.get('configurationName'))
+    backupFileName = os.path.basename(request.args.get('backupFileName'))
     if configurationName is None or configurationName not in WireguardConfigurations.keys():
         return ResponseObject(False, "Configuration does not exist", status_code=404)
+
     status, zip = WireguardConfigurations[configurationName].downloadBackup(backupFileName)
-    return ResponseObject(status, data=zip, status_code=(200 if status else 404))
+    return send_file(os.path.join('download', zip), as_attachment=True)
 
 @app.post(f'{APP_PREFIX}/api/restoreWireguardConfigurationBackup')
 def API_restoreWireguardConfigurationBackup():
@@ -1206,19 +1206,6 @@ def API_getPeerScheduleJobLogs(configName):
     if data is not None and data == "true":
         requestAll = True
     return ResponseObject(data=AllPeerJobs.getPeerJobLogs(configName))
-
-'''
-File Download
-'''
-@app.get(f'{APP_PREFIX}/fileDownload')
-def API_download():
-    file = request.args.get('file')
-    if file is None or len(file) == 0:
-        return ResponseObject(False, "Please specify a file")
-    if os.path.exists(os.path.join('download', file)):
-        return send_file(os.path.join('download', file), as_attachment=True)
-    else:
-        return ResponseObject(False, "File does not exist")
 
 
 '''

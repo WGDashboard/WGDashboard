@@ -94,17 +94,23 @@ class Peer:
                 with open(uid, "w+") as f:
                     f.write(preshared_key)
             newAllowedIPs = allowed_ip.replace(" ", "")
-            updateAllowedIp = subprocess.check_output(
-                f"{self.configuration.Protocol} set {self.configuration.Name} peer {self.id} allowed-ips {newAllowedIPs} {f'preshared-key {uid}' if pskExist else 'preshared-key /dev/null'}",
-                shell=True, stderr=subprocess.STDOUT)
+            if not re.match(r"^[0-9a-fA-F\.\,:/ ]+$", newAllowedIPs):
+                    return False, "Allowed IPs entry format is incorrect"
+                
+            command = [self.configuration.Protocol, "set", self.configuration.Name, "peer", self.id, "allowed-ips", newAllowedIPs, "preshared-key", uid if pskExist else "/dev/null"]
+            updateAllowedIp = subprocess.check_output(command, stderr=subprocess.STDOUT)
 
             if pskExist: os.remove(uid)
             if len(updateAllowedIp.decode().strip("\n")) != 0:
-                return False, "Update peer failed when updating Allowed IPs"
-            saveConfig = subprocess.check_output(f"{self.configuration.Protocol}-quick save {self.configuration.Name}",
-                                                 shell=True, stderr=subprocess.STDOUT)
+                current_app.logger.error("Update peer failed when updating Allowed IPs")
+                return False, "Internal server error"
+
+            command = [f"{self.configuration.Protocol}-quick", "save", self.configuration.Name]
+            saveConfig = subprocess.check_output(command)
+
             if f"wg showconf {self.configuration.Name}" not in saveConfig.decode().strip('\n'):
-                return False, "Update peer failed when saving the configuration"
+                current_app.logger.error("Update peer failed when saving the configuration")
+                return False, "Internal server error"
             with self.configuration.engine.begin() as conn:
                 conn.execute(
                     self.configuration.peersTable.update().values({
@@ -121,7 +127,8 @@ class Peer:
                 )
             return True, None
         except subprocess.CalledProcessError as exc:
-            return False, exc.output.decode("UTF-8").strip()
+            current_app.logger.error(f"Subprocess call failed:\n{exc.output.decode("UTF-8")}")
+            return False, "Internal server error"
 
     def downloadPeer(self) -> dict[str, str]:
         final = {
@@ -132,12 +139,13 @@ class Peer:
         if len(filename) == 0:
             filename = "UntitledPeer"
         filename = "".join(filename.split(' '))
-        filename = f"{filename}"
-        illegal_filename = [".", ",", "/", "?", "<", ">", "\\", ":", "*", '|' '\"', "com1", "com2", "com3",
-                            "com4", "com5", "com6", "com7", "com8", "com9", "lpt1", "lpt2", "lpt3", "lpt4",
-                            "lpt5", "lpt6", "lpt7", "lpt8", "lpt9", "con", "nul", "prn"]
-        for i in illegal_filename:
-            filename = filename.replace(i, "")
+
+        filename = re.sub(r'[.,/?<>\\:*|"]', '', filename).rstrip(". ")
+
+        reserved_pattern = r"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$"
+    
+        if re.match(reserved_pattern, filename, re.IGNORECASE):
+            filename = f"file_{filename}"
 
         for i in filename:
             if re.match("^[a-zA-Z0-9_=+.-]$", i):
