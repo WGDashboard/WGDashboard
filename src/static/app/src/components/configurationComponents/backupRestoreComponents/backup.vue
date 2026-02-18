@@ -46,14 +46,7 @@ const restoreBackup = () => {
 }
 
 const downloadBackup = () => {
-	fetchGet("/api/downloadWireguardConfigurationBackup", {
-		configurationName: route.params.id,
-		backupFileName: props.b.filename
-	}, (res) => {
-		if (res.status){
-			window.open(getUrl(`/fileDownload?file=${res.data}`), '_blank')
-		}
-	})
+	window.location.href = getUrl(`/api/downloadWireguardConfigurationBackup?configurationName=${route.params.id}&backupFileName=${props.b.filename}`);
 }
 
 const delaySeconds = computed(() => {

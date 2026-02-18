@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 
 import sqlalchemy
 from jinja2 import Template
-from flask import Flask, request, render_template, session, send_file
+from flask import Flask, request, render_template, session, send_file, current_app
 from flask_cors import CORS
 from icmplib import ping, traceroute
 from flask.json.provider import DefaultJSONProvider
@@ -254,7 +254,6 @@ def auth_req():
             whiteList = [
                 '/static/', 'validateAuthentication', 'authenticate', 'getDashboardConfiguration',
                 'getDashboardTheme', 'getDashboardVersion', 'sharePeer/get', 'isTotpEnabled', 'locale',
-                '/fileDownload',
                 '/client',
                 '/assets/', '/img/', '/json/',
                 '/client/assets/', '/client/img/'
@@ -608,12 +607,19 @@ def API_deleteWireguardConfigurationBackup():
 
 @app.get(f'{APP_PREFIX}/api/downloadWireguardConfigurationBackup')
 def API_downloadWireguardConfigurationBackup():
-    configurationName = request.args.get('configurationName')
-    backupFileName = request.args.get('backupFileName')
+    configurationName = os.path.basename(request.args.get('configurationName'))
+    backupFileName = os.path.basename(request.args.get('backupFileName'))
+
     if configurationName is None or configurationName not in WireguardConfigurations.keys():
         return ResponseObject(False, "Configuration does not exist", status_code=404)
+
     status, zip = WireguardConfigurations[configurationName].downloadBackup(backupFileName)
-    return ResponseObject(status, data=zip, status_code=(200 if status else 404))
+
+    if not status:
+        current_app.logger.error(f"Failed to download a requested backup.\nConfiguration Name: {configurationName}\nBackup File Name: {backupFileName}")
+        return ResponseObject(False, "Internal server error", status_code=500)
+
+    return send_file(os.path.join('download', zip), as_attachment=True)
 
 @app.post(f'{APP_PREFIX}/api/restoreWireguardConfigurationBackup')
 def API_restoreWireguardConfigurationBackup():
@@ -1240,20 +1246,6 @@ def API_getPeerScheduleJobLogs(configName):
     if data is not None and data == "true":
         requestAll = True
     return ResponseObject(data=AllPeerJobs.getPeerJobLogs(configName))
-
-'''
-File Download
-'''
-@app.get(f'{APP_PREFIX}/fileDownload')
-def API_download():
-    file = request.args.get('file')
-    if file is None or len(file) == 0:
-        return ResponseObject(False, "Please specify a file")
-    if os.path.exists(os.path.join('download', file)):
-        return send_file(os.path.join('download', file), as_attachment=True)
-    else:
-        return ResponseObject(False, "File does not exist")
-
 
 '''
 Tools
