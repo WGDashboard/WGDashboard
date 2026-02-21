@@ -551,10 +551,10 @@ def API_getAllWireguardConfigurationBackup():
             files = [(file, os.path.getctime(os.path.join(directory, file)))
                      for file in os.listdir(directory) if os.path.isfile(os.path.join(directory, file))]
             files.sort(key=lambda x: x[1], reverse=True)
-        
+            backupRegex = r"^(.+)_(\d+)\.(conf)$"
             for f, ct in files:
-                if RegexMatch(r"^(.*)_(.*)\.(conf)$", f):
-                    s = re.search(r"^(.*)_(.*)\.(conf)$", f)
+                if RegexMatch(backupRegex, f):
+                    s = re.search(backupRegex, f)
                     name = s.group(1)
                     if name not in existingConfiguration:
                         if name not in data['NonExistingConfigurations'].keys():

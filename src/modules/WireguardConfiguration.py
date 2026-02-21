@@ -104,7 +104,6 @@ class WireguardConfiguration:
 
             if self.Protocol == 'awg':
                 self.__parser["Interface"]["Jc"] = self.Jc
-                self.__parser["Interface"]["Jc"] = self.Jc
                 self.__parser["Interface"]["Jmin"] = self.Jmin
                 self.__parser["Interface"]["Jmax"] = self.Jmax
                 self.__parser["Interface"]["S1"] = self.S1
@@ -113,6 +112,13 @@ class WireguardConfiguration:
                 self.__parser["Interface"]["H2"] = self.H2
                 self.__parser["Interface"]["H3"] = self.H3
                 self.__parser["Interface"]["H4"] = self.H4
+                self.__parser["Interface"]["S3"] = self.S3
+                self.__parser["Interface"]["S4"] = self.S4
+                self.__parser["Interface"]["I1"] = self.I1
+                self.__parser["Interface"]["I2"] = self.I2
+                self.__parser["Interface"]["I3"] = self.I3
+                self.__parser["Interface"]["I4"] = self.I4
+                self.__parser["Interface"]["Itime"] = self.Itime
 
             if "Backup" not in data.keys():
                 self.createDatabase()
@@ -919,10 +925,10 @@ class WireguardConfiguration:
         files = [(file, os.path.getctime(os.path.join(directory, file)))
                  for file in os.listdir(directory) if os.path.isfile(os.path.join(directory, file))]
         files.sort(key=lambda x: x[1], reverse=True)
-
+        backupRegex = f"^({self.Name})_(\d+)\\.(conf)$"
         for f, ct in files:
-            if RegexMatch(f"^({self.Name})_(.*)\\.(conf)$", f):
-                s = re.search(f"^({self.Name})_(.*)\\.(conf)$", f)
+            if RegexMatch(backupRegex, f):
+                s = re.search(backupRegex, f)
                 date = s.group(2)
                 d = {
                     "filename": f,
