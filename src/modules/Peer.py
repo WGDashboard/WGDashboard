@@ -164,18 +164,7 @@ class Peer:
             filename = "UntitledPeer"
         filename = "".join(filename.split(' '))
 
-#        filename = f"{filename}"
-#        illegal_filename = [".", ",", "/", "?", "<", ">", "\\", ":", "*", '|' '\"', "com1", "com2", "com3",
-#                            "com4", "com5", "com6", "com7", "com8", "com9", "lpt1", "lpt2", "lpt3", "lpt4",
-#                            "lpt5", "lpt6", "lpt7", "lpt8", "lpt9", "con", "nul", "prn"]
-#        for i in illegal_filename:
-#            filename = filename.replace(i, "")
-
-        # The previous filtering commented above is flawed (com?5 -> com5, or comcom55 -> com5).
-        # If the filter implementation below is not working as expected, glean the commented code above
-        # to resolve it and ensure you mitigate the bug alongside it.
-        # -> Written on v4.3.2-dev, February 2026
-
+        # use previous filtering code if code below is insufficient or faulty
         filename = re.sub(r'[.,/?<>\\:*|"]', '', filename).rstrip(". ") # remove special characters
 
         reserved_pattern = r"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$" # match com1-9, lpt1-9, con, nul, prn, aux, nul
