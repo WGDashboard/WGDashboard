@@ -19,7 +19,9 @@ from .Utilities import StringToBoolean, \
     GenerateWireguardPublicKey, \
     RegexMatch, \
     ValidateDNSAddress, \
-    ValidateEndpointAllowedIPs
+    ValidateEndpointAllowedIPs, \
+    CheckAddress, \
+    CheckPeerKey
 from .WireguardConfigurationInfo import WireguardConfigurationInfo, PeerGroupsClass
 from .DashboardWebHooks import DashboardWebHooks
 
@@ -546,13 +548,13 @@ class WireguardConfiguration:
                         f.write(p['preshared_key'])
 
                 newAllowedIPs = p['allowed_ip'].replace(" ", "")
-                if not re.match(r"^[0-9a-fA-F\.\,:/ ]+$", newAllowedIPs):
+                if not CheckAddress(newAllowedIPs):
                     return False, [], "Allowed IPs entry format is incorrect"
 
-                if not re.match(r"^[A-Za-z0-9+/]{42}[A-Ea-e0-9]=$", p["id"]):
+                if not CheckPeerKey(p["id"]):
                     return False, [], "Peer key format is incorrect"
 
-                command = [self.Protocol, "set", self.Name, "peer", p['id'], "allowed-ips", newAllowedIPs, "preshared-key", uid if presharedKeyExist else ""]
+                command = [self.Protocol, "set", self.Name, "peer", p['id'], "allowed-ips", newAllowedIPs, "preshared-key", uid if presharedKeyExist else "/dev/null"]
                 subprocess.check_output(command, stderr=subprocess.STDOUT)
 
                 if presharedKeyExist:
@@ -611,13 +613,13 @@ class WireguardConfiguration:
                             f.write(restrictedPeer['preshared_key'])
 
                     newAllowedIPs = restrictedPeer['allowed_ip'].replace(" ", "")
-                    if not re.match(r"^[0-9a-fA-F\.\,:/ ]+$", newAllowedIPs):
+                    if not CheckAddress(newAllowedIPs):
                         return False, "Allowed IPs entry format is incorrect"
 
-                    if not re.match(r"^[A-Za-z0-9+/]{42}[A-Ea-e0-9]=$", restrictedPeer["id"]):
+                    if not CheckPeerKey(restrictedPeer["id"]):
                         return False, "Peer key format is incorrect"
 
-                    command = [self.Protocol, "set", self.Name, "peer", restrictedPeer["id"], "allowed-ips", newAllowedIPs, "preshared-key", uid if presharedKeyExist else ""]
+                    command = [self.Protocol, "set", self.Name, "peer", restrictedPeer["id"], "allowed-ips", newAllowedIPs, "preshared-key", uid if presharedKeyExist else "/dev/null"]
                     subprocess.check_output(command, stderr=subprocess.STDOUT)
 
                     if presharedKeyExist: os.remove(uid)

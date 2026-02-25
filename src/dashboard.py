@@ -975,8 +975,11 @@ def API_addPeers(configName):
                     for i in allowed_ips:
                         found = False
                         for subnet in availableIps.keys():
-                            network = ipaddress.ip_network(subnet, False)
-                            ap = ipaddress.ip_network(i)
+                            try:
+                                network = ipaddress.ip_network(subnet, False)
+                                ap = ipaddress.ip_network(i)
+                            except ValueError as e:
+                                return ResponseObject(False, str(e))
                             if network.version == ap.version and ap.subnet_of(network):
                                 found = True
                         
@@ -1000,8 +1003,7 @@ def API_addPeers(configName):
                 return ResponseObject(status=status, message=message, data=addedPeers)
         except Exception as e:
             app.logger.error("Add peers failed", e)
-            return ResponseObject(False,
-                                  f"Add peers failed. Reason: {message}")
+            return ResponseObject(False, f"Add peers failed.")
 
     return ResponseObject(False, "Configuration does not exist")
 

@@ -115,7 +115,7 @@ class Peer:
                     f.write(preshared_key)
 
             newAllowedIPs = allowed_ip.replace(" ", "")
-            if not re.match(r"^[0-9a-fA-F\.\,:/ ]+$", newAllowedIPs):
+            if not CheckAddress(newAllowedIPs):
                     return False, "Allowed IPs entry format is incorrect"
                 
             command = [self.configuration.Protocol, "set", self.configuration.Name, "peer", self.id, "allowed-ips", newAllowedIPs, "preshared-key", uid if psk_exist else "/dev/null"]

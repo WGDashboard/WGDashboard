@@ -6,7 +6,7 @@ from flask import current_app
 from .PeerJobs import PeerJobs
 from .AmneziaPeer import AmneziaPeer
 from .PeerShareLinks import PeerShareLinks
-from .Utilities import RegexMatch
+from .Utilities import RegexMatch, CheckAddress
 from .WireguardConfiguration import WireguardConfiguration
 from .DashboardWebHooks import DashboardWebHooks
 
@@ -277,13 +277,13 @@ class AmneziaConfiguration(WireguardConfiguration):
                         f.write(p['preshared_key'])
 
                 newAllowedIPs = p['allowed_ip'].replace(" ", "")
-                if not re.match(r"^[0-9a-fA-F\.\,:/ ]+$", newAllowedIPs):
+                if not CheckAddress(newAllowedIPs):
                     return False, [], "Allowed IPs entry format is incorrect"
                 
                 if not re.match(r"^[A-Za-z0-9+/]{42}[A-Ea-e0-9]=$", p["id"]):
                     return False, [], "Peer key format is incorrect"
 
-                command = [self.Protocol, "set", self.Name, "peer", p['id'], "allowed-ips", newAllowedIPs, "preshared-key", uid if presharedKeyExist else ""]
+                command = [self.Protocol, "set", self.Name, "peer", p['id'], "allowed-ips", newAllowedIPs, "preshared-key", uid if presharedKeyExist else "/dev/null"]
                 subprocess.check_output(command, stderr=subprocess.STDOUT)
 
                 if presharedKeyExist:
