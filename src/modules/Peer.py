@@ -171,15 +171,17 @@ class Peer:
 #        for i in illegal_filename:
 #            filename = filename.replace(i, "")
 
-        # Previous filtering is flawed, the filter is insufficient. (com?5 -> com5, or comcom5 -> com5)
-        # If this new filter is not working as expected, use the previous code to resolve it.
+        # The previous filtering commented above is flawed (com?5 -> com5, or comcom55 -> com5).
+        # If the filter implementation below is not working as expected, glean the commented code above
+        # to resolve it and ensure you mitigate the bug alongside it.
+        # -> Written on v4.3.2-dev, February 2026
 
-        filename = re.sub(r'[.,/?<>\\:*|"]', '', filename).rstrip(". ")
+        filename = re.sub(r'[.,/?<>\\:*|"]', '', filename).rstrip(". ") # remove special characters
 
-        reserved_pattern = r"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$"
+        reserved_pattern = r"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$" # match com1-9, lpt1-9, con, nul, prn, aux, nul
     
         if re.match(reserved_pattern, filename, re.IGNORECASE):
-            filename = f"file_{filename}"
+            filename = f"file_{filename}" # prepend "file_" if it matches
 
         for i in filename:
             if re.match("^[a-zA-Z0-9_=+.-]$", i):
