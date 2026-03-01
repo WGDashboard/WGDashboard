@@ -6,7 +6,7 @@ from flask import current_app
 from .PeerJobs import PeerJobs
 from .AmneziaPeer import AmneziaPeer
 from .PeerShareLinks import PeerShareLinks
-from .Utilities import RegexMatch, CheckAddress
+from .Utilities import RegexMatch, CheckAddress, CheckPeerKey
 from .WireguardConfiguration import WireguardConfiguration
 from .DashboardWebHooks import DashboardWebHooks
 
@@ -241,6 +241,13 @@ class AmneziaConfiguration(WireguardConfiguration):
             "peers": []
         }
         try:
+            for p in peers:
+                newAllowedIPs = p['allowed_ip'].replace(" ", "")
+                if not CheckAddress(newAllowedIPs):
+                    return False, [], "Allowed IPs entry format is incorrect"
+                if not CheckPeerKey(p["id"]):
+                    return False, [], "Peer key format is incorrect"
+
             with self.engine.begin() as conn:
                 for i in peers:
                     newPeer = {
@@ -277,12 +284,6 @@ class AmneziaConfiguration(WireguardConfiguration):
                         f.write(p['preshared_key'])
 
                 newAllowedIPs = p['allowed_ip'].replace(" ", "")
-                if not CheckAddress(newAllowedIPs):
-                    return False, [], "Allowed IPs entry format is incorrect"
-                
-                if not re.match(r"^[A-Za-z0-9+/]{42}[A-Ea-e0-9]=$", p["id"]):
-                    return False, [], "Peer key format is incorrect"
-
                 command = [self.Protocol, "set", self.Name, "peer", p['id'], "allowed-ips", newAllowedIPs, "preshared-key", uid if presharedKeyExist else "/dev/null"]
                 subprocess.check_output(command, stderr=subprocess.STDOUT)
 
