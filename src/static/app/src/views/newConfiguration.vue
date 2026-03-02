@@ -49,15 +49,15 @@ export default {
 				H2: 0,
 				H3: 0,
 				H4: 0,
-				I1: "0",
-				I2: "0",
-				I3: "0",
-				I4: "0",
-				I5: "0",
-				J1: "0",
-				J2: "0",
-				J3: "0",
-				Itime: "0"
+				I1: "",
+				I2: "",
+				I3: "",
+				I4: "",
+				I5: "",
+				J1: "",
+				J2: "",
+				J3: "",
+				Itime: ""
 			},
 			numberOfAvailableIPs: "0",
 			error: false,
@@ -74,11 +74,6 @@ export default {
 		// Generate 4 random numbers for H1, H2, H3, H4
 		['H1', 'H2', 'H3', 'H4'].forEach(key => {
 			this.newConfiguration[key] = this.rand(1, 2**31);
-		});
-
-		// Initialize I1 to I5 as "0"
-		['I1', 'I2', 'I3', 'I4', 'I5'].forEach(key => {
-			this.newConfiguration[key] = "0";
 		});
 	},
 	methods: {
