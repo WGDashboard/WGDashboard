@@ -75,6 +75,11 @@ export default {
 		['H1', 'H2', 'H3', 'H4'].forEach(key => {
 			this.newConfiguration[key] = this.rand(1, 2**31);
 		});
+
+		// Initialize I1 to I5 as ""
+		['I1', 'I2', 'I3', 'I4', 'I5'].forEach(key => {
+			this.newConfiguration[key] = "";
+		});
 	},
 	methods: {
 		rand(min, max){
