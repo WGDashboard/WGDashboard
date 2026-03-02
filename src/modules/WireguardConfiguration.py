@@ -512,12 +512,14 @@ class WireguardConfiguration:
             "peers": []
         }
         try:
+            cleanedAllowedIPs = {}
             for p in peers:
                 newAllowedIPs = p['allowed_ip'].replace(" ", "")
                 if not CheckAddress(newAllowedIPs):
                     return False, [], "Allowed IPs entry format is incorrect"
                 if not CheckPeerKey(p["id"]):
                     return False, [], "Peer key format is incorrect"
+                cleanedAllowedIPs[p["id"]] = newAllowedIPs
 
             with self.engine.begin() as conn:
                 for i in peers:
@@ -554,8 +556,7 @@ class WireguardConfiguration:
                     with open(uid, "w+") as f:
                         f.write(p['preshared_key'])
 
-                newAllowedIPs = p['allowed_ip'].replace(" ", "")
-                command = [self.Protocol, "set", self.Name, "peer", p['id'], "allowed-ips", newAllowedIPs, "preshared-key", uid if presharedKeyExist else "/dev/null"]
+                command = [self.Protocol, "set", self.Name, "peer", p['id'], "allowed-ips", cleanedAllowedIPs[p["id"]], "preshared-key", uid if presharedKeyExist else "/dev/null"]
                 subprocess.check_output(command, stderr=subprocess.STDOUT)
 
                 if presharedKeyExist:
