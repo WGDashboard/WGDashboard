@@ -19,7 +19,9 @@ from .Utilities import StringToBoolean, \
     GenerateWireguardPublicKey, \
     RegexMatch, \
     ValidateDNSAddress, \
-    ValidateEndpointAllowedIPs
+    ValidateEndpointAllowedIPs, \
+    CheckAddress, \
+    CheckPeerKey
 from .WireguardConfigurationInfo import WireguardConfigurationInfo, PeerGroupsClass
 from .DashboardWebHooks import DashboardWebHooks
 
@@ -553,12 +555,22 @@ class WireguardConfiguration:
                     with open(uid, "w+") as f:
                         f.write(p['preshared_key'])
 
-                subprocess.check_output(f"{self.Protocol} set {self.Name} peer {p['id']} allowed-ips {p['allowed_ip'].replace(' ', '')}{f' preshared-key {uid}' if presharedKeyExist else ''}",
-                                        shell=True, stderr=subprocess.STDOUT)
+                newAllowedIPs = p['allowed_ip'].replace(" ", "")
+                if not CheckAddress(newAllowedIPs):
+                    return False, [], "Allowed IPs entry format is incorrect"
+
+                if not CheckPeerKey(p["id"]):
+                    return False, [], "Peer key format is incorrect"
+
+                command = [self.Protocol, "set", self.Name, "peer", p['id'], "allowed-ips", newAllowedIPs, "preshared-key", uid if presharedKeyExist else "/dev/null"]
+                subprocess.check_output(command, stderr=subprocess.STDOUT)
+
                 if presharedKeyExist:
                     os.remove(uid)
-            subprocess.check_output(
-                f"{self.Protocol}-quick save {self.Name}", shell=True, stderr=subprocess.STDOUT)
+
+            command = [f"{self.Protocol}-quick", "save", self.Name]
+            subprocess.check_output(command, stderr=subprocess.STDOUT)
+
             self.getPeers()
             for p in peers:
                 p = self.searchPeer(p['id'])
@@ -570,7 +582,7 @@ class WireguardConfiguration:
             })
         except Exception as e:
             current_app.logger.error("Add peers error", e)
-            return False, [], str(e)
+            return False, [], "Internal server error"
         return True, result['peers'], ""
 
     def searchPeer(self, publicKey):
@@ -608,8 +620,16 @@ class WireguardConfiguration:
                         with open(uid, "w+") as f:
                             f.write(restrictedPeer['preshared_key'])
 
-                    subprocess.check_output(f"{self.Protocol} set {self.Name} peer {restrictedPeer['id']} allowed-ips {restrictedPeer['allowed_ip'].replace(' ', '')}{f' preshared-key {uid}' if presharedKeyExist else ''}",
-                                            shell=True, stderr=subprocess.STDOUT)
+                    newAllowedIPs = restrictedPeer['allowed_ip'].replace(" ", "")
+                    if not CheckAddress(newAllowedIPs):
+                        return False, "Allowed IPs entry format is incorrect"
+
+                    if not CheckPeerKey(restrictedPeer["id"]):
+                        return False, "Peer key format is incorrect"
+
+                    command = [self.Protocol, "set", self.Name, "peer", restrictedPeer["id"], "allowed-ips", newAllowedIPs, "preshared-key", uid if presharedKeyExist else "/dev/null"]
+                    subprocess.check_output(command, stderr=subprocess.STDOUT)
+
                     if presharedKeyExist: os.remove(uid)
                 else:
                     return False, "Failed to allow access of peer " + i
@@ -629,8 +649,9 @@ class WireguardConfiguration:
                 found, pf = self.searchPeer(p)
                 if found:
                     try:
-                        subprocess.check_output(f"{self.Protocol} set {self.Name} peer {pf.id} remove",
-                                                shell=True, stderr=subprocess.STDOUT)
+                        command = [self.Protocol, "set", self.Name, "peer", pf.id, "remove"]
+                        subprocess.check_output(command, stderr=subprocess.STDOUT)
+
                         conn.execute(
                             self.peersRestrictedTable.insert().from_select(
                                 [c.name for c in self.peersTable.columns],
@@ -711,17 +732,20 @@ class WireguardConfiguration:
 
     def __wgSave(self) -> tuple[bool, str] | tuple[bool, None]:
         try:
-            subprocess.check_output(f"{self.Protocol}-quick save {self.Name}", shell=True, stderr=subprocess.STDOUT)
+            command = [f"{self.Protocol}-quick", "save", self.Name]
+            subprocess.check_output(command, stderr=subprocess.STDOUT)
+
             return True, None
         except subprocess.CalledProcessError as e:
-            return False, str(e)
+            current_app.logger.error(f"Failed to process command:\n{str(e)}")
+            return False, "Internal server error"
 
     def getPeersLatestHandshake(self):
         if not self.getStatus():
             self.toggleConfiguration()
         try:
-            latestHandshake = subprocess.check_output(f"{self.Protocol} show {self.Name} latest-handshakes",
-                                                      shell=True, stderr=subprocess.STDOUT)
+            command = [self.Protocol, "show", self.Name, "latest-handshakes"]
+            latestHandshake = subprocess.check_output(command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError:
             return "stopped"
         latestHandshake = latestHandshake.decode("UTF-8").split()
@@ -760,8 +784,9 @@ class WireguardConfiguration:
         if not self.getStatus():
             self.toggleConfiguration()
         # try:
-        data_usage = subprocess.check_output(f"{self.Protocol} show {self.Name} transfer",
-                                             shell=True, stderr=subprocess.STDOUT)
+        command = [self.Protocol, "show", self.Name, "transfer"]
+        data_usage = subprocess.check_output(command, stderr=subprocess.STDOUT)
+
         data_usage = data_usage.decode("UTF-8").split("\n")
         
         data_usage = [p.split("\t") for p in data_usage]
@@ -816,10 +841,11 @@ class WireguardConfiguration:
         if not self.getStatus():
             self.toggleConfiguration()
         try:
-            data_usage = subprocess.check_output(f"{self.Protocol} show {self.Name} endpoints",
-                                                 shell=True, stderr=subprocess.STDOUT)
+            command = [self.Protocol, "show", self.Name, "endpoints"]
+            data_usage = subprocess.check_output(command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError:
             return "stopped"
+
         data_usage = data_usage.decode("UTF-8").split()
         count = 0
         with self.engine.begin() as conn:
@@ -837,14 +863,17 @@ class WireguardConfiguration:
         self.getStatus()
         if self.Status:
             try:
-                check = subprocess.check_output(f"{self.Protocol}-quick down {self.Name}",
-                                                shell=True, stderr=subprocess.STDOUT)
+                command = [f"{self.Protocol}-quick", "down", self.Name]
+                check = subprocess.check_output(command, stderr=subprocess.STDOUT)
+
                 self.removeAutostart()
             except subprocess.CalledProcessError as exc:
                 return False, str(exc.output.strip().decode("utf-8"))
         else:
             try:
-                check = subprocess.check_output(f"{self.Protocol}-quick up {self.Name}", shell=True, stderr=subprocess.STDOUT)
+                command = [f"{self.Protocol}-quick", "up", self.Name]
+                check = subprocess.check_output(command, stderr=subprocess.STDOUT)
+
                 self.addAutostart()
             except subprocess.CalledProcessError as exc:
                 return False, str(exc.output.strip().decode("utf-8"))
@@ -911,8 +940,8 @@ class WireguardConfiguration:
         files.sort(key=lambda x: x[1], reverse=True)
 
         for f, ct in files:
-            if RegexMatch(f"^({self.Name})_(.*)\\.(conf)$", f):
-                s = re.search(f"^({self.Name})_(.*)\\.(conf)$", f)
+            if RegexMatch(f"^({self.Name})_(\d+)\\.(conf)$", f):
+                s = re.search(f"^({self.Name})_(\d+)\\.(conf)$", f)
                 date = s.group(2)
                 d = {
                     "filename": f,
@@ -1028,31 +1057,33 @@ class WireguardConfiguration:
         return True
 
     def renameConfiguration(self, newConfigurationName) -> tuple[bool, str]:
+        newConfigurationName = os.path.basename(newConfigurationName)
+
+        if len(newConfigurationName) > 15 or not re.match(r'^[a-zA-Z0-9_=\+\.\-]{1,15}$', newConfigurationName):
+            return False, "Configuration name is either too long or contains an illegal character"
+        
+        newConfigurationName = newConfigurationName.replace("`", "") # double check
+    
         try:
             if self.getStatus():
                 self.toggleConfiguration()
             self.createDatabase(newConfigurationName)
             with self.engine.begin() as conn:
-                conn.execute(
-                    sqlalchemy.text(
-                        f'INSERT INTO "{newConfigurationName}" SELECT * FROM "{self.Name}"'
+                def doRenameStatement(suffix):
+                    newConfig = f"{newConfigurationName}{suffix}"
+                    oldConfig = f"{self.Name}{suffix}"
+
+                    conn.execute(
+                        sqlalchemy.text(
+                            f'INSERT INTO `{newConfig}` SELECT * FROM `{oldConfig}`'
+                        )
                     )
-                )
-                conn.execute(
-                    sqlalchemy.text(
-                        f'INSERT INTO "{newConfigurationName}_restrict_access" SELECT * FROM "{self.Name}_restrict_access"'
-                    )
-                )
-                conn.execute(
-                    sqlalchemy.text(
-                        f'INSERT INTO "{newConfigurationName}_deleted" SELECT * FROM "{self.Name}_deleted"'
-                    )
-                )
-                conn.execute(
-                    sqlalchemy.text(
-                        f'INSERT INTO "{newConfigurationName}_transfer" SELECT * FROM "{self.Name}_transfer"'
-                    )
-                )
+
+                doRenameStatement("")
+                doRenameStatement("_restrict_access")
+                doRenameStatement("_deleted")
+                doRenameStatement("_transfer")
+
             self.AllPeerJobs.updateJobConfigurationName(self.Name, newConfigurationName)
             shutil.copy(
                 self.configPath,
@@ -1060,8 +1091,8 @@ class WireguardConfiguration:
             )
             self.deleteConfiguration()
         except Exception as e:
-            traceback.print_stack()
-            return False, str(e)
+            current_app.logger.error(f"Failed to rename configuration.\nNew Configuration Name: {newConfigurationName}\nError: {str(e)}")
+            return False, "Internal server error"
         return True, None
 
     def getNumberOfAvailableIP(self):

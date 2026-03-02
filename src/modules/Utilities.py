@@ -54,6 +54,9 @@ def CheckAddress(ips_str: str) -> bool:
             return False
     return True
 
+def CheckPeerKey(peer_key: str) -> bool:
+    return re.match(r"^[A-Za-z0-9+/]{43}=$", peer_key)
+
 def ValidateDNSAddress(addresses_str: str) -> tuple[bool, str | None]:
     if len(addresses_str) == 0:
         return False, "Got an empty list/string to check for valid DNS-addresses"
