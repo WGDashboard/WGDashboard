@@ -170,6 +170,9 @@ set_envvars() {
   # Check if config file is empty
   if [ ! -s "${config_file}" ]; then
     echo "Config file is empty. Creating initial structure."
+  else
+    echo "Skip creating config file."
+    return 0
   fi
 
   echo "Checking basic configuration:"
