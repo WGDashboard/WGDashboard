@@ -94,17 +94,29 @@ class Peer:
                 with open(uid, "w+") as f:
                     f.write(preshared_key)
             newAllowedIPs = allowed_ip.replace(" ", "")
-            updateAllowedIp = subprocess.check_output(
-                f"{self.configuration.Protocol} set {self.configuration.Name} peer {self.id} allowed-ips {newAllowedIPs} {f'preshared-key {uid}' if pskExist else 'preshared-key /dev/null'}",
-                shell=True, stderr=subprocess.STDOUT)
+            
+            # Build command arguments for safe execution
+            cmd_args = [self.configuration.Name, 'peer', self.id, 'allowed-ips', newAllowedIPs]
+            if pskExist:
+                cmd_args.extend(['preshared-key', uid])
+            else:
+                cmd_args.extend(['preshared-key', '/dev/null'])
+            
+            from .Utilities import ExecuteWireguardCommand
+            updateAllowedIp = ExecuteWireguardCommand(
+                self.configuration.Protocol, 'set', cmd_args)
+            
+            if not updateAllowedIp[0]:
+                return False, f"Update peer failed when updating Allowed IPs: {updateAllowedIp[1]}"
 
             if pskExist: os.remove(uid)
-            if len(updateAllowedIp.decode().strip("\n")) != 0:
-                return False, "Update peer failed when updating Allowed IPs"
-            saveConfig = subprocess.check_output(f"{self.configuration.Protocol}-quick save {self.configuration.Name}",
-                                                 shell=True, stderr=subprocess.STDOUT)
-            if f"wg showconf {self.configuration.Name}" not in saveConfig.decode().strip('\n'):
-                return False, "Update peer failed when saving the configuration"
+            
+            # Save configuration
+            saveConfig = ExecuteWireguardCommand(
+                self.configuration.Protocol, 'quick', ['save', self.configuration.Name])
+            
+            if not saveConfig[0]:
+                return False, f"Update peer failed when saving the configuration: {saveConfig[1]}"
             with self.configuration.engine.begin() as conn:
                 conn.execute(
                     self.configuration.peersTable.update().values({
