@@ -6,7 +6,7 @@ from flask import current_app
 from .PeerJobs import PeerJobs
 from .AmneziaWGPeer import AmneziaWGPeer
 from .PeerShareLinks import PeerShareLinks
-from .Utilities import RegexMatch
+from .Utilities import RegexMatch, ExecuteWireguardCommand
 from .WireguardConfiguration import WireguardConfiguration
 from .DashboardWebHooks import DashboardWebHooks
 
@@ -293,13 +293,17 @@ class AmneziaWireguardConfiguration(WireguardConfiguration):
                     with open(uid, "w+") as f:
                         f.write(p['preshared_key'])
 
-                subprocess.check_output(
-                    f"{self.Protocol} set {self.Name} peer {p['id']} allowed-ips {p['allowed_ip'].replace(' ', '')}{f' preshared-key {uid}' if presharedKeyExist else ''}",
-                    shell=True, stderr=subprocess.STDOUT)
+                args = [self.Name, 'peer', p['id'], 'allowed-ips', p['allowed_ip'].replace(' ', '')]
+                if presharedKeyExist:
+                    args.extend(['preshared-key', uid])
+                result = ExecuteWireguardCommand(self.Protocol, 'set', args)
+                if not result[0]:
+                    raise Exception(f"Failed to set peer {p['id']}: {result[1]}")
                 if presharedKeyExist:
                     os.remove(uid)
-            subprocess.check_output(
-                f"{self.Protocol}-quick save {self.Name}", shell=True, stderr=subprocess.STDOUT)
+            result = ExecuteWireguardCommand(self.Protocol, 'quick', ['save', self.Name])
+            if not result[0]:
+                raise Exception(f"Failed to save configuration: {result[1]}")
             self.getPeers()
             for p in peers:
                 p = self.searchPeer(p['id'])

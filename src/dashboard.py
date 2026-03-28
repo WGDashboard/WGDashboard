@@ -246,18 +246,40 @@ def auth_req():
             DashboardConfig.APIAccessed = True
         else:
             DashboardConfig.APIAccessed = False
-            whiteList = [
-                '/static/', 'validateAuthentication', 'authenticate', 'getDashboardConfiguration',
-                'getDashboardTheme', 'getDashboardVersion', 'sharePeer/get', 'isTotpEnabled', 'locale',
-                '/fileDownload',
-                '/client'
+            # Security: Use exact path matching instead of substring matching
+            # Define public endpoints that don't require authentication
+            public_endpoints = [
+                f'{APP_PREFIX}/',
+                f'{APP_PREFIX}/static/',
+                f'{APP_PREFIX}/api/handshake',
+                f'{APP_PREFIX}/api/validateAuthentication',
+                f'{APP_PREFIX}/api/authenticate',
+                f'{APP_PREFIX}/api/getDashboardConfiguration',
+                f'{APP_PREFIX}/api/getDashboardTheme',
+                f'{APP_PREFIX}/api/getDashboardVersion',
+                f'{APP_PREFIX}/api/sharePeer/get',
+                f'{APP_PREFIX}/api/isTotpEnabled',
+                f'{APP_PREFIX}/api/locale'
+                # Note: fileDownload requires authentication to prevent unauthorized file access
             ]
             
+            # Check if the current path is in the public endpoints list
+            is_public = False
+            for public_endpoint in public_endpoints:
+                if public_endpoint.endswith('/'):
+                    # Directory-based match (e.g., /static/)
+                    if request.path.startswith(public_endpoint):
+                        is_public = True
+                        break
+                else:
+                    # Exact path match
+                    if request.path == public_endpoint:
+                        is_public = True
+                        break
+            
+            # If not authenticated and not a public endpoint, return 401
             if (("username" not in session or session.get("role") != "admin") 
-                    and (f"{(APP_PREFIX if len(APP_PREFIX) > 0 else '')}/" != request.path 
-                    and f"{(APP_PREFIX if len(APP_PREFIX) > 0 else '')}" != request.path)
-                    and len(list(filter(lambda x : x not in request.path, whiteList))) == len(whiteList)
-            ):
+                    and not is_public):
                 response = Flask.make_response(app, {
                     "status": False,
                     "message": "Unauthorized access.",
@@ -1215,10 +1237,42 @@ def API_download():
     file = request.args.get('file')
     if file is None or len(file) == 0:
         return ResponseObject(False, "Please specify a file")
-    if os.path.exists(os.path.join('download', file)):
-        return send_file(os.path.join('download', file), as_attachment=True)
-    else:
-        return ResponseObject(False, "File does not exist")
+    
+    # Security: Prevent path traversal attacks
+    try:
+        from pathlib import Path
+        
+        # Get absolute path of download directory
+        download_dir = Path('download').resolve()
+        
+        # Get absolute path of requested file
+        requested_path = (download_dir / file).resolve()
+        
+        # Security: Check for symbolic link traversal
+        # Follow the path and ensure no component is a symlink outside download_dir
+        current_path = requested_path
+        while current_path != current_path.parent:
+            if current_path.is_symlink():
+                # Resolve the symlink and check if it points outside download_dir
+                symlink_target = current_path.resolve()
+                if not str(symlink_target).startswith(str(download_dir)):
+                    return ResponseObject(False, "Invalid file path: symlink traversal detected")
+            current_path = current_path.parent
+        
+        # Ensure the requested path is within the download directory
+        try:
+            # Use relative_to to check if path is within download_dir (more robust than startswith)
+            requested_path.relative_to(download_dir)
+        except ValueError:
+            return ResponseObject(False, "Invalid file path")
+        
+        # Check if file exists and is a regular file (not a directory or symlink)
+        if requested_path.exists() and requested_path.is_file() and not requested_path.is_symlink():
+            return send_file(str(requested_path), as_attachment=True)
+        else:
+            return ResponseObject(False, "File does not exist")
+    except (ValueError, RuntimeError, OSError):
+        return ResponseObject(False, "Invalid file path")
 
 
 '''
