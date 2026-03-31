@@ -4,8 +4,9 @@ from tzlocal import get_localzone
 
 from functools import wraps
 
-from flask import Blueprint, render_template, abort, request, Flask, current_app, session, redirect, url_for
+from flask import Blueprint, render_template, abort, request, Flask, current_app, session, redirect, url_for, send_from_directory
 import os
+import mimetypes
 
 from modules.WireguardConfiguration import WireguardConfiguration
 from modules.DashboardConfig import DashboardConfig
@@ -53,6 +54,8 @@ def createClientBlueprint(wireguardConfigurations: dict[WireguardConfiguration],
     
     @client.post(f'{prefix}/api/signup')
     def ClientAPI_SignUp():
+        if not dashboardConfig.GetConfig("Clients", "sign_up")[1]:
+            abort(404)
         data = request.get_json()
         status, msg = dashboardClients.SignUp(**data)
         return ResponseObject(status, msg)
@@ -192,14 +195,26 @@ def createClientBlueprint(wireguardConfigurations: dict[WireguardConfiguration],
             })
         return ResponseObject(status, msg)
     
+    @client.get(f'{prefix}/assets/<path:filename>')
+    @client.get(f'{prefix}/img/<path:filename>')
+    def serve_client_static(filename):
+        client_dist_folder = os.path.abspath("./static/dist/WGDashboardClient")
+        mimetype = mimetypes.guess_type(filename)[0]
+        subfolder = 'assets' if 'assets' in request.path else 'img'
+        return send_from_directory(os.path.join(client_dist_folder, subfolder), os.path.basename(filename), mimetype=mimetype)
+
     @client.get(prefix)
     def ClientIndex():
-        return render_template('client.html')
+        app_prefix = dashboardConfig.GetConfig("Server", "app_prefix")[1]
+        return render_template('client.html', APP_PREFIX=app_prefix)
     
     @client.get(f'{prefix}/api/serverInformation')
     def ClientAPI_ServerInformation():
         return ResponseObject(data={
-            "ServerTimezone": str(get_localzone())
+            "ServerTimezone": str(get_localzone()),
+            "SignUp": {
+                "enable": dashboardConfig.GetConfig("Clients", "sign_up")[1]
+            }
         })
     
     @client.get(f'{prefix}/api/validateAuthentication')

@@ -10,13 +10,18 @@ from datetime import datetime, timedelta
 from itertools import islice
 from flask import current_app
 
-from .ConnectionString import ConnectionString
+from .DatabaseConnection import ConnectionString
 from .DashboardConfig import DashboardConfig
 from .Peer import Peer
 from .PeerJobs import PeerJobs
 from .PeerShareLinks import PeerShareLinks
-from .Utilities import StringToBoolean, GenerateWireguardPublicKey, RegexMatch, ValidateDNSAddress, \
-    ValidateEndpointAllowedIPs
+from .Utilities import StringToBoolean, \
+    GenerateWireguardPublicKey, \
+    RegexMatch, \
+    ValidateDNSAddress, \
+    ValidateEndpointAllowedIPs, \
+    CheckAddress, \
+    CheckPeerKey
 from .WireguardConfigurationInfo import WireguardConfigurationInfo, PeerGroupsClass
 from .DashboardWebHooks import DashboardWebHooks
 
@@ -61,13 +66,14 @@ class WireguardConfiguration:
         self.Protocol = "wg" if wg else "awg"
         self.AllPeerJobs = AllPeerJobs
         self.DashboardConfig = DashboardConfig
+        self.DashboardConfig.EnsureDatabaseIntegrity({self.Name: self})
         self.AllPeerShareLinks = AllPeerShareLinks
         self.DashboardWebHooks = DashboardWebHooks
         self.configPath = os.path.join(self.__getProtocolPath(), f'{self.Name}.conf')
         self.engine: sqlalchemy.Engine = sqlalchemy.create_engine(ConnectionString("wgdashboard"))
         self.metadata: sqlalchemy.MetaData = sqlalchemy.MetaData()
         self.dbType = self.DashboardConfig.GetConfig("Database", "type")[1]
-        
+
         if name is not None:
             if data is not None and "Backup" in data.keys():
                 db = self.__importDatabase(
@@ -109,10 +115,17 @@ class WireguardConfiguration:
                 self.__parser["Interface"]["Jmax"] = self.Jmax
                 self.__parser["Interface"]["S1"] = self.S1
                 self.__parser["Interface"]["S2"] = self.S2
+                self.__parser["Interface"]["S3"] = self.S3
+                self.__parser["Interface"]["S4"] = self.S4
                 self.__parser["Interface"]["H1"] = self.H1
                 self.__parser["Interface"]["H2"] = self.H2
                 self.__parser["Interface"]["H3"] = self.H3
                 self.__parser["Interface"]["H4"] = self.H4
+                self.__parser["Interface"]["I1"] = self.I1
+                self.__parser["Interface"]["I2"] = self.I2
+                self.__parser["Interface"]["I3"] = self.I3
+                self.__parser["Interface"]["I4"] = self.I4
+                self.__parser["Interface"]["I5"] = self.I5
 
             if "Backup" not in data.keys():
                 self.createDatabase()
@@ -127,8 +140,11 @@ class WireguardConfiguration:
         current_app.logger.info(f"Initialized Configuration: {name}")
         self.__dumpDatabase()
         if self.getAutostartStatus() and not self.getStatus() and startup:
-            self.toggleConfiguration()
-            current_app.logger.info(f"Autostart Configuration: {name}")
+            status, ext = self.toggleConfiguration()
+            if not status:
+                current_app.logger.error(f"Failed to autostart configuration: {name}. Reason: {ext}")
+            else:
+                current_app.logger.info(f"Autostart Configuration: {name}")
             
         self.configurationInfo: WireguardConfigurationInfo | None = None
         configurationInfoJson = self.readConfigurationInfo()
@@ -140,7 +156,6 @@ class WireguardConfiguration:
         
         if self.Status:
             self.addAutostart()
-        
 
     def __getProtocolPath(self) -> str:
         _, path = self.DashboardConfig.GetConfig("Server", "wg_conf_path") if self.Protocol == "wg" \
@@ -232,54 +247,50 @@ class WireguardConfiguration:
         return True
 
     def createDatabase(self, dbName = None):
+        def generate_column_obj():
+            return [
+                sqlalchemy.Column('id', sqlalchemy.String(255), nullable=False, primary_key=True),
+                sqlalchemy.Column('private_key', sqlalchemy.String(255)),
+                sqlalchemy.Column('DNS', sqlalchemy.Text),
+                sqlalchemy.Column('endpoint_allowed_ip', sqlalchemy.Text),
+                sqlalchemy.Column('name', sqlalchemy.Text),
+                sqlalchemy.Column('total_receive', sqlalchemy.Float),
+                sqlalchemy.Column('total_sent', sqlalchemy.Float),
+                sqlalchemy.Column('total_data', sqlalchemy.Float),
+                sqlalchemy.Column('endpoint', sqlalchemy.String(255)),
+                sqlalchemy.Column('status', sqlalchemy.String(255)),
+                sqlalchemy.Column('latest_handshake', sqlalchemy.String(255)),
+                sqlalchemy.Column('allowed_ip', sqlalchemy.String(255)),
+                sqlalchemy.Column('cumu_receive', sqlalchemy.Float),
+                sqlalchemy.Column('cumu_sent', sqlalchemy.Float),
+                sqlalchemy.Column('cumu_data', sqlalchemy.Float),
+                sqlalchemy.Column('mtu', sqlalchemy.Integer),
+                sqlalchemy.Column('keepalive', sqlalchemy.Integer),
+                sqlalchemy.Column('notes', sqlalchemy.Text),
+                sqlalchemy.Column('remote_endpoint', sqlalchemy.String(255)),
+                sqlalchemy.Column('preshared_key', sqlalchemy.String(255))
+            ]
+
         if dbName is None:
             dbName = self.Name
+
         self.peersTable = sqlalchemy.Table(
-            dbName, self.metadata,
-            sqlalchemy.Column('id', sqlalchemy.String(255), nullable=False, primary_key=True),
-            sqlalchemy.Column('private_key', sqlalchemy.String(255)),
-            sqlalchemy.Column('DNS', sqlalchemy.Text),
-            sqlalchemy.Column('endpoint_allowed_ip', sqlalchemy.Text),
-            sqlalchemy.Column('name', sqlalchemy.Text),
-            sqlalchemy.Column('total_receive', sqlalchemy.Float),
-            sqlalchemy.Column('total_sent', sqlalchemy.Float),
-            sqlalchemy.Column('total_data', sqlalchemy.Float),
-            sqlalchemy.Column('endpoint', sqlalchemy.String(255)),
-            sqlalchemy.Column('status', sqlalchemy.String(255)),
-            sqlalchemy.Column('latest_handshake', sqlalchemy.String(255)),
-            sqlalchemy.Column('allowed_ip', sqlalchemy.String(255)),
-            sqlalchemy.Column('cumu_receive', sqlalchemy.Float),
-            sqlalchemy.Column('cumu_sent', sqlalchemy.Float),
-            sqlalchemy.Column('cumu_data', sqlalchemy.Float),
-            sqlalchemy.Column('mtu', sqlalchemy.Integer),
-            sqlalchemy.Column('keepalive', sqlalchemy.Integer),
-            sqlalchemy.Column('remote_endpoint', sqlalchemy.String(255)),
-            sqlalchemy.Column('preshared_key', sqlalchemy.String(255)),
-            extend_existing=True
+            f'{dbName}', self.metadata, *generate_column_obj(), extend_existing=True
         )
+
         self.peersRestrictedTable = sqlalchemy.Table(
-            f'{dbName}_restrict_access', self.metadata,
-            sqlalchemy.Column('id', sqlalchemy.String(255), nullable=False, primary_key=True),
-            sqlalchemy.Column('private_key', sqlalchemy.String(255)),
-            sqlalchemy.Column('DNS', sqlalchemy.Text),
-            sqlalchemy.Column('endpoint_allowed_ip', sqlalchemy.Text),
-            sqlalchemy.Column('name', sqlalchemy.Text),
-            sqlalchemy.Column('total_receive', sqlalchemy.Float),
-            sqlalchemy.Column('total_sent', sqlalchemy.Float),
-            sqlalchemy.Column('total_data', sqlalchemy.Float),
-            sqlalchemy.Column('endpoint', sqlalchemy.String(255)),
-            sqlalchemy.Column('status', sqlalchemy.String(255)),
-            sqlalchemy.Column('latest_handshake', sqlalchemy.String(255)),
-            sqlalchemy.Column('allowed_ip', sqlalchemy.String(255)),
-            sqlalchemy.Column('cumu_receive', sqlalchemy.Float),
-            sqlalchemy.Column('cumu_sent', sqlalchemy.Float),
-            sqlalchemy.Column('cumu_data', sqlalchemy.Float),
-            sqlalchemy.Column('mtu', sqlalchemy.Integer),
-            sqlalchemy.Column('keepalive', sqlalchemy.Integer),
-            sqlalchemy.Column('remote_endpoint', sqlalchemy.String(255)),
-            sqlalchemy.Column('preshared_key', sqlalchemy.String(255)),
-            extend_existing=True
+            f'{dbName}_restrict_access', self.metadata, *generate_column_obj(), extend_existing=True
         )
+
+        self.peersDeletedTable = sqlalchemy.Table(
+            f'{dbName}_deleted', self.metadata, *generate_column_obj(), extend_existing=True
+        )
+
+        if self.DashboardConfig.GetConfig("Database", "type")[1] == 'sqlite':
+            time_col_type = sqlalchemy.DATETIME
+        else:
+            time_col_type = sqlalchemy.TIMESTAMP
+
         self.peersTransferTable = sqlalchemy.Table(
             f'{dbName}_transfer', self.metadata,
             sqlalchemy.Column('id', sqlalchemy.String(255), nullable=False),
@@ -289,8 +300,7 @@ class WireguardConfiguration:
             sqlalchemy.Column('cumu_receive', sqlalchemy.Float),
             sqlalchemy.Column('cumu_sent', sqlalchemy.Float),
             sqlalchemy.Column('cumu_data', sqlalchemy.Float),
-            sqlalchemy.Column('time', (sqlalchemy.DATETIME if self.DashboardConfig.GetConfig("Database", "type")[1] == 'sqlite' else sqlalchemy.TIMESTAMP),
-                              server_default=sqlalchemy.func.now()),
+            sqlalchemy.Column('time', time_col_type, server_default=sqlalchemy.func.now()),
             extend_existing=True
         )
         
@@ -298,34 +308,9 @@ class WireguardConfiguration:
             f'{dbName}_history_endpoint', self.metadata,
             sqlalchemy.Column('id', sqlalchemy.String(255), nullable=False),
             sqlalchemy.Column('endpoint', sqlalchemy.String(255), nullable=False),
-            sqlalchemy.Column('time', 
-                              (sqlalchemy.DATETIME if self.DashboardConfig.GetConfig("Database", "type")[1] == 'sqlite' else sqlalchemy.TIMESTAMP)),
-            extend_existing=True
+            sqlalchemy.Column('time', time_col_type)
         )
         
-        self.peersDeletedTable = sqlalchemy.Table(
-            f'{dbName}_deleted', self.metadata,
-            sqlalchemy.Column('id', sqlalchemy.String(255), nullable=False, primary_key=True),
-            sqlalchemy.Column('private_key', sqlalchemy.String(255)),
-            sqlalchemy.Column('DNS', sqlalchemy.Text),
-            sqlalchemy.Column('endpoint_allowed_ip', sqlalchemy.Text),
-            sqlalchemy.Column('name', sqlalchemy.Text),
-            sqlalchemy.Column('total_receive', sqlalchemy.Float),
-            sqlalchemy.Column('total_sent', sqlalchemy.Float),
-            sqlalchemy.Column('total_data', sqlalchemy.Float),
-            sqlalchemy.Column('endpoint', sqlalchemy.String(255)),
-            sqlalchemy.Column('status', sqlalchemy.String(255)),
-            sqlalchemy.Column('latest_handshake', sqlalchemy.String(255)),
-            sqlalchemy.Column('allowed_ip', sqlalchemy.String(255)),
-            sqlalchemy.Column('cumu_receive', sqlalchemy.Float),
-            sqlalchemy.Column('cumu_sent', sqlalchemy.Float),
-            sqlalchemy.Column('cumu_data', sqlalchemy.Float),
-            sqlalchemy.Column('mtu', sqlalchemy.Integer),
-            sqlalchemy.Column('keepalive', sqlalchemy.Integer),
-            sqlalchemy.Column('remote_endpoint', sqlalchemy.String(255)),
-            sqlalchemy.Column('preshared_key', sqlalchemy.String(255)),
-            extend_existing=True
-        )
         self.infoTable = sqlalchemy.Table(
             'ConfigurationsInfo', self.metadata,
             sqlalchemy.Column('ID', sqlalchemy.String(255), primary_key=True),
@@ -404,6 +389,7 @@ class WireguardConfiguration:
                 try:
                     if "[Peer]" not in content:
                         current_app.logger.info(f"{self.Name} config has no [Peer] section")
+                        self.Peers = []
                         return
 
                     peerStarts = content.index("[Peer]")
@@ -439,8 +425,7 @@ class WireguardConfiguration:
                                     "id": i['PublicKey'],
                                     "private_key": "",
                                     "DNS": self.DashboardConfig.GetConfig("Peers", "peer_global_DNS")[1],
-                                    "endpoint_allowed_ip": self.DashboardConfig.GetConfig("Peers", "peer_endpoint_allowed_ip")[
-                                        1],
+                                    "endpoint_allowed_ip": self.DashboardConfig.GetConfig("Peers", "peer_endpoint_allowed_ip")[1],
                                     "name": i.get("name"),
                                     "total_receive": 0,
                                     "total_sent": 0,
@@ -454,6 +439,7 @@ class WireguardConfiguration:
                                     "cumu_data": 0,
                                     "mtu": self.DashboardConfig.GetConfig("Peers", "peer_mtu")[1] if len(self.DashboardConfig.GetConfig("Peers", "peer_mtu")[1]) > 0 else None,
                                     "keepalive": self.DashboardConfig.GetConfig("Peers", "peer_keep_alive")[1] if len(self.DashboardConfig.GetConfig("Peers", "peer_keep_alive")[1]) > 0 else None,
+                                    "notes": "",
                                     "remote_endpoint": self.DashboardConfig.GetConfig("Peers", "remote_endpoint")[1],
                                     "preshared_key": i["PresharedKey"] if "PresharedKey" in i.keys() else ""
                                 }
@@ -526,6 +512,15 @@ class WireguardConfiguration:
             "peers": []
         }
         try:
+            cleanedAllowedIPs = {}
+            for p in peers:
+                newAllowedIPs = p['allowed_ip'].replace(" ", "")
+                if not CheckAddress(newAllowedIPs):
+                    return False, [], "Allowed IPs entry format is incorrect"
+                if not CheckPeerKey(p["id"]):
+                    return False, [], "Peer key format is incorrect"
+                cleanedAllowedIPs[p["id"]] = newAllowedIPs
+
             with self.engine.begin() as conn:
                 for i in peers:
                     newPeer = {
@@ -546,6 +541,7 @@ class WireguardConfiguration:
                         "cumu_data": 0,
                         "mtu": i['mtu'],
                         "keepalive": i['keepalive'],
+                        "notes": i.get("notes", ""),
                         "remote_endpoint": self.DashboardConfig.GetConfig("Peers", "remote_endpoint")[1],
                         "preshared_key": i["preshared_key"]
                     }
@@ -560,12 +556,15 @@ class WireguardConfiguration:
                     with open(uid, "w+") as f:
                         f.write(p['preshared_key'])
 
-                subprocess.check_output(f"{self.Protocol} set {self.Name} peer {p['id']} allowed-ips {p['allowed_ip'].replace(' ', '')}{f' preshared-key {uid}' if presharedKeyExist else ''}",
-                                        shell=True, stderr=subprocess.STDOUT)
+                command = [self.Protocol, "set", self.Name, "peer", p['id'], "allowed-ips", cleanedAllowedIPs[p["id"]], "preshared-key", uid if presharedKeyExist else "/dev/null"]
+                subprocess.check_output(command, stderr=subprocess.STDOUT)
+
                 if presharedKeyExist:
                     os.remove(uid)
-            subprocess.check_output(
-                f"{self.Protocol}-quick save {self.Name}", shell=True, stderr=subprocess.STDOUT)
+
+            command = [f"{self.Protocol}-quick", "save", self.Name]
+            subprocess.check_output(command, stderr=subprocess.STDOUT)
+
             self.getPeers()
             for p in peers:
                 p = self.searchPeer(p['id'])
@@ -577,7 +576,7 @@ class WireguardConfiguration:
             })
         except Exception as e:
             current_app.logger.error("Add peers error", e)
-            return False, [], str(e)
+            return False, [], "Internal server error"
         return True, result['peers'], ""
 
     def searchPeer(self, publicKey):
@@ -615,8 +614,16 @@ class WireguardConfiguration:
                         with open(uid, "w+") as f:
                             f.write(restrictedPeer['preshared_key'])
 
-                    subprocess.check_output(f"{self.Protocol} set {self.Name} peer {restrictedPeer['id']} allowed-ips {restrictedPeer['allowed_ip'].replace(' ', '')}{f' preshared-key {uid}' if presharedKeyExist else ''}",
-                                            shell=True, stderr=subprocess.STDOUT)
+                    newAllowedIPs = restrictedPeer['allowed_ip'].replace(" ", "")
+                    if not CheckAddress(newAllowedIPs):
+                        return False, "Allowed IPs entry format is incorrect"
+
+                    if not CheckPeerKey(restrictedPeer["id"]):
+                        return False, "Peer key format is incorrect"
+
+                    command = [self.Protocol, "set", self.Name, "peer", restrictedPeer["id"], "allowed-ips", newAllowedIPs, "preshared-key", uid if presharedKeyExist else "/dev/null"]
+                    subprocess.check_output(command, stderr=subprocess.STDOUT)
+
                     if presharedKeyExist: os.remove(uid)
                 else:
                     return False, "Failed to allow access of peer " + i
@@ -636,8 +643,9 @@ class WireguardConfiguration:
                 found, pf = self.searchPeer(p)
                 if found:
                     try:
-                        subprocess.check_output(f"{self.Protocol} set {self.Name} peer {pf.id} remove",
-                                                shell=True, stderr=subprocess.STDOUT)
+                        command = [self.Protocol, "set", self.Name, "peer", pf.id, "remove"]
+                        subprocess.check_output(command, stderr=subprocess.STDOUT)
+
                         conn.execute(
                             self.peersRestrictedTable.insert().from_select(
                                 [c.name for c in self.peersTable.columns],
@@ -665,9 +673,8 @@ class WireguardConfiguration:
 
         if not self.__wgSave():
             return False, "Failed to save configuration through WireGuard"
-
+        self.getRestrictedPeers()
         self.getPeers()
-
         if numOfRestrictedPeers == len(listOfPublicKeys):
             return True, f"Restricted {numOfRestrictedPeers} peer(s)"
         return False, f"Restricted {numOfRestrictedPeers} peer(s) successfully. Failed to restrict {numOfFailedToRestrictPeers} peer(s)"
@@ -719,17 +726,20 @@ class WireguardConfiguration:
 
     def __wgSave(self) -> tuple[bool, str] | tuple[bool, None]:
         try:
-            subprocess.check_output(f"{self.Protocol}-quick save {self.Name}", shell=True, stderr=subprocess.STDOUT)
+            command = [f"{self.Protocol}-quick", "save", self.Name]
+            subprocess.check_output(command, stderr=subprocess.STDOUT)
+
             return True, None
         except subprocess.CalledProcessError as e:
-            return False, str(e)
+            current_app.logger.error(f"Failed to process command:\n{str(e)}")
+            return False, "Internal server error"
 
     def getPeersLatestHandshake(self):
         if not self.getStatus():
             self.toggleConfiguration()
         try:
-            latestHandshake = subprocess.check_output(f"{self.Protocol} show {self.Name} latest-handshakes",
-                                                      shell=True, stderr=subprocess.STDOUT)
+            command = [self.Protocol, "show", self.Name, "latest-handshakes"]
+            latestHandshake = subprocess.check_output(command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError:
             return "stopped"
         latestHandshake = latestHandshake.decode("UTF-8").split()
@@ -768,8 +778,9 @@ class WireguardConfiguration:
         if not self.getStatus():
             self.toggleConfiguration()
         # try:
-        data_usage = subprocess.check_output(f"{self.Protocol} show {self.Name} transfer",
-                                             shell=True, stderr=subprocess.STDOUT)
+        command = [self.Protocol, "show", self.Name, "transfer"]
+        data_usage = subprocess.check_output(command, stderr=subprocess.STDOUT)
+
         data_usage = data_usage.decode("UTF-8").split("\n")
         
         data_usage = [p.split("\t") for p in data_usage]
@@ -783,15 +794,13 @@ class WireguardConfiguration:
                         )
                     ).mappings().fetchone()
                     if cur_i is not None:
-                        # print(cur_i is None)
                         total_sent = cur_i['total_sent']
-                        # print(cur_i is None)
                         total_receive = cur_i['total_receive']
                         cur_total_sent = float(data_usage[i][2]) / (1024 ** 3)
                         cur_total_receive = float(data_usage[i][1]) / (1024 ** 3)
                         cumulative_receive = cur_i['cumu_receive'] + total_receive
                         cumulative_sent = cur_i['cumu_sent'] + total_sent
-                        if total_sent <= cur_total_sent and total_receive <= cur_total_receive:
+                        if (total_sent * 0.999 ) <= cur_total_sent and (total_receive * 0.999) <= cur_total_receive: # An accuracy of 1K ppm is sufficient
                             total_sent = cur_total_sent
                             total_receive = cur_total_receive
                         else:
@@ -826,10 +835,11 @@ class WireguardConfiguration:
         if not self.getStatus():
             self.toggleConfiguration()
         try:
-            data_usage = subprocess.check_output(f"{self.Protocol} show {self.Name} endpoints",
-                                                 shell=True, stderr=subprocess.STDOUT)
+            command = [self.Protocol, "show", self.Name, "endpoints"]
+            data_usage = subprocess.check_output(command, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError:
             return "stopped"
+
         data_usage = data_usage.decode("UTF-8").split()
         count = 0
         with self.engine.begin() as conn:
@@ -847,14 +857,17 @@ class WireguardConfiguration:
         self.getStatus()
         if self.Status:
             try:
-                check = subprocess.check_output(f"{self.Protocol}-quick down {self.Name}",
-                                                shell=True, stderr=subprocess.STDOUT)
+                command = [f"{self.Protocol}-quick", "down", self.Name]
+                check = subprocess.check_output(command, stderr=subprocess.STDOUT)
+
                 self.removeAutostart()
             except subprocess.CalledProcessError as exc:
                 return False, str(exc.output.strip().decode("utf-8"))
         else:
             try:
-                check = subprocess.check_output(f"{self.Protocol}-quick up {self.Name}", shell=True, stderr=subprocess.STDOUT)
+                command = [f"{self.Protocol}-quick", "up", self.Name]
+                check = subprocess.check_output(command, stderr=subprocess.STDOUT)
+
                 self.addAutostart()
             except subprocess.CalledProcessError as exc:
                 return False, str(exc.output.strip().decode("utf-8"))
@@ -921,8 +934,8 @@ class WireguardConfiguration:
         files.sort(key=lambda x: x[1], reverse=True)
 
         for f, ct in files:
-            if RegexMatch(f"^({self.Name})_(.*)\\.(conf)$", f):
-                s = re.search(f"^({self.Name})_(.*)\\.(conf)$", f)
+            if RegexMatch(rf"^({self.Name})_(\d+)\\.(conf)$", f):
+                s = re.search(rf"^({self.Name})_(\d+)\\.(conf)$", f)
                 date = s.group(2)
                 d = {
                     "filename": f,
@@ -995,7 +1008,7 @@ class WireguardConfiguration:
             original = [l.rstrip("\n") for l in f.readlines()]
             allowEdit = ["Address", "PreUp", "PostUp", "PreDown", "PostDown", "ListenPort", "Table"]
             if self.Protocol == 'awg':
-                allowEdit += ["Jc", "Jmin", "Jmax", "S1", "S2", "H1", "H2", "H3", "H4"]
+                allowEdit += ["Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4", "I1", "I2", "I3", "I4", "I5"]
             start = original.index("[Interface]")
             try:
                 end = original.index("[Peer]")
@@ -1033,31 +1046,33 @@ class WireguardConfiguration:
         return True
 
     def renameConfiguration(self, newConfigurationName) -> tuple[bool, str]:
+        newConfigurationName = os.path.basename(newConfigurationName)
+
+        if len(newConfigurationName) > 15 or not re.match(r'^[a-zA-Z0-9_=\+\.\-]{1,15}$', newConfigurationName):
+            return False, "Configuration name is either too long or contains an illegal character"
+        
+        newConfigurationName = newConfigurationName.replace("`", "") # double check
+    
         try:
             if self.getStatus():
                 self.toggleConfiguration()
             self.createDatabase(newConfigurationName)
             with self.engine.begin() as conn:
-                conn.execute(
-                    sqlalchemy.text(
-                        f'INSERT INTO "{newConfigurationName}" SELECT * FROM "{self.Name}"'
+                def doRenameStatement(suffix):
+                    newConfig = f"{newConfigurationName}{suffix}"
+                    oldConfig = f"{self.Name}{suffix}"
+
+                    conn.execute(
+                        sqlalchemy.text(
+                            f'INSERT INTO `{newConfig}` SELECT * FROM `{oldConfig}`'
+                        )
                     )
-                )
-                conn.execute(
-                    sqlalchemy.text(
-                        f'INSERT INTO "{newConfigurationName}_restrict_access" SELECT * FROM "{self.Name}_restrict_access"'
-                    )
-                )
-                conn.execute(
-                    sqlalchemy.text(
-                        f'INSERT INTO "{newConfigurationName}_deleted" SELECT * FROM "{self.Name}_deleted"'
-                    )
-                )
-                conn.execute(
-                    sqlalchemy.text(
-                        f'INSERT INTO "{newConfigurationName}_transfer" SELECT * FROM "{self.Name}_transfer"'
-                    )
-                )
+
+                doRenameStatement("")
+                doRenameStatement("_restrict_access")
+                doRenameStatement("_deleted")
+                doRenameStatement("_transfer")
+
             self.AllPeerJobs.updateJobConfigurationName(self.Name, newConfigurationName)
             shutil.copy(
                 self.configPath,
@@ -1065,8 +1080,8 @@ class WireguardConfiguration:
             )
             self.deleteConfiguration()
         except Exception as e:
-            traceback.print_stack()
-            return False, str(e)
+            current_app.logger.error(f"Failed to rename configuration.\nNew Configuration Name: {newConfigurationName}\nError: {str(e)}")
+            return False, "Internal server error"
         return True, None
 
     def getNumberOfAvailableIP(self):
@@ -1226,7 +1241,6 @@ class WireguardConfiguration:
     def __validateOverridePeerSettings(self, key: str, value: str | int) -> tuple[bool, None] | tuple[bool, str]:
         status = True
         msg = None
-        print(value)
         if key == "DNS" and value:
             status, msg = ValidateDNSAddress(value)
         elif key == "EndpointAllowedIPs" and value:

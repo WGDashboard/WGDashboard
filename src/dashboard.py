@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 
 import sqlalchemy
 from jinja2 import Template
-from flask import Flask, request, render_template, session, send_file
+from flask import Flask, request, render_template, session, send_file, current_app
 from flask_cors import CORS
 from icmplib import ping, traceroute
 from flask.json.provider import DefaultJSONProvider
@@ -17,8 +17,7 @@ from itertools import islice
 from sqlalchemy import RowMapping
 
 from modules.Utilities import (
-    RegexMatch, StringToBoolean,
-    ValidateIPAddressesWithRange, ValidateDNSAddress,
+    RegexMatch, StringToBoolean, ValidateDNSAddress,
     GenerateWireguardPublicKey, GenerateWireguardPrivateKey
 )
 from packaging import version
@@ -30,7 +29,7 @@ from modules.PeerShareLinks import PeerShareLinks
 from modules.PeerJobs import PeerJobs
 from modules.DashboardConfig import DashboardConfig
 from modules.WireguardConfiguration import WireguardConfiguration
-from modules.AmneziaWireguardConfiguration import AmneziaWireguardConfiguration
+from modules.AmneziaConfiguration import AmneziaConfiguration
 
 from client import createClientBlueprint
 
@@ -72,7 +71,11 @@ def ResponseObject(status=True, message=None, data=None, status_code = 200) -> F
 '''
 Flask App
 '''
-app = Flask("WGDashboard", template_folder=os.path.abspath("./static/dist/WGDashboardAdmin"))
+_, APP_PREFIX_INIT = DashboardConfig().GetConfig("Server", "app_prefix")
+app = Flask("WGDashboard",
+            template_folder=os.path.abspath("./static/dist/WGDashboardAdmin"),
+            static_folder=os.path.abspath("./static/dist/WGDashboardAdmin"),
+            static_url_path=APP_PREFIX_INIT if APP_PREFIX_INIT else '')
 
 def peerInformationBackgroundThread():
     global WireguardConfigurations
@@ -92,11 +95,13 @@ def peerInformationBackgroundThread():
                             c.getPeersTransfer()
                             c.getPeersEndpoint()
                             c.getPeers()
-                            if delay == 6:
-                                if c.configurationInfo.PeerTrafficTracking:
-                                    c.logPeersTraffic()
-                                if c.configurationInfo.PeerHistoricalEndpointTracking:
-                                    c.logPeersHistoryEndpoint()
+                            if DashboardConfig.GetConfig('WireGuardConfiguration', 'peer_tracking')[1] is True:
+                                print("[WGDashboard] Tracking Peers")
+                                if delay == 6:
+                                    if c.configurationInfo.PeerTrafficTracking:
+                                        c.logPeersTraffic()
+                                    if c.configurationInfo.PeerHistoricalEndpointTracking:
+                                        c.logPeersHistoryEndpoint()
                             c.getRestrictedPeersList()
             except Exception as e:
                 app.logger.error(f"[WGDashboard] Background Thread #1 Error", e)
@@ -161,10 +166,10 @@ def InitWireguardConfigurationsList(startup: bool = False):
                     if i in WireguardConfigurations.keys():
                         if WireguardConfigurations[i].configurationFileChanged():
                             with app.app_context():
-                                WireguardConfigurations[i] = AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i)
+                                WireguardConfigurations[i] = AmneziaConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i)
                     else:
                         with app.app_context():
-                            WireguardConfigurations[i] = AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i, startup=startup)
+                            WireguardConfigurations[i] = AmneziaConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i, startup=startup)
                 except WireguardConfiguration.InvalidConfigurationFileException as e:
                     app.logger.error(f"{i} have an invalid configuration file.")
 
@@ -264,7 +269,8 @@ def auth_req():
                     ("username" not in session or session.get("role") != "admin")
                     and (f"{appPrefix}/" != request.path and f"{appPrefix}" != request.path)
                     and not request.path.startswith(f'{appPrefix}/client')
-                    and not request.path.startswith(f'{appPrefix}/static')
+                    and not request.path.startswith(f'{appPrefix}/img')
+                    and not request.path.startswith(f'{appPrefix}/assets')
                     and request.path not in whiteList
             ):
                 response = Flask.make_response(app, {
@@ -422,11 +428,11 @@ def API_addWireguardConfiguration():
         )
         WireguardConfigurations[data['ConfigurationName']] = (
             WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, data=data, name=data['ConfigurationName'])) if protocol == 'wg' else (
-            AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data, name=data['ConfigurationName']))
+            AmneziaConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data, name=data['ConfigurationName']))
     else:
         WireguardConfigurations[data['ConfigurationName']] = (
             WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data)) if data.get('Protocol') == 'wg' else (
-            AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data))
+            AmneziaConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data))
     return ResponseObject()
 
 @app.get(f'{APP_PREFIX}/api/toggleWireguardConfiguration')
@@ -523,7 +529,7 @@ def API_renameWireguardConfiguration():
     
     status, message = rc.renameConfiguration(data.get("NewConfigurationName"))
     if status:
-        WireguardConfigurations[data.get("NewConfigurationName")] = (WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data.get("NewConfigurationName")) if rc.Protocol == 'wg' else AmneziaWireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data.get("NewConfigurationName")))
+        WireguardConfigurations[data.get("NewConfigurationName")] = (WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data.get("NewConfigurationName")) if rc.Protocol == 'wg' else AmneziaConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data.get("NewConfigurationName")))
     else:
         WireguardConfigurations[data.get("ConfigurationName")] = rc
     return ResponseObject(status, message)
@@ -562,8 +568,8 @@ def API_getAllWireguardConfigurationBackup():
             files.sort(key=lambda x: x[1], reverse=True)
         
             for f, ct in files:
-                if RegexMatch(r"^(.*)_(.*)\.(conf)$", f):
-                    s = re.search(r"^(.*)_(.*)\.(conf)$", f)
+                if RegexMatch(r"^(.+)_(\d+)\.(conf)$", f):
+                    s = re.search(r"^(.+)_(\d+)\.(conf)$", f)
                     name = s.group(1)
                     if name not in existingConfiguration:
                         if name not in data['NonExistingConfigurations'].keys():
@@ -706,15 +712,30 @@ def API_updatePeerSettings(configName):
         preshared_key = data['preshared_key']
         mtu = data['mtu']
         keepalive = data['keepalive']
+        notes = data.get('notes', '')
         wireguardConfig = WireguardConfigurations[configName]
         foundPeer, peer = wireguardConfig.searchPeer(id)
         if foundPeer:
             if wireguardConfig.Protocol == 'wg':
-                status, msg = peer.updatePeer(name, private_key, preshared_key, dns_addresses,
-                                       allowed_ip, endpoint_allowed_ip, mtu, keepalive)
+                status, msg = peer.updatePeer(name,
+                                              private_key,
+                                              preshared_key, 
+                                              dns_addresses,
+                                              allowed_ip,
+                                              endpoint_allowed_ip,
+                                              mtu,
+                                              keepalive,
+                                              notes)
             else:
-                status, msg = peer.updatePeer(name, private_key, preshared_key, dns_addresses,
-                    allowed_ip, endpoint_allowed_ip, mtu, keepalive, "off")
+                status, msg = peer.updatePeer(name,
+                                              private_key,
+                                              preshared_key,
+                                              dns_addresses,
+                                              allowed_ip,
+                                              endpoint_allowed_ip,
+                                              mtu,
+                                              keepalive,
+                                              notes)
             wireguardConfig.getPeers()
             DashboardWebHooks.RunWebHook('peer_updated', {
                 "configuration": wireguardConfig.Name,
@@ -864,6 +885,7 @@ def API_addPeers(configName):
             
             mtu: int = data.get('mtu', None)
             keep_alive: int = data.get('keepalive', None)
+            notes: str = data.get('notes', '')
             preshared_key: str = data.get('preshared_key', "")            
     
             if type(mtu) is not int or mtu < 0 or mtu > 1460:
@@ -919,7 +941,7 @@ def API_addPeers(configName):
                             "endpoint_allowed_ip": endpoint_allowed_ip,
                             "mtu": mtu,
                             "keepalive": keep_alive,
-                            "advanced_security": "off"
+                            "notes": ""
                         })
                         if addedCount == bulkAddAmount:
                             break
@@ -962,8 +984,11 @@ def API_addPeers(configName):
                     for i in allowed_ips:
                         found = False
                         for subnet in availableIps.keys():
-                            network = ipaddress.ip_network(subnet, False)
-                            ap = ipaddress.ip_network(i)
+                            try:
+                                network = ipaddress.ip_network(subnet, False)
+                                ap = ipaddress.ip_network(i)
+                            except ValueError as e:
+                                return ResponseObject(False, str(e))
                             if network.version == ap.version and ap.subnet_of(network):
                                 found = True
                         
@@ -981,14 +1006,13 @@ def API_addPeers(configName):
                         "DNS": dns_addresses,
                         "mtu": mtu,
                         "keepalive": keep_alive,
-                        "advanced_security": "off"
+                        "notes": notes
                     }]
                 )
                 return ResponseObject(status=status, message=message, data=addedPeers)
         except Exception as e:
             app.logger.error("Add peers failed", e)
-            return ResponseObject(False,
-                                  f"Add peers failed. Reason: {message}")
+            return ResponseObject(False, f"Add peers failed.")
 
     return ResponseObject(False, "Configuration does not exist")
 
@@ -1125,13 +1149,24 @@ def API_GetPeerTraffics():
 @app.get(f'{APP_PREFIX}/api/getPeerTrackingTableCounts')
 def API_GetPeerTrackingTableCounts():
     configurationName = request.args.get("configurationName")
-    if configurationName not in WireguardConfigurations.keys():
+    if configurationName and configurationName not in WireguardConfigurations.keys():
         return ResponseObject(False, "Configuration does not exist")
-    c = WireguardConfigurations.get(configurationName)
-    return ResponseObject(data={
-        "TrafficTrackingTableSize": c.getTransferTableSize(),
-        "HistoricalTrackingTableSize": c.getHistoricalEndpointTableSize()
-    })
+    
+    if configurationName:
+        c = WireguardConfigurations.get(configurationName)
+        return ResponseObject(data={
+            "TrafficTrackingTableSize": c.getTransferTableSize(),
+            "HistoricalTrackingTableSize": c.getHistoricalEndpointTableSize()
+        })
+    
+    d = {}
+    for i in WireguardConfigurations.keys():
+        c = WireguardConfigurations.get(i)
+        d[i] = {
+            "TrafficTrackingTableSize": c.getTransferTableSize(),
+            "HistoricalTrackingTableSize": c.getHistoricalEndpointTableSize()
+        }
+    return ResponseObject(data=d)
 
 @app.get(f'{APP_PREFIX}/api/downloadPeerTrackingTable')
 def API_DownloadPeerTackingTable():
@@ -1325,12 +1360,17 @@ def API_traceroute_execute():
                                   data=json.dumps([x['ip'] for x in result]))
                 d = r.json()
                 for i in range(len(result)):
-                    result[i]['geo'] = d[i]  
+                    result[i]['geo'] = d[i]
+
+                return ResponseObject(data=result)
+
             except Exception as e:
+                app.logger.error(f"Failed to gather the geolocation data: {e}")
                 return ResponseObject(data=result, message="Failed to request IP address geolocation")
-            return ResponseObject(data=result)
-        except Exception as exp:
-            return ResponseObject(False, exp)
+    
+        except Exception as e:
+            app.logger.error(f"Failed to execute the traceroute: {e}")
+            return ResponseObject(data=[], message="Failed to traceroute the given parameter")
     else:
         return ResponseObject(False, "Please provide ipAddress")
 
@@ -1700,7 +1740,7 @@ Index Page
 
 @app.get(f'{APP_PREFIX}/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html', APP_PREFIX=APP_PREFIX)
 
 if __name__ == "__main__":
     startThreads()

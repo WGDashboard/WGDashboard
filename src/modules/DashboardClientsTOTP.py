@@ -3,7 +3,7 @@ import hashlib
 import uuid
 
 import sqlalchemy as db
-from .ConnectionString import ConnectionString
+from .DatabaseConnection import ConnectionString
 
 
 class DashboardClientsTOTP:

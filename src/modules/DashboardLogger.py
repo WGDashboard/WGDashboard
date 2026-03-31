@@ -4,7 +4,7 @@ Dashboard Logger Class
 import uuid
 import sqlalchemy as db
 from flask import current_app
-from .ConnectionString import ConnectionString
+from .DatabaseConnection import ConnectionString
 
 
 class DashboardLogger:

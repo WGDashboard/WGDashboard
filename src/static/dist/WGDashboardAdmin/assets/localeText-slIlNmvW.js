@@ -1,0 +1,1 @@
+import{_ as e,G as t,c as o,t as a,a as c}from"./index-B2Cqollg.js";const s={name:"localeText",props:{t:""},computed:{getLocaleText(){return t(this.t)}}};function n(r,p,l,_,i,x){return c(),o("span",null,a(this.getLocaleText),1)}const u=e(s,[["render",n]]);export{u as L};

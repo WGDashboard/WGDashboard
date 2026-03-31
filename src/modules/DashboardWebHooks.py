@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import requests
 from pydantic import BaseModel, field_serializer
 import sqlalchemy as db
-from .ConnectionString import ConnectionString
+from .DatabaseConnection import ConnectionString
 from flask import current_app
 
 WebHookActions = ['peer_created', 'peer_deleted', 'peer_updated']
