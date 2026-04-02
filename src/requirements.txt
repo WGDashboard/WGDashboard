@@ -2,7 +2,7 @@ bcrypt==5.0.0
 ifcfg==0.24
 psutil==7.2.2
 pyotp==2.9.0
-Flask==3.1.2
+Flask==3.1.3
 flask-cors==6.0.2
 icmplib==3.0.4
 gunicorn==25.0.3
