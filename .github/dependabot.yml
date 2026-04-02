@@ -7,25 +7,30 @@ version: 2
 updates:
   - package-ecosystem: "pip"
     directory: "/src"
+    target-branch: "development"
     schedule:
       interval: "weekly"
 
   - package-ecosystem: "npm"
     directory: "/src/static/app"
+    target-branch: "development"
     schedule:
       interval: "weekly"
-      
+
   - package-ecosystem: "github-actions"
     directory: "/.github"
+    target-branch: "development"
     schedule:
       interval: "weekly"
 
   - package-ecosystem: "docker"
     directory: "/docker"
+    target-branch: "development"
     schedule:
       interval: "weekly"
 
   - package-ecosystem: "docker-compose"
     directory: "/docker"
+    target-branch: "development"
     schedule:
       interval: "weekly"
