@@ -1073,6 +1073,16 @@ class WireguardConfiguration:
                 doRenameStatement("_deleted")
                 doRenameStatement("_transfer")
 
+                conn.execute(
+                    sqlalchemy.text(
+                        f'''
+                            UPDATE `ConfigurationsInfo`
+                            SET `ID` = `{newConfigurationName}`
+                            WHERE `ID` = `{self.Name}`
+                        '''
+                    )
+                )
+
             self.AllPeerJobs.updateJobConfigurationName(self.Name, newConfigurationName)
             shutil.copy(
                 self.configPath,
