@@ -15,7 +15,6 @@ import MtuInput from "@/components/configurationComponents/newPeersComponents/mt
 import PersistentKeepAliveInput
 	from "@/components/configurationComponents/newPeersComponents/persistentKeepAliveInput.vue";
 import {WireguardConfigurationsStore} from "@/stores/WireguardConfigurationsStore.js";
-import NotesInput from "./newPeersComponents/notesInput.vue";
 
 const dashboardStore = DashboardConfigurationStore()
 const wireguardStore = WireguardConfigurationsStore()
@@ -28,11 +27,11 @@ const peerData = ref({
 	public_key: "",
 	DNS: dashboardStore.Configuration.Peers.peer_global_dns,
 	endpoint_allowed_ip: dashboardStore.Configuration.Peers.peer_endpoint_allowed_ip,
-	notes: "",
 	keepalive: parseInt(dashboardStore.Configuration.Peers.peer_keep_alive),
 	mtu: parseInt(dashboardStore.Configuration.Peers.peer_mtu),
 	preshared_key: "",
 	preshared_key_bulkAdd: false,
+	advanced_security: "off",
 	allowed_ips_validation: true,
 })
 const availableIp = ref([])
@@ -106,7 +105,6 @@ watch(() => {
 							<template v-if="!peerData.bulkAdd">
 								<hr class="mb-0 mt-2">
 								<NameInput :saving="saving" :data="peerData"></NameInput>
-								<NotesInput :saving="saving" :data="peerData"></NotesInput>
 								<PrivatePublicKeyInput :saving="saving" :data="peerData"></PrivatePublicKeyInput>
 								<AllowedIPsInput :availableIp="availableIp" :saving="saving" :data="peerData"></AllowedIPsInput>
 							</template>
@@ -120,7 +118,7 @@ watch(() => {
 										<LocaleText t="Advanced Options"></LocaleText>
 									</button>
 								</h2>
-								<div id="peerAddModalAccordionAdvancedOptions"
+								<div id="peerAddModalAccordionAdvancedOptions" 
 								     class="accordion-collapse collapse collapsed" data-bs-parent="#peerAddModalAccordion">
 									<div class="accordion-body rounded-bottom-3">
 										<div class="d-flex flex-column gap-2">

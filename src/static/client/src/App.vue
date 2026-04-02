@@ -1,12 +1,20 @@
-<script setup>
+<script setup async>
 import './assets/main.css'
 import NotificationList from "@/components/Notification/notificationList.vue";
+import {clientStore} from "@/stores/clientStore.js";
+
+const store = clientStore()
+fetch("/client/api/serverInformation")
+	.then(res => res.json())
+	.then(res => store.serverInformation = res.data)
 </script>
 
 <template>
 	<div data-bs-theme="dark" class="text-body bg-body vw-100 vh-100 bg-body">
 		<div class="d-flex vw-100 p-sm-4 overflow-y-scroll innerContainer d-flex flex-column">
-			<div class="mx-auto my-sm-auto position-relative" id="listContainer">
+			<div class="mx-auto my-sm-auto position-relative"
+			     id="listContainer"
+			     >
 				<Suspense>
 					<RouterView v-slot="{ Component }">
 						<Transition name="app" type="transition" mode="out-in">

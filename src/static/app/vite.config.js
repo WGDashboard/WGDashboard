@@ -32,7 +32,7 @@ export default defineConfig(({mode}) => {
 	}
 
 	return {
-		base: "./",
+		base: "/static/dist/WGDashboardAdmin",
 		plugins: [
 			vue(),
 		],

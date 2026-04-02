@@ -96,7 +96,7 @@ if (route.query.Email){
 				</span>
 			</button>
 		</form>
-		<div v-if="store.serverInformation.SignUp.enable">
+		<div>
 			<hr class="my-4">
 			<div class="d-flex align-items-center">
 					<span class="text-muted">

@@ -1,5 +1,4 @@
 import dashboard
-import os
 from datetime import datetime
 global sqldb, cursor, DashboardConfig, WireguardConfigurations, AllPeerJobs, JobLogger, Dash
 app_host, app_port = dashboard.gunicornConfig()
@@ -17,7 +16,7 @@ daemon = True
 pidfile = './gunicorn.pid'
 wsgi_app = "dashboard:app"
 accesslog = f"./log/access_{date}.log"
-loglevel = os.environ['log_level'] if 'log_level' in os.environ else 'info'
+loglevel = "info"
 capture_output = True
 errorlog = f"./log/error_{date}.log"
 pythonpath = "., ./modules"

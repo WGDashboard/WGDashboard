@@ -10,9 +10,8 @@ from datetime import timedelta
 import jinja2
 import sqlalchemy as db
 from .PeerJob import PeerJob
-from  flask import current_app
 from .PeerShareLink import PeerShareLink
-from .Utilities import GenerateWireguardPublicKey, CheckAddress, ValidateDNSAddress
+from .Utilities import GenerateWireguardPublicKey, ValidateIPAddressesWithRange, ValidateDNSAddress
 
 
 class Peer:
@@ -35,7 +34,6 @@ class Peer:
         self.cumu_data = tableData["cumu_data"]
         self.mtu = tableData["mtu"]
         self.keepalive = tableData["keepalive"]
-        self.notes = tableData.get("notes", "")
         self.remote_endpoint = tableData["remote_endpoint"]
         self.preshared_key = tableData["preshared_key"]
         self.jobs: list[PeerJob] = []
@@ -51,89 +49,62 @@ class Peer:
     def __repr__(self):
         return str(self.toJson())
 
-    def updatePeer(self, name: str,
-                   private_key: str,
+    def updatePeer(self, name: str, private_key: str,
                    preshared_key: str,
-                   dns_addresses: str,
-                   allowed_ip: str,
-                   endpoint_allowed_ip: str,
-                   mtu: int,
-                   keepalive: int,
-                   notes: str
-                   ) -> tuple[bool, str | None]:
-
+                   dns_addresses: str, allowed_ip: str, endpoint_allowed_ip: str, mtu: int,
+                   keepalive: int) -> tuple[bool, str] or tuple[bool, None]:
         if not self.configuration.getStatus():
             self.configuration.toggleConfiguration()
 
-        # Before we do any compute, let us check if the given endpoint allowed ip is valid at all
-        if not CheckAddress(endpoint_allowed_ip):
-            return False, f"Endpoint Allowed IPs format is incorrect"
+        existingAllowedIps = [item for row in list(
+            map(lambda x: [q.strip() for q in x.split(',')],
+                map(lambda y: y.allowed_ip,
+                    list(filter(lambda k: k.id != self.id, self.configuration.getPeersList()))))) for item in row]
 
-        peers = []
-        for peer in self.configuration.getPeersList():
-            # Make sure to exclude your own data when updating since its not really relevant
-            if peer.id != self.id:
-                continue
-            peers.append(peer)
-
-        used_allowed_ips = []
-        for peer in peers:
-            ips = peer.allowed_ip.split(',')
-            ips = [ip.strip() for ip in ips]
-            used_allowed_ips.append(ips)
-
-        if allowed_ip in used_allowed_ips:
+        if allowed_ip in existingAllowedIps:
             return False, "Allowed IP already taken by another peer"
         
-        if not ValidateDNSAddress(dns_addresses):
-            return False, f"DNS IP-Address or FQDN is incorrect"
+        if not ValidateIPAddressesWithRange(endpoint_allowed_ip):
+            return False, f"Endpoint Allowed IPs format is incorrect"
         
-        if isinstance(mtu, str):
+        if len(dns_addresses) > 0 and not ValidateDNSAddress(dns_addresses):
+            return False, f"DNS format is incorrect"
+        
+        if type(mtu) is str or mtu is None:
             mtu = 0
-
-        if isinstance(keepalive, str):
-            keepalive = 0
         
-        if mtu not in range(0, 1461):
+        if mtu < 0 or mtu > 1460:
             return False, "MTU format is not correct"
+        
+        if type(keepalive) is str or keepalive is None:
+            keepalive = 0
         
         if keepalive < 0:
             return False, "Persistent Keepalive format is not correct"
-
         if len(private_key) > 0:
             pubKey = GenerateWireguardPublicKey(private_key)
             if not pubKey[0] or pubKey[1] != self.id:
                 return False, "Private key does not match with the public key"
-
         try:
-            rand = random.Random()
-            uid = str(uuid.UUID(int=rand.getrandbits(128), version=4))
-            psk_exist = len(preshared_key) > 0
+            rd = random.Random()
+            uid = str(uuid.UUID(int=rd.getrandbits(128), version=4))
+            pskExist = len(preshared_key) > 0
 
-            if psk_exist:
+            if pskExist:
                 with open(uid, "w+") as f:
                     f.write(preshared_key)
-
             newAllowedIPs = allowed_ip.replace(" ", "")
-            if not CheckAddress(newAllowedIPs):
-                    return False, "Allowed IPs entry format is incorrect"
-                
-            command = [self.configuration.Protocol, "set", self.configuration.Name, "peer", self.id, "allowed-ips", newAllowedIPs, "preshared-key", uid if psk_exist else "/dev/null"]
-            updateAllowedIp = subprocess.check_output(command, stderr=subprocess.STDOUT)
+            updateAllowedIp = subprocess.check_output(
+                f"{self.configuration.Protocol} set {self.configuration.Name} peer {self.id} allowed-ips {newAllowedIPs} {f'preshared-key {uid}' if pskExist else 'preshared-key /dev/null'}",
+                shell=True, stderr=subprocess.STDOUT)
 
-            if psk_exist: os.remove(uid)
-
+            if pskExist: os.remove(uid)
             if len(updateAllowedIp.decode().strip("\n")) != 0:
-                current_app.logger.error("Update peer failed when updating Allowed IPs")
-                return False, "Internal server error"
-
-            command = [f"{self.configuration.Protocol}-quick", "save", self.configuration.Name]
-            saveConfig = subprocess.check_output(command, stderr=subprocess.STDOUT)
-
+                return False, "Update peer failed when updating Allowed IPs"
+            saveConfig = subprocess.check_output(f"{self.configuration.Protocol}-quick save {self.configuration.Name}",
+                                                 shell=True, stderr=subprocess.STDOUT)
             if f"wg showconf {self.configuration.Name}" not in saveConfig.decode().strip('\n'):
-                current_app.logger.error("Update peer failed when saving the configuration")
-                return False, "Internal server error"
-
+                return False, "Update peer failed when saving the configuration"
             with self.configuration.engine.begin() as conn:
                 conn.execute(
                     self.configuration.peersTable.update().values({
@@ -143,7 +114,6 @@ class Peer:
                         "endpoint_allowed_ip": endpoint_allowed_ip,
                         "mtu": mtu,
                         "keepalive": keepalive,
-                        "notes": notes,
                         "preshared_key": preshared_key
                     }).where(
                         self.configuration.peersTable.c.id == self.id
@@ -151,8 +121,7 @@ class Peer:
                 )
             return True, None
         except subprocess.CalledProcessError as exc:
-            current_app.logger.error(f"Subprocess call failed:\n{exc.output.decode("UTF-8")}")
-            return False, "Internal server error"
+            return False, exc.output.decode("UTF-8").strip()
 
     def downloadPeer(self) -> dict[str, str]:
         final = {
@@ -163,14 +132,12 @@ class Peer:
         if len(filename) == 0:
             filename = "UntitledPeer"
         filename = "".join(filename.split(' '))
-
-        # use previous filtering code if code below is insufficient or faulty
-        filename = re.sub(r'[.,/?<>\\:*|"]', '', filename).rstrip(". ") # remove special characters
-
-        reserved_pattern = r"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\..*)?$" # match com1-9, lpt1-9, con, nul, prn, aux, nul
-    
-        if re.match(reserved_pattern, filename, re.IGNORECASE):
-            filename = f"file_{filename}" # prepend "file_" if it matches
+        filename = f"{filename}"
+        illegal_filename = [".", ",", "/", "?", "<", ">", "\\", ":", "*", '|' '\"', "com1", "com2", "com3",
+                            "com4", "com5", "com6", "com7", "com8", "com9", "lpt1", "lpt2", "lpt3", "lpt4",
+                            "lpt5", "lpt6", "lpt7", "lpt8", "lpt9", "con", "nul", "prn"]
+        for i in illegal_filename:
+            filename = filename.replace(i, "")
 
         for i in filename:
             if re.match("^[a-zA-Z0-9_=+.-]$", i):
@@ -196,17 +163,10 @@ class Peer:
                 "Jmax": self.configuration.Jmax,
                 "S1": self.configuration.S1,
                 "S2": self.configuration.S2,
-                "S3": self.configuration.S3,
-                "S4": self.configuration.S4,
                 "H1": self.configuration.H1,
                 "H2": self.configuration.H2,
                 "H3": self.configuration.H3,
-                "H4": self.configuration.H4,
-                "I1": self.configuration.I1,
-                "I2": self.configuration.I2,
-                "I3": self.configuration.I3,
-                "I4": self.configuration.I4,
-                "I5": self.configuration.I5
+                "H4": self.configuration.H4
             })
             
         peerSection = {

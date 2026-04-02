@@ -5,6 +5,7 @@
 > 🎉 To help us better understand and improve WGDashboard’s performance, we’re launching the **WGDashboard Testing Program**. As part of this program, participants will receive free WireGuard VPN access to our server in Toronto, Canada, valid for **24 hours** or up to **1GB of total traffic**—whichever comes first. If you’d like to join, visit [https://wg.wgdashboard.dev/](https://wg.wgdashboard.dev/) for more details!
 
 
+
 ![](https://wgdashboard-resources.tor1.cdn.digitaloceanspaces.com/Posters/Banner.png)
 
 

@@ -2,7 +2,7 @@ import uuid
 
 from pydantic import BaseModel, field_serializer
 import sqlalchemy as db
-from .DatabaseConnection import ConnectionString
+from .ConnectionString import ConnectionString
 
 
 class NewConfigurationTemplate(BaseModel):

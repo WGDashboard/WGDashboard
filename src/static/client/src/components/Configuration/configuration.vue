@@ -2,7 +2,7 @@
 import {computed, ref} from "vue";
 import ConfigurationQRCode from "@/components/Configuration/configurationQRCode.vue";
 import dayjs from "dayjs";
-import Duration from 'dayjs/plugin/duration'
+import Duration from 'dayjs/plugin/Duration'
 dayjs.extend(Duration);
 const props = defineProps([
 	'config'

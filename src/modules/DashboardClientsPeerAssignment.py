@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from .DatabaseConnection import ConnectionString
+from .ConnectionString import ConnectionString
 from .DashboardLogger import DashboardLogger
 import sqlalchemy as db
 from .WireguardConfiguration import WireguardConfiguration

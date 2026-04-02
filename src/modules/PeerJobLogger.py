@@ -8,7 +8,7 @@ import sqlalchemy as db
 from flask import current_app
 from sqlalchemy import RowMapping
 
-from .DatabaseConnection import ConnectionString
+from .ConnectionString import ConnectionString
 from .Log import Log
 
 class PeerJobLogger:

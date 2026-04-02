@@ -43,17 +43,10 @@ export default {
 				Jmax: 998,
 				S1: 17,
 				S2: 110,
-				S3: 1,
-				S4: 2,
 				H1: 0,
 				H2: 0,
 				H3: 0,
-				H4: 0,
-				I1: "0",
-				I2: "0",
-				I3: "0",
-				I4: "0",
-				I5: "0"
+				H4: 0
 			},
 			numberOfAvailableIPs: "0",
 			error: false,
@@ -66,16 +59,14 @@ export default {
 	},
 	created() {
 		this.wireguardGenerateKeypair();
-
-		// Generate 4 random numbers for H1, H2, H3, H4
-		['H1', 'H2', 'H3', 'H4'].forEach(key => {
-			this.newConfiguration[key] = this.rand(1, 2**31);
-		});
-
-		// Initialize I1 to I5 as "0"
-		['I1', 'I2', 'I3', 'I4', 'I5'].forEach(key => {
-			this.newConfiguration[key] = "0";
-		});
+		let hValue = []
+		while ([...new Set(hValue)].length !== 4){
+			hValue = [this.rand(1, (2**31) - 1), this.rand(1, (2**31) - 1), this.rand(1, (2**31) - 1), this.rand(1, (2**31) - 1)]
+		}
+		this.newConfiguration.H1 = hValue[0]
+		this.newConfiguration.H2 = hValue[1]
+		this.newConfiguration.H3 = hValue[2]
+		this.newConfiguration.H4 = hValue[3]
 	},
 	methods: {
 		rand(min, max){
@@ -388,7 +379,7 @@ export default {
 
 								<div class="card rounded-3" 
 								     v-if="this.newConfiguration.Protocol === 'awg'"
-								     v-for="key in ['Jc', 'Jmin', 'Jmax', 'S1', 'S2', 'S3', 'S4', 'H1', 'H2', 'H3', 'H4', 'I1', 'I2', 'I3', 'I4', 'I5']">
+								     v-for="key in ['Jc', 'Jmin', 'Jmax', 'S1', 'S2', 'H1', 'H2', 'H3', 'H4']">
 									<div class="card-header">{{ key }}</div>
 									<div class="card-body">
 										<input type="text"

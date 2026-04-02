@@ -3,7 +3,3 @@
 *.md
 tests/
 docs/
-src/db
-src/wg-dashboard.ini
-src/static/app
-src/static/client

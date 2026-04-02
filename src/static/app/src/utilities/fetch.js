@@ -27,11 +27,8 @@ export const getUrl = (url) => {
 	if (apiKey){
 		return `${apiKey.host}${url}`
 	}
-	if (import.meta.env.MODE === 'development') {
-		return url;
-	}
-	// const appPrefix = window.APP_PREFIX || '';
-	return `./.${url}`;
+	return import.meta.env.MODE === 'development' ? url 
+		: `${window.location.protocol}//${(window.location.host + window.location.pathname + url).replace(/\/\//g, '/')}`
 }
 
 export const fetchGet = async (url, params=undefined, callback=undefined) => {

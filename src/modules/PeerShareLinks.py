@@ -1,4 +1,4 @@
-from .DatabaseConnection import ConnectionString
+from .ConnectionString import ConnectionString
 from .PeerShareLink import PeerShareLink
 import sqlalchemy as db
 from datetime import datetime

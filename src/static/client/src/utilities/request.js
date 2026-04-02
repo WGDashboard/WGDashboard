@@ -1,11 +1,12 @@
 import axios from "axios";
+import {useRouter} from "vue-router";
 
 export const requestURl = (url) => {
-	if (import.meta.env.MODE === 'development') {
-		return '/client' + url;
-	}
-	return `./.${url}`;
+	return import.meta.env.MODE === 'development' ? '/client' + url
+		: `${window.location.protocol}//${(window.location.host + window.location.pathname + url).replace(/\/\//g, '/')}`
 }
+
+// const router = useRouter()
 
 export const axiosPost = async (URL, body = {}) => {
 	try{
@@ -13,6 +14,10 @@ export const axiosPost = async (URL, body = {}) => {
 		return res.data
 	} catch (error){
 		console.log(error)
+		// if (error.status === 401){
+		// 	await router.push('/signin')
+		// }
+
 		return undefined
 	}
 }
@@ -23,6 +28,9 @@ export const axiosGet = async (URL, query = {}) => {
 		return res.data
 	} catch (error){
 		console.log(error)
+		// if (error.status === 401){
+		// 	await router.push('/signin')
+		// }
 		return undefined
 	}
 }
