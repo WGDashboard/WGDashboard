@@ -2,7 +2,7 @@
 import { ref, reactive } from "vue"
 import LocaleText from "@/components/text/localeText.vue";
 import OidcSettings from "@/components/clientComponents/clientSettingComponents/oidcSettings.vue";
-import { fetchGet } from "@/utilities/fetch.js"
+import { fetchGet, fetchPost } from "@/utilities/fetch.js"
 const emits = defineEmits(['close'])
 import { DashboardConfigurationStore } from "@/stores/DashboardConfigurationStore"
 const dashboardConfigurationStore = DashboardConfigurationStore()
@@ -12,12 +12,16 @@ const values = reactive({
 })
 
 const toggling = ref(false)
-const toggleClientSideApp = async () => {
+const updateSettings = async (key: string) => {
 	toggling.value = true
-	await fetchGet("/api/clients/toggleStatus", {}, (res) => {
-		values.enableClients = res.data
+	await fetchPost("/api/updateDashboardConfigurationItem", {
+		section: "Clients",
+		key: key,
+		value: dashboardConfigurationStore.Configuration.Clients[key]
+	}, async (res) => {
+		await dashboardConfigurationStore.getConfiguration()
+		toggling.value = false
 	})
-	toggling.value = false
 }
 </script>
 
@@ -37,16 +41,43 @@ const toggleClientSideApp = async () => {
 				</h6>
 				<div class="form-check form-switch ms-auto">
 					<label class="form-check-label" for="oidc_switch">
-						<LocaleText :t="values.enableClients ? 'Enabled':'Disabled'"></LocaleText>
+						<LocaleText :t="dashboardConfigurationStore.Configuration.Clients.enable ? 'Enabled':'Disabled'"></LocaleText>
 					</label>
 					<input
-						:disabled="oidcStatusLoading"
-						v-model="values.enableClients"
-						@change="toggleClientSideApp()"
+						:disabled="toggling"
+						v-model="dashboardConfigurationStore.Configuration.Clients.enable"
+						@change="updateSettings('enable')"
 						class="form-check-input" type="checkbox" role="switch" id="oidc_switch">
 				</div>
 			</div>
-			<OidcSettings mode="Client"></OidcSettings>
+			<hr>
+			<div>
+				<div class="d-flex align-items-center">
+					<h6 class="mb-0">
+						<LocaleText t="Sign Up as Local Client"></LocaleText>
+					</h6>
+					<div class="form-check form-switch ms-auto">
+						<label class="form-check-label" for="sign_up_switch">
+							<LocaleText :t="dashboardConfigurationStore.Configuration.Clients.sign_up ? 'Enabled':'Disabled'"></LocaleText>
+						</label>
+						<input
+							:disabled="toggling"
+							v-model="dashboardConfigurationStore.Configuration.Clients.sign_up"
+							@change="updateSettings('sign_up')"
+							class="form-check-input" type="checkbox" role="switch" id="sign_up_switch">
+					</div>
+				</div>
+				<small class="text-muted mb-0">
+					<LocaleText t="Allow clients to sign up with Email and Password"></LocaleText>
+				</small>
+			</div>
+			<div>
+				<OidcSettings mode="Client"></OidcSettings>
+				<small class="text-muted mb-0">
+					<LocaleText t="Allow clients to access with OpenID"></LocaleText>
+				</small>
+			</div>
+
 		</div>
 	</div>
 </div>

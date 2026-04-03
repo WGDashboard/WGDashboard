@@ -16,6 +16,12 @@ updates:
     target-branch: "development"
     schedule:
       interval: "weekly"
+      
+  - package-ecosystem: "npm"
+    directory: "/src/static/client"
+    target-branch: "development"
+    schedule:
+      interval: "weekly"
 
   - package-ecosystem: "github-actions"
     directory: "/.github"

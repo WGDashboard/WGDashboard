@@ -1,0 +1,16 @@
+{
+    "Admin": {
+        "Provider": {
+            "client_id": "",
+            "client_secret": "",
+            "issuer": ""
+        }
+    },
+    "Client": {
+        "Provider": {
+            "client_id": "",
+            "client_secret": "",
+            "issuer": ""
+        }
+    }
+}
