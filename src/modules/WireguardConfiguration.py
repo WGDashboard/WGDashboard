@@ -921,8 +921,8 @@ class WireguardConfiguration:
         files.sort(key=lambda x: x[1], reverse=True)
 
         for f, ct in files:
-            if RegexMatch(f"^({self.Name})_(.*)\\.(conf)$", f):
-                s = re.search(f"^({self.Name})_(.*)\\.(conf)$", f)
+            if RegexMatch(f"^({self.Name})_(\d+)\\.(conf)$", f):
+                s = re.search(f"^({self.Name})_(\d+)\\.(conf)$", f)
                 date = s.group(2)
                 d = {
                     "filename": f,
