@@ -1072,13 +1072,9 @@ class WireguardConfiguration:
                 doRenameStatement("_transfer")
 
                 conn.execute(
-                    sqlalchemy.text(
-                        f'''
-                            UPDATE `ConfigurationsInfo`
-                            SET `ID` = `{newConfigurationName}`
-                            WHERE `ID` = `{self.Name}`
-                        '''
-                    )
+                    self.infoTable.update()
+                    .where(self.infoTable.c.ID == self.Name)
+                    .values(ID=newConfigurationName)
                 )
 
             self.AllPeerJobs.updateJobConfigurationName(self.Name, newConfigurationName)
