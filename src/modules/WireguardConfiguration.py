@@ -1058,6 +1058,11 @@ class WireguardConfiguration:
                         f'INSERT INTO "{newConfigurationName}_transfer" SELECT * FROM "{self.Name}_transfer"'
                     )
                 )
+                conn.execute(
+                    self.infoTable.update()
+                    .where(self.infoTable.c.ID == self.Name)
+                    .values(ID=newConfigurationName)
+                )
             self.AllPeerJobs.updateJobConfigurationName(self.Name, newConfigurationName)
             shutil.copy(
                 self.configPath,
