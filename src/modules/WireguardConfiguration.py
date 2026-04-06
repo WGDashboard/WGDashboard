@@ -127,7 +127,7 @@ class WireguardConfiguration:
                 }
                 for key, value in values.items():
                     if value is not None and str(value).strip():
-                        self.__parser["Interface"][key] = value
+                        self.__parser["Interface"][key] = str(value)
 
             if "Backup" not in data.keys():
                 self.createDatabase()
