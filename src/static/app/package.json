@@ -24,7 +24,7 @@
     "css-color-converter": "^2.0.0",
     "dayjs": "^1.11.19",
     "electron-builder": "^26.7.0",
-    "fuse.js": "^7.0.0",
+    "fuse.js": "^7.3.0",
     "i": "^0.3.7",
     "is-cidr": "^6.0.3",
     "npm": "^11.8.0",
