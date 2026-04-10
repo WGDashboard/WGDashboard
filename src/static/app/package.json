@@ -20,7 +20,7 @@
     "animate.css": "^4.1.1",
     "bootstrap": "^5.3.2",
     "bootstrap-icons": "^1.11.3",
-    "cidr-tools": "^11.3.2",
+    "cidr-tools": "^11.3.3",
     "css-color-converter": "^2.0.0",
     "dayjs": "^1.11.19",
     "electron-builder": "^26.7.0",
