@@ -13,7 +13,7 @@
     "bootstrap": "^5.3.6",
     "bootstrap-icons": "^1.13.1",
     "dayjs": "^1.11.13",
-    "oidc-client-ts": "^3.2.1",
+    "oidc-client-ts": "^3.5.0",
     "pinia": "^3.0.2",
     "qrcode": "^1.5.4",
     "uuid": "^11.1.0",
