@@ -146,14 +146,17 @@ class DashboardConfig:
                         if col_name not in existing_columns:
                             type_str = col_type().compile(dialect=self.engine.dialect)
                             current_app.logger.info(f"Adding missing column '{col_name}' to table '{table_name}'")
-                            conn.execute(db.text(f'ALTER TABLE "{table_name}" ADD COLUMN "{col_name}" {type_str}'))
+                            preparer = self.engine.dialect.identifier_preparer
+                            quoted_table = preparer.quote_identifier(table_name)
+                            quoted_column = preparer.quote_identifier(col_name)
+                            conn.execute(db.text(f"ALTER TABLE {quoted_table} ADD COLUMN {quoted_column} {type_str}"))
 
     def getConnectionString(self, database) -> str or None:
         sqlitePath = os.path.join(DashboardConfig.ConfigurationPath, "db")
-        
+
         if not os.path.isdir(sqlitePath):
             os.mkdir(sqlitePath)
-        
+
         if self.GetConfig("Database", "type")[1] == "postgresql":
             cn = f'postgresql+psycopg2://{self.GetConfig("Database", "username")[1]}:{self.GetConfig("Database", "password")[1]}@{self.GetConfig("Database", "host")[1]}/{database}'
         elif self.GetConfig("Database", "type")[1] == "mysql":
