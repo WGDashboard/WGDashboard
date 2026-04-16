@@ -1075,23 +1075,36 @@ def API_GetPeerHistoricalEndpoints():
     if not configurationName or not id:
         return ResponseObject(False, "Please provide configurationName and id")
     fp, p = WireguardConfigurations.get(configurationName).searchPeer(id)
-    if fp:
-        result = p.getEndpoints()
-        geo = {}
-        try:
-            r = requests.post(f"http://ip-api.com/batch?fields=city,country,lat,lon,query",
-                              data=json.dumps([x['endpoint'] for x in result]))
-            d = r.json()
-            
-                
-        except Exception as e:
-            return ResponseObject(data=result, message="Failed to request IP address geolocation. " + str(e))
-        
-        return ResponseObject(data={
-            "endpoints": p.getEndpoints(),
-            "geolocation": d
-        })
-    return ResponseObject(False, "Peer does not exist")
+    if not fp:
+        return ResponseObject(False, "Peer does not exist")
+    endpoints = p.getEndpoints()
+    ips = [x['endpoint'] for x in endpoints]
+    unique_ips = list(set(ips))
+    def chunks(lst, size=100):
+        for i in range(0, len(lst), size):
+            yield lst[i:i + size]
+    geo_cache = {}
+    try:
+        for batch in chunks(unique_ips, 100):
+            r = requests.post(
+                "http://ip-api.com/batch?fields=city,country,lat,lon,query",
+                data=json.dumps(batch),
+                timeout=5
+            )
+            r.raise_for_status()
+            data = r.json()
+            for item in data:
+                geo_cache[item["query"]] = item
+        geolocation = [geo_cache[ip] for ip in ips]
+    except Exception as e:
+        return ResponseObject(
+            data={"endpoints": endpoints},
+            message="Failed to request IP address geolocation. " + str(e)
+        )
+    return ResponseObject(data={
+        "endpoints": endpoints,
+        "geolocation": geolocation
+    })
 
 @app.get(f'{APP_PREFIX}/api/getPeerSessions')
 def API_GetPeerSessions():
