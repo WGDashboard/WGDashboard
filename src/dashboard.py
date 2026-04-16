@@ -2,6 +2,8 @@ import logging
 import random, shutil, sqlite3, configparser, hashlib, ipaddress, json, os, secrets, subprocess
 import time, re, uuid, bcrypt, psutil, pyotp, threading
 import traceback
+from functools import wraps
+from urllib.parse import unquote
 from uuid import uuid4
 from zipfile import ZipFile
 from datetime import datetime, timedelta
@@ -67,6 +69,21 @@ def ResponseObject(status=True, message=None, data=None, status_code = 200) -> F
     response.status_code = status_code
     response.content_type = "application/json"
     return response
+
+def require_fields(*fields):
+    """Decorator that validates required fields in request.json."""
+    def decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            data = request.json
+            if data is None:
+                return ResponseObject(False, "Request body must be JSON", status_code=400)
+            missing = [field for field in fields if field not in data]
+            if missing:
+                return ResponseObject(False, f"Missing required fields: {', '.join(missing)}", status_code=400)
+            return f(*args, **kwargs)
+        return decorated
+    return decorator
 
 '''
 Flask App
@@ -1204,52 +1221,75 @@ def API_getDashboardTheme():
 def API_getDashboardVersion():
     return ResponseObject(data=DashboardConfig.GetConfig("Server", "version")[1])
 
-@app.post(f'{APP_PREFIX}/api/savePeerScheduleJob')
+@app.post(f'{APP_PREFIX}/api/PeerScheduleJob')
+@require_fields('Configuration', 'Peer', 'Field', 'Operator', 'Value', 'Action')
 def API_savePeerScheduleJob():
     data = request.json
-    if "Job" not in data.keys():
-        return ResponseObject(False, "Please specify job")
-    job: dict = data['Job']
-    if "Peer" not in job.keys() or "Configuration" not in job.keys():
-        return ResponseObject(False, "Please specify peer and configuration")
-    configuration = WireguardConfigurations.get(job['Configuration'])
-    if configuration is None:
-        return ResponseObject(False, "Configuration does not exist")
-    f, fp = configuration.searchPeer(job['Peer'])
-    if not f:
-        return ResponseObject(False, "Peer does not exist")
-    
-    
-    s, p = AllPeerJobs.saveJob(PeerJob(
-        job['JobID'], job['Configuration'], job['Peer'], job['Field'], job['Operator'], job['Value'],
-        job['CreationDate'], job['ExpireDate'], job['Action']))
-    if s:
-        return ResponseObject(s, data=p)
-    return ResponseObject(s, message=p)
 
-@app.post(f'{APP_PREFIX}/api/deletePeerScheduleJob')
+    configuration = WireguardConfigurations.get(data['Configuration'])
+    if configuration is None:
+        return ResponseObject(False, "Configuration does not exist", status_code=404)
+
+    peerKey = unquote(data['Peer'])
+    found, _ = configuration.searchPeer(peerKey)
+    if not found:
+        return ResponseObject(False, "Peer does not exist", status_code=404)
+
+    jobID = data.get('JobID', str(uuid4()))
+    if len(AllPeerJobs.searchJobById(jobID)) > 0:
+        return ResponseObject(False, "Job already exists", status_code=409)
+
+    success, result = AllPeerJobs.saveJob(PeerJob(
+        jobID, data['Configuration'], peerKey, data['Field'], data['Operator'], data['Value'],
+        datetime.now(), data.get('ExpireDate'), data['Action']))
+    if success:
+        return ResponseObject(success, data=result)
+    return ResponseObject(success, message=result)
+
+@app.put(f'{APP_PREFIX}/api/PeerScheduleJob')
+@require_fields('JobID', 'Configuration', 'Peer', 'Field', 'Operator', 'Value', 'Action')
+def API_updatePeerScheduleJob():
+    data = request.json
+
+    configuration = WireguardConfigurations.get(data['Configuration'])
+    if configuration is None:
+        return ResponseObject(False, "Configuration does not exist", status_code=404)
+
+    peerKey = unquote(data['Peer'])
+    found, _ = configuration.searchPeer(peerKey)
+    if not found:
+        return ResponseObject(False, "Peer does not exist", status_code=404)
+
+    existing = AllPeerJobs.searchJobById(data['JobID'])
+    if len(existing) == 0:
+        return ResponseObject(False, "Job does not exist", status_code=404)
+
+    success, result = AllPeerJobs.saveJob(PeerJob(
+        data['JobID'], data['Configuration'], peerKey, data['Field'], data['Operator'], data['Value'],
+        datetime.now(), data.get('ExpireDate'), data['Action']))
+    if success:
+        return ResponseObject(success, data=result)
+    return ResponseObject(success, message=result)
+
+@app.delete(f'{APP_PREFIX}/api/PeerScheduleJob')
+@require_fields('JobID', 'Configuration', 'Peer')
 def API_deletePeerScheduleJob():
     data = request.json
-    if "Job" not in data.keys():
-        return ResponseObject(False, "Please specify job")
-    job: dict = data['Job']
-    if "Peer" not in job.keys() or "Configuration" not in job.keys():
-        return ResponseObject(False, "Please specify peer and configuration")
-    configuration = WireguardConfigurations.get(job['Configuration'])
+
+    configuration = WireguardConfigurations.get(data['Configuration'])
     if configuration is None:
-        return ResponseObject(False, "Configuration does not exist")
-    # f, fp = configuration.searchPeer(job['Peer'])
-    # if not f:
-    #     return ResponseObject(False, "Peer does not exist")
+        return ResponseObject(False, "Configuration does not exist", status_code=404)
 
-    s, p = AllPeerJobs.deleteJob(PeerJob(
-        job['JobID'], job['Configuration'], job['Peer'], job['Field'], job['Operator'], job['Value'],
-        job['CreationDate'], job['ExpireDate'], job['Action']))
-    if s:
-        return ResponseObject(s)
-    return ResponseObject(s, message=p)
+    peerKey = unquote(data['Peer'])
+    success, result = AllPeerJobs.deleteJob(PeerJob(
+        data['JobID'], data['Configuration'], peerKey, data.get('Field', ''),
+        data.get('Operator', ''), data.get('Value', ''),
+        datetime.now(), data.get('ExpireDate'), data.get('Action', '')))
+    if success:
+        return ResponseObject(success, message="Job deleted successfully")
+    return ResponseObject(success, message=result)
 
-@app.get(f'{APP_PREFIX}/api/getPeerScheduleJobLogs/<configName>')
+@app.get(f'{APP_PREFIX}/api/PeerScheduleJobLogs/<configName>')
 def API_getPeerScheduleJobLogs(configName):
     if configName not in WireguardConfigurations.keys():
         return ResponseObject(False, "Configuration does not exist")
