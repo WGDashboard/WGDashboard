@@ -80,3 +80,49 @@ export const fetchPost = async (url, body, callback) => {
 		router.push({path: '/signin'})
 	})
 }
+
+export const fetchPut = async (url, body, callback) => {
+	await fetch(`${getUrl(url)}`, {
+		headers: getHeaders(),
+		method: "PUT",
+		body: JSON.stringify(body)
+	}).then((x) => {
+		const store = DashboardConfigurationStore();
+		if (!x.ok){
+			if (x.status !== 200){
+				if (x.status === 401){
+					store.newMessage("WGDashboard", "Sign in session ended, please sign in again", "warning")
+				}
+				throw new Error(x.statusText)
+			}
+		}else{
+			return x.json()
+		}
+	}).then(x => callback ? callback(x) : undefined).catch(x => {
+		console.log("Error:", x)
+		router.push({path: '/signin'})
+	})
+}
+
+export const fetchDelete = async (url, body, callback) => {
+	await fetch(`${getUrl(url)}`, {
+		headers: getHeaders(),
+		method: "DELETE",
+		body: JSON.stringify(body)
+	}).then((x) => {
+		const store = DashboardConfigurationStore();
+		if (!x.ok){
+			if (x.status !== 200){
+				if (x.status === 401){
+					store.newMessage("WGDashboard", "Sign in session ended, please sign in again", "warning")
+				}
+				throw new Error(x.statusText)
+			}
+		}else{
+			return x.json()
+		}
+	}).then(x => callback ? callback(x) : undefined).catch(x => {
+		console.log("Error:", x)
+		router.push({path: '/signin'})
+	})
+}
