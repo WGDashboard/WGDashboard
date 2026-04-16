@@ -266,7 +266,19 @@ After editing Python files (e.g. `src/dashboard.py`), restart the container to p
 docker restart wgdashboard
 ```
 
-> **Tip:** For frontend development, run the Vite dev server on your host (`cd src/static/app && npm run dev`) and proxy to the container's API. This gives you hot module replacement for Vue components.
+For frontend changes, install dependencies and rebuild the Vue app on your host:
+
+```bash
+cd src/static/app
+npm install
+npm run build
+```
+
+Then restart the container so it serves the updated dist files:
+
+```bash
+docker restart wgdashboard
+```
 
 ---
 
