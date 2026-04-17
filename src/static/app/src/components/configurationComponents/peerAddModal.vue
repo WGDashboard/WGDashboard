@@ -32,7 +32,7 @@ const peerData = ref({
 	keepalive: parseInt(dashboardStore.Configuration.Peers.peer_keep_alive),
 	mtu: parseInt(dashboardStore.Configuration.Peers.peer_mtu),
 	preshared_key: "",
-	preshared_key_bulkAdd: false,
+	preshared_key_bulkAdd: Boolean(dashboardStore.Configuration.Peers.peer_preshared_key_default),
 	allowed_ips_validation: true,
 })
 const availableIp = ref([])
@@ -128,7 +128,7 @@ watch(() => {
 											<EndpointAllowedIps :saving="saving" :data="peerData"></EndpointAllowedIps>
 											<div class="row gy-3">
 												<div class="col-sm" v-if="!peerData.bulkAdd">
-													<PresharedKeyInput :saving="saving" :data="peerData" :bulk="peerData.bulkAdd"></PresharedKeyInput>
+													<PresharedKeyInput :saving="saving" :data="peerData" :bulk="peerData.bulkAdd" :defaultEnabled="Boolean(dashboardStore.Configuration.Peers.peer_preshared_key_default)"></PresharedKeyInput>
 												</div>
 
 												<div class="col-sm">
