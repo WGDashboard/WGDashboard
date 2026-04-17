@@ -134,10 +134,15 @@ export default {
 				</div>
 			</div>
 		</div>
-		<div class="card-footer" role="button" @click="$emit('details')">
+		<div class="card-footer" role="button" @click="$emit('details')" v-if="!this.Peer.restricted">
 			<small class="d-flex align-items-center">
 				<LocaleText t="Details"></LocaleText>
 				<i class="bi bi-chevron-right ms-auto"></i>
+			</small>
+		</div>
+		<div class="card-footer" v-else>
+			<small class="d-flex align-items-center text-muted">
+				<LocaleText t="Allow access to view details"></LocaleText>
 			</small>
 		</div>
 	</div>

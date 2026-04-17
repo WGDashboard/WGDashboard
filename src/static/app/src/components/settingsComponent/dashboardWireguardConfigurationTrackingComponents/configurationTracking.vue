@@ -4,7 +4,7 @@ import {onMounted, ref, watch} from "vue";
 import LocaleText from "@/components/text/localeText.vue";
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
 
-const props = defineProps(['configuration'])
+const props = defineProps(['configuration', 'trackingData'])
 const sizes = ref({
 	HistoricalTrackingTableSize: 0,
 	TrafficTrackingTableSize: 0
@@ -13,16 +13,15 @@ const sizeDataLoaded = ref(false)
 const toggling = ref(false)
 
 await onMounted(async () => {
-	await loadSizeData();
+	sizes.value = props.trackingData[props.configuration.Name]
 })
 
 const loadSizeData = async () => {
-	sizeDataLoaded.value = false;
+
 	await fetchGet("/api/getPeerTrackingTableCounts", {
 		configurationName: props.configuration.Name
 	}, (res) => {
 		sizes.value = res.data;
-		sizeDataLoaded.value = true;
 	})
 }
 
@@ -148,8 +147,7 @@ const deleteRecord = async (key) => {
 					<hr />
 					<div class="d-flex align-items-start align-items-md-center flex-column flex-md-row gap-2">
 						<div>
-							<h6 class="placeholder animate__animated animate__flash animate__infinite animate__slower w-100 mb-0" v-if="!sizeDataLoaded"></h6>
-							<h6 v-else class="mb-0">
+							<h6 class="mb-0">
 								{{ sizes.HistoricalTrackingTableSize }} <span class="text-muted fw-normal"><LocaleText t="Records"></LocaleText></span>
 							</h6>
 						</div>

@@ -3,7 +3,7 @@ Peer Jobs
 """
 import sqlalchemy
 
-from .ConnectionString import ConnectionString
+from .DatabaseConnection import ConnectionString
 from .PeerJob import PeerJob
 from .PeerJobLogger import PeerJobLogger
 import sqlalchemy as db

@@ -4,7 +4,7 @@
 #
 
 # Pull the current golang-alpine image.
-FROM golang:1.25-alpine AS awg-go
+FROM golang:1.26-alpine3.23 AS awg-go
 
 # Install build-dependencies.
 RUN apk add --no-cache \
@@ -30,7 +30,7 @@ RUN go version && \
 # AWG TOOLS BUILDING STAGE
 # Base: Alpine
 #
-FROM alpine:latest AS awg-tools
+FROM alpine:3.23 AS awg-tools
 
 # Install needed dependencies.
 RUN apk add --no-cache \
@@ -55,7 +55,7 @@ RUN make && chmod +x wg*
 #
 
 # Use the python-alpine image for building pip dependencies
-FROM python:3.14-alpine AS pip-builder
+FROM python:3.14-alpine3.23 AS pip-builder
 
 ARG TARGETPLATFORM
 
@@ -91,7 +91,7 @@ RUN . /opt/wgdashboard/src/venv/bin/activate && \
 #
 
 # Running with the python-alpine image.
-FROM python:3.14-alpine AS final
+FROM python:3.14-alpine3.23 AS final
 LABEL maintainer="dselen@nerthus.nl"
 
 # Install only the runtime dependencies
@@ -114,15 +114,18 @@ ENV TZ="Europe/Amsterdam" \
     global_dns="9.9.9.9" \
     wgd_port="10086" \
     public_ip="" \
-    WGDASH=/opt/wgdashboard
+    WGDASH=/opt/wgdashboard \
+    dynamic_config="true"
 
 # Create directories needed for operation
-RUN mkdir /data /configs -p ${WGDASH}/src /etc/amnezia/amneziawg
+RUN mkdir /data /configs -p ${WGDASH}/src /etc/amnezia/amneziawg \
+    && echo "name_servers=${global_dns}" >> /etc/resolvconf.conf
 
 # Copy the venv and source files from local compiled locations or repos
 COPY ./src ${WGDASH}/src
 COPY --from=pip-builder /opt/wgdashboard/src/venv /opt/wgdashboard/src/venv
 COPY ./docker/wg0.conf.template /tmp/wg0.conf.template
+COPY ./docker/wg-dashboard-oidc-providers.json.template /tmp/wg-dashboard-oidc-providers.json.template
 # Copy in the runtime script, essential.
 COPY ./docker/entrypoint.sh /entrypoint.sh
 

@@ -37,7 +37,6 @@ export default {
 				mtu: parseInt(this.dashboardStore.Configuration.Peers.peer_mtu),
 				preshared_key: "",
 				preshared_key_bulkAdd: Boolean(this.dashboardStore.Configuration.Peers.peer_preshared_key_default),
-				advanced_security: "off",
 			},
 			availableIp: undefined,
 			availableIpSearchString: "",
