@@ -151,7 +151,7 @@ class Peer:
                 )
             return True, None
         except subprocess.CalledProcessError as exc:
-            current_app.logger.error(f"Subprocess call failed:\n{exc.output.decode("UTF-8")}")
+            current_app.logger.error(f"Subprocess call failed:\n{exc.output.decode('UTF-8')}")
             return False, "Internal server error"
 
     def downloadPeer(self) -> dict[str, str]:

@@ -2,7 +2,7 @@
 import ScheduleDropdown from "@/components/configurationComponents/peerScheduleJobsComponents/scheduleDropdown.vue";
 import {ref} from "vue";
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
-import {fetchPost} from "@/utilities/fetch.js";
+import {fetchPost, fetchPut, fetchDelete} from "@/utilities/fetch.js";
 import { VueDatePicker } from "@vuepic/vue-datepicker";
 import dayjs from "dayjs";
 import LocaleText from "@/components/text/localeText.vue";
@@ -46,9 +46,8 @@ export default {
 	methods: {
 		save(){
 			if (this.job.Field && this.job.Operator && this.job.Action && this.job.Value){
-				fetchPost(`/api/savePeerScheduleJob`, {
-					Job: this.job
-				}, (res) => {
+				const fn = this.newJob ? fetchPost : fetchPut;
+				fn(`/api/PeerScheduleJob`, this.job, (res) => {
 					if (res.status){
 						this.edit = false;
 						this.store.newMessage("Server", "Peer job saved", "success")
@@ -84,9 +83,7 @@ export default {
 		},
 		delete(){
 			if(this.job.CreationDate){
-				fetchPost(`/api/deletePeerScheduleJob`, {
-					Job: this.job
-				}, (res) => {
+				fetchDelete(`/api/PeerScheduleJob`, this.job, (res) => {
 					if (!res.status){
 						this.store.newMessage("Server", res.message, "danger")
 						this.$emit('delete')
