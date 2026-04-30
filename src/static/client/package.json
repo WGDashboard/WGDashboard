@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "axios": "^1.15.1",
-    "bootstrap": "^5.3.6",
+    "bootstrap": "^5.3.8",
     "bootstrap-icons": "^1.13.1",
     "dayjs": "^1.11.13",
     "oidc-client-ts": "^3.5.0",
