@@ -1085,6 +1085,11 @@ class WireguardConfiguration:
                 doRenameStatement("_restrict_access")
                 doRenameStatement("_deleted")
                 doRenameStatement("_transfer")
+                conn.execute(
+                    self.infoTable.update()
+                    .where(self.infoTable.c.ID == self.Name)
+                    .values(ID=newConfigurationName)
+                )
 
             self.AllPeerJobs.updateJobConfigurationName(self.Name, newConfigurationName)
             shutil.copy(
