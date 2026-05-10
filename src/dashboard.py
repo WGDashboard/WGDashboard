@@ -1558,7 +1558,8 @@ def API_Email_Send():
                     subject = Template(data.get('Subject', '')).render(peer=p.toJson(), configurationFile=download)
                     if data.get('IncludeAttachment', False):
                         u = str(uuid4())
-                        attachmentName = f'{u}.conf'
+                        peerName = p.toJson().get('name', '').strip()
+                        attachmentName = f'{peerName if peerName else u}.conf'
                         with open(os.path.join('./attachments', attachmentName,), 'w+') as f:
                             f.write(download['file'])   
                         
