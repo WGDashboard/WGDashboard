@@ -335,7 +335,10 @@ def API_AuthenticateLogin():
     totpEnabled = DashboardConfig.GetConfig("Account", "enable_totp")[1]
     totpValid = False
     if totpEnabled:
-        totpValid = pyotp.TOTP(DashboardConfig.GetConfig("Account", "totp_key")[1]).now() == data['totp']
+        totp_code = str(data.get("totp", "")).strip()
+        totpValid = pyotp.TOTP(
+	    DashboardConfig.GetConfig("Account", "totp_key")[1]
+        ).verify(totp_code, valid_window=1)
 
     if (valid
             and data['username'] == DashboardConfig.GetConfig("Account", "username")[1]
@@ -1455,11 +1458,15 @@ def API_Welcome_GetTotpLink():
 @app.post(f'{APP_PREFIX}/api/Welcome_VerifyTotpLink')
 def API_Welcome_VerifyTotpLink():
     data = request.get_json()
-    totp = pyotp.TOTP(DashboardConfig.GetConfig("Account", "totp_key")[1]).now()
-    if totp == data['totp']:
+    totp_code = str(data.get("totp", "")).strip()
+    totpValid = pyotp.TOTP(
+	DashboardConfig.GetConfig("Account", "totp_key")[1]
+    ).verify(totp_code, valid_window=1)
+
+    if totpValid:
         DashboardConfig.SetConfig("Account", "totp_verified", "true")
         DashboardConfig.SetConfig("Account", "enable_totp", "true")
-    return ResponseObject(totp == data['totp'])
+    return ResponseObject(totpValid)
 
 @app.post(f'{APP_PREFIX}/api/Welcome_Finish')
 def API_Welcome_Finish():
