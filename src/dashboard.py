@@ -1314,11 +1314,11 @@ def API_ping_getAllPeersIpAddress():
             for x in allowed_ip:
                 try:
                     ip = ipaddress.ip_network(x, strict=False)
+                    if ip.num_addresses == 1:
+                        parsed.append(str(ip.network_address))
                 except ValueError as e:
                     app.logger.error(f"Failed to parse IP address of {p.id} - {c.Name}")
-                host = list(ip.hosts())
-                if len(host) == 1:
-                    parsed.append(str(host[0]))
+
             endpoint = p.endpoint.replace(" ", "").replace("(none)", "")
             if len(p.name) > 0:
                 cips[f"{p.name} - {p.id}"] = {
