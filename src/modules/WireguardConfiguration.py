@@ -232,7 +232,7 @@ class WireguardConfiguration:
             self.Status = self.getStatus()
 
     def __dropDatabase(self):
-        existingTables = [self.Name, f'{self.Name}_restrict_access', f'{self.Name}_transfer', f'{self.Name}_deleted']
+        existingTables = [self.Name, f'{self.Name}_restrict_access', f'{self.Name}_transfer', f'{self.Name}_deleted', f'{self.Name}_history_endpoint']
         try:
             with self.engine.begin() as conn:
                 for t in existingTables:
@@ -308,7 +308,8 @@ class WireguardConfiguration:
             f'{dbName}_history_endpoint', self.metadata,
             sqlalchemy.Column('id', sqlalchemy.String(255), nullable=False),
             sqlalchemy.Column('endpoint', sqlalchemy.String(255), nullable=False),
-            sqlalchemy.Column('time', time_col_type)
+            sqlalchemy.Column('time', time_col_type),
+            extend_existing=True
         )
         
         self.infoTable = sqlalchemy.Table(
@@ -322,7 +323,7 @@ class WireguardConfiguration:
 
     def __dumpDatabase(self):
         with self.engine.connect() as conn:
-            tables = [self.peersTable, self.peersRestrictedTable, self.peersTransferTable, self.peersDeletedTable]
+            tables = [self.peersTable, self.peersRestrictedTable, self.peersTransferTable, self.peersDeletedTable, self.peersHistoryEndpointTable]
             for i in tables:
                 rows = conn.execute(i.select()).mappings().fetchall()
                 for row in rows:
