@@ -14,7 +14,7 @@
   "dependencies": {
     "@volar/language-server": "2.4.28",
     "@vue/language-server": "3.2.7",
-    "@vuepic/vue-datepicker": "^12.1.0",
+    "@vuepic/vue-datepicker": "^14.0.0",
     "@vueuse/core": "^14.2.1",
     "@vueuse/shared": "^14.3.0",
     "animate.css": "^4.1.1",
