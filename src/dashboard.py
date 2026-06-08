@@ -997,7 +997,6 @@ def API_addPeers(configName):
                             for ip in availableIps[subnet]:
                                 allowed_ips = [ip]
                                 break
-                            break  
                     else:
                         return ResponseObject(False, "No more available IP can assign") 
 
