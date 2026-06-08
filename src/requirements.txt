@@ -11,7 +11,7 @@ tcconfig==0.30.1
 sqlalchemy==2.0.49
 sqlalchemy_utils==0.42.1
 psycopg[binary]==3.3.4
-PyMySQL==1.1.3
+PyMySQL==1.2.0
 tzlocal==5.3.1
 python-jose==3.5.0
 pydantic==2.13.4
