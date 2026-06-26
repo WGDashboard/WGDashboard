@@ -134,7 +134,7 @@ class DashboardOIDC:
                             'openid_configuration': oidc_config
                         }
                         self.provider_secret[k] = providers[k]['client_secret']
-                        current_app.logger.info(f"Registered OIDC Provider: {k}")
+                        current_app.logger.info(f"Registered OIDC Provider[{self.mode}]: {k}")
                     except Exception as e:
                         current_app.logger.error(f"Failed to register OIDC config for {k}", exc_info=e)
         except Exception as e:

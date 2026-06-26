@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 
 import sqlalchemy
 from jinja2 import Template
-from flask import Flask, request, render_template, session, send_file, current_app
+from flask import Flask, request, render_template, session, send_file, current_app, redirect, url_for
 from flask_cors import CORS
 from icmplib import ping, traceroute
 from flask.json.provider import DefaultJSONProvider
@@ -32,6 +32,7 @@ from modules.PeerJobs import PeerJobs
 from modules.DashboardConfig import DashboardConfig
 from modules.WireguardConfiguration import WireguardConfiguration
 from modules.AmneziaConfiguration import AmneziaConfiguration
+from modules.DashboardOIDC import DashboardOIDC
 
 from client import createClientBlueprint
 
@@ -225,6 +226,7 @@ with app.app_context():
     NewConfigurationTemplates: NewConfigurationTemplates = NewConfigurationTemplates()
     InitWireguardConfigurationsList(startup=True)
     DashboardClients: DashboardClients = DashboardClients(WireguardConfigurations)
+    AdminOIDC = DashboardOIDC("Admin")
     app.register_blueprint(createClientBlueprint(WireguardConfigurations, DashboardConfig, DashboardClients))
 
 _, APP_PREFIX = DashboardConfig.GetConfig("Server", "app_prefix")
@@ -279,6 +281,8 @@ def auth_req():
                 f'{appPrefix}/api/sharePeer/get', 
                 f'{appPrefix}/api/isTotpEnabled', 
                 f'{appPrefix}/api/locale',
+                f'{appPrefix}/api/oidc/providers',
+                f'{appPrefix}/api/oidc/authenticate',
             ]
         
 
@@ -316,6 +320,38 @@ def API_ValidateAuthentication():
 def API_RequireAuthentication():
     return ResponseObject(data=DashboardConfig.GetConfig("Server", "auth_req")[1])
 
+# OIDC for Admin
+@app.get(f'{APP_PREFIX}/api/oidc/providers')
+def API_OIDC_GetProviders():
+    _, oidc = DashboardConfig.GetConfig("OIDC", "admin_enable")
+    if not oidc:
+        return ResponseObject(status=False, message="OIDC is disabled")
+    
+    return ResponseObject(data=AdminOIDC.GetProviders())
+
+@app.post(f'{APP_PREFIX}/api/oidc/authenticate')
+def API_OIDC_Authenticate():
+    _, oidc = DashboardConfig.GetConfig("OIDC", "admin_enable")
+    if not oidc:
+        return ResponseObject(False, "OIDC is disabled")
+
+    requestData = request.get_json()
+    status, data = AdminOIDC.VerifyToken(**requestData)
+    if not status:
+        return ResponseObject(False, "OIDC Authentication Failed. Reason: " + data)
+    session['role'] = 'admin'
+    authToken = hashlib.sha256(f'${data['sid']}{datetime.now()}{app.secret_key}'.encode()).hexdigest()
+    session['username'] = authToken
+    session['signInMethod'] = 'OIDC'
+    session['signInPayload'] = {
+        "Provider": requestData.get('provider'),
+        "Payload": data
+    }
+    resp = ResponseObject()
+    resp.set_cookie('authToken', authToken)
+    return resp
+    
+
 @app.post(f'{APP_PREFIX}/api/authenticate')
 def API_AuthenticateLogin():
     data = request.get_json()
@@ -347,6 +383,7 @@ def API_AuthenticateLogin():
         authToken = hashlib.sha256(f"{data['username']}{datetime.now()}".encode()).hexdigest()
         session['role'] = 'admin'
         session['username'] = authToken
+        session['signInMethod'] = 'local'
         resp = ResponseObject(True, DashboardConfig.GetConfig("Other", "welcome_session")[1])
         resp.set_cookie("authToken", authToken)
         session.permanent = True
@@ -362,6 +399,14 @@ def API_AuthenticateLogin():
 def API_SignOut():
     resp = ResponseObject(True, "")
     resp.delete_cookie("authToken")
+    if session.get('signInMethod') == "OIDC":
+        status, oidc_config = AdminOIDC.GetProviderConfiguration(session.get('signInPayload').get("Provider"))
+        signOut = requests.get(
+            oidc_config.get("end_session_endpoint"),
+            params={
+                'id_token_hint': session.get('signInPayload').get("Payload").get('sid')
+            }
+        )
     session.clear()
     return resp
 

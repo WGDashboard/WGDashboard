@@ -4,17 +4,21 @@ const getHeaders = () => {
 	let headers = {
 		"Content-Type": "application/json"
 	}
-	const store = DashboardConfigurationStore();
-	const crossServer = store.getActiveCrossServer();
-	if (crossServer){
-		headers['wg-dashboard-apikey'] = crossServer.apiKey
-        if (crossServer.headers){
-            for (let header of Object.values(crossServer.headers)){
-                if (header.key && header.value && !Object.keys(headers).includes(header.key)){
-                    headers[header.key] = header.value
-                }
-            }
-        }
+	try{
+		const store = DashboardConfigurationStore();
+		const crossServer = store.getActiveCrossServer();
+		if (crossServer){
+			headers['wg-dashboard-apikey'] = crossServer.apiKey
+			if (crossServer.headers){
+				for (let header of Object.values(crossServer.headers)){
+					if (header.key && header.value && !Object.keys(headers).includes(header.key)){
+						headers[header.key] = header.value
+					}
+				}
+			}
+		}
+	}catch (e) {
+		
 	}
 
 
@@ -22,11 +26,13 @@ const getHeaders = () => {
 }
 
 export const getUrl = (url) => {
-	const store = DashboardConfigurationStore();
-	const apiKey = store.getActiveCrossServer();
-	if (apiKey){
-		return `${apiKey.host}${url}`
-	}
+	try{
+		const store = DashboardConfigurationStore();
+		const apiKey = store.getActiveCrossServer();
+		if (apiKey){
+			return `${apiKey.host}${url}`
+		}
+	}catch (e){}
 	if (import.meta.env.MODE === 'development') {
 		return url;
 	}
