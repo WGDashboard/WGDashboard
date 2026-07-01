@@ -714,19 +714,23 @@ def API_updatePeerSettings(configName):
         mtu = data['mtu']
         keepalive = data['keepalive']
         notes = data.get('notes', '')
+        peer_endpoint = data.get('endpoint', '')
+        if peer_endpoint in ('N/A', None):
+            peer_endpoint = ''
         wireguardConfig = WireguardConfigurations[configName]
         foundPeer, peer = wireguardConfig.searchPeer(id)
         if foundPeer:
             if wireguardConfig.Protocol == 'wg':
                 status, msg = peer.updatePeer(name,
                                               private_key,
-                                              preshared_key, 
+                                              preshared_key,
                                               dns_addresses,
                                               allowed_ip,
                                               endpoint_allowed_ip,
                                               mtu,
                                               keepalive,
-                                              notes)
+                                              notes,
+                                              peer_endpoint)
             else:
                 status, msg = peer.updatePeer(name,
                                               private_key,
@@ -736,7 +740,8 @@ def API_updatePeerSettings(configName):
                                               endpoint_allowed_ip,
                                               mtu,
                                               keepalive,
-                                              notes)
+                                              notes,
+                                              peer_endpoint)
             wireguardConfig.getPeers()
             DashboardWebHooks.RunWebHook('peer_updated', {
                 "configuration": wireguardConfig.Name,
@@ -887,7 +892,8 @@ def API_addPeers(configName):
             mtu: int = data.get('mtu', None)
             keep_alive: int = data.get('keepalive', None)
             notes: str = data.get('notes', '')
-            preshared_key: str = data.get('preshared_key', "")            
+            preshared_key: str = data.get('preshared_key', "")
+            site_to_site_endpoint: str = data.get('site_to_site_endpoint', "")            
     
             if type(mtu) is not int or mtu < 0 or mtu > 1460:
                 default: str = DashboardConfig.GetConfig("Peers", "peer_mtu")[1]
@@ -981,7 +987,7 @@ def API_addPeers(configName):
                     else:
                         return ResponseObject(False, "No more available IP can assign") 
 
-                if allowed_ips_validation:
+                if allowed_ips_validation and not site_to_site_endpoint:
                     for i in allowed_ips:
                         found = False
                         for subnet in availableIps.keys():
@@ -992,7 +998,7 @@ def API_addPeers(configName):
                                 return ResponseObject(False, str(e))
                             if network.version == ap.version and ap.subnet_of(network):
                                 found = True
-                        
+
                         if not found:
                             return ResponseObject(False, f"This IP is not available: {i}")
 
@@ -1007,7 +1013,8 @@ def API_addPeers(configName):
                         "DNS": dns_addresses,
                         "mtu": mtu,
                         "keepalive": keep_alive,
-                        "notes": notes
+                        "notes": notes,
+                        "endpoint": site_to_site_endpoint
                     }]
                 )
                 return ResponseObject(status=status, message=message, data=addedPeers)

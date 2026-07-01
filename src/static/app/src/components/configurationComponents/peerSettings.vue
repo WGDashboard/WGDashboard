@@ -158,6 +158,19 @@ export default {
 								       id="peer_endpoint_allowed_ips">
 							</div>
 							<div>
+								<label for="peer_site_to_site_endpoint_textbox" class="form-label">
+									<small class="text-muted">
+										<LocaleText t="Site-to-Site Endpoint"></LocaleText>
+										<code> <LocaleText t="(Optional, e.g. 203.0.113.1:51820)"></LocaleText></code>
+									</small>
+								</label>
+								<input type="text" class="form-control form-control-sm rounded-3"
+								       :disabled="this.saving"
+								       v-model="this.data.endpoint"
+								       placeholder="host:port"
+								       id="peer_site_to_site_endpoint_textbox">
+							</div>
+							<div>
 								<label for="peer_DNS_textbox" class="form-label">
 									<small class="text-muted">
 										<LocaleText t="DNS"></LocaleText>
