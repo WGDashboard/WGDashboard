@@ -34,6 +34,7 @@ const peerData = ref({
 	preshared_key: "",
 	preshared_key_bulkAdd: false,
 	allowed_ips_validation: true,
+	site_to_site_endpoint: "",
 })
 const availableIp = ref([])
 const saving = ref(false)
@@ -109,6 +110,19 @@ watch(() => {
 								<NotesInput :saving="saving" :data="peerData"></NotesInput>
 								<PrivatePublicKeyInput :saving="saving" :data="peerData"></PrivatePublicKeyInput>
 								<AllowedIPsInput :availableIp="availableIp" :saving="saving" :data="peerData"></AllowedIPsInput>
+								<div>
+									<label for="peer_site_to_site_endpoint" class="form-label">
+										<small class="text-muted">
+											<LocaleText t="Site-to-Site Endpoint"></LocaleText>
+											<code> <LocaleText t="(Optional, e.g. 203.0.113.1:51820)"></LocaleText></code>
+										</small>
+									</label>
+									<input type="text" class="form-control form-control-sm rounded-3"
+									       :disabled="saving"
+									       v-model="peerData.site_to_site_endpoint"
+									       placeholder="host:port"
+									       id="peer_site_to_site_endpoint">
+								</div>
 							</template>
 						</div>
 						<hr>

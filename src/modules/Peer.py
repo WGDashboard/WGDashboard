@@ -12,7 +12,7 @@ import sqlalchemy as db
 from .PeerJob import PeerJob
 from  flask import current_app
 from .PeerShareLink import PeerShareLink
-from .Utilities import GenerateWireguardPublicKey, CheckAddress, ValidateDNSAddress
+from .Utilities import GenerateWireguardPublicKey, CheckAddress, ValidateDNSAddress, ValidatePeerEndpoint
 
 
 class Peer:
@@ -59,7 +59,8 @@ class Peer:
                    endpoint_allowed_ip: str,
                    mtu: int,
                    keepalive: int,
-                   notes: str
+                   notes: str,
+                   endpoint: str = ""
                    ) -> tuple[bool, str | None]:
 
         if not self.configuration.getStatus():
@@ -105,6 +106,10 @@ class Peer:
             if not pubKey[0] or pubKey[1] != self.id:
                 return False, "Private key does not match with the public key"
 
+        endpoint_valid, endpoint_msg = ValidatePeerEndpoint(endpoint)
+        if not endpoint_valid:
+            return False, endpoint_msg
+
         try:
             rand = random.Random()
             uid = str(uuid.UUID(int=rand.getrandbits(128), version=4))
@@ -127,6 +132,12 @@ class Peer:
                 current_app.logger.error("Update peer failed when updating Allowed IPs")
                 return False, "Internal server error"
 
+            if len(endpoint) > 0:
+                subprocess.check_output(
+                    [self.configuration.Protocol, "set", self.configuration.Name, "peer", self.id, "endpoint", endpoint],
+                    stderr=subprocess.STDOUT
+                )
+
             command = [f"{self.configuration.Protocol}-quick", "save", self.configuration.Name]
             saveConfig = subprocess.check_output(command, stderr=subprocess.STDOUT)
 
@@ -134,18 +145,22 @@ class Peer:
                 current_app.logger.error("Update peer failed when saving the configuration")
                 return False, "Internal server error"
 
+            db_values = {
+                "name": name,
+                "private_key": private_key,
+                "DNS": dns_addresses,
+                "endpoint_allowed_ip": endpoint_allowed_ip,
+                "mtu": mtu,
+                "keepalive": keepalive,
+                "notes": notes,
+                "preshared_key": preshared_key
+            }
+            if len(endpoint) > 0:
+                db_values["endpoint"] = endpoint
+
             with self.configuration.engine.begin() as conn:
                 conn.execute(
-                    self.configuration.peersTable.update().values({
-                        "name": name,
-                        "private_key": private_key,
-                        "DNS": dns_addresses,
-                        "endpoint_allowed_ip": endpoint_allowed_ip,
-                        "mtu": mtu,
-                        "keepalive": keepalive,
-                        "notes": notes,
-                        "preshared_key": preshared_key
-                    }).where(
+                    self.configuration.peersTable.update().values(db_values).where(
                         self.configuration.peersTable.c.id == self.id
                     )
                 )

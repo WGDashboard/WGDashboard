@@ -80,8 +80,14 @@ export default {
 			</div>
 		</div>
 		<div class="card-body pt-1" style="font-size: 0.9rem">
-			<h6>
+			<h6 class="d-flex align-items-center gap-2">
 				{{Peer.name ? Peer.name : GetLocale('Untitled Peer')}}
+				<span v-if="Peer.endpoint && Peer.endpoint !== 'N/A'"
+				      class="badge rounded-pill d-inline-flex align-items-center gap-1"
+				      style="font-size: 0.65rem; background-color: #0d6efd20; color: #0d6efd; border: 1px solid #0d6efd40;">
+					<i class="bi bi-arrow-left-right"></i>
+					<LocaleText t="Site-to-Site"></LocaleText>
+				</span>
 			</h6>
 			<div class="d-flex"
 			     :class="[dashboardStore.Configuration.Server.dashboard_peer_list_display === 'grid' ? 'gap-1 flex-column' : 'flex-row gap-3']">

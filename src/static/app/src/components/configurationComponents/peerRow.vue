@@ -23,7 +23,14 @@ const emit = defineEmits(['qrcode', 'configurationFile', 'setting', 'jobs', 'ref
 <template>
 <tr>
 	<td>
-		<small>{{Peer.name ? Peer.name : 'Untitled Peer'}}</small>
+		<small class="d-flex align-items-center gap-2">
+			{{Peer.name ? Peer.name : 'Untitled Peer'}}
+			<span v-if="Peer.endpoint && Peer.endpoint !== 'N/A'"
+			      class="badge rounded-pill d-inline-flex align-items-center gap-1"
+			      style="font-size: 0.6rem; background-color: #0d6efd20; color: #0d6efd; border: 1px solid #0d6efd40;">
+				<i class="bi bi-arrow-left-right"></i> Site-to-Site
+			</span>
+		</small>
 	</td>
 	<td>
 		<small>{{Peer.id}}</small>

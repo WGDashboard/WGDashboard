@@ -37,6 +37,7 @@ export default {
 				mtu: parseInt(this.dashboardStore.Configuration.Peers.peer_mtu),
 				preshared_key: "",
 				preshared_key_bulkAdd: false,
+				site_to_site_endpoint: "",
 			},
 			availableIp: undefined,
 			availableIpSearchString: "",
@@ -127,6 +128,19 @@ export default {
 			<NameInput :saving="saving" :data="this.data" v-if="!this.data.bulkAdd"></NameInput>
 			<PrivatePublicKeyInput :saving="saving" :data="data" v-if="!this.data.bulkAdd"></PrivatePublicKeyInput>
 			<AllowedIPsInput :availableIp="this.availableIp" :saving="saving" :data="data" v-if="!this.data.bulkAdd"></AllowedIPsInput>
+			<div v-if="!this.data.bulkAdd">
+				<label for="peer_site_to_site_endpoint" class="form-label">
+					<small class="text-muted">
+						<LocaleText t="Site-to-Site Endpoint"></LocaleText>
+						<code> <LocaleText t="(Optional, e.g. 203.0.113.1:51820)"></LocaleText></code>
+					</small>
+				</label>
+				<input type="text" class="form-control form-control-sm rounded-3"
+				       :disabled="saving"
+				       v-model="this.data.site_to_site_endpoint"
+				       placeholder="host:port"
+				       id="peer_site_to_site_endpoint">
+			</div>
 			<EndpointAllowedIps :saving="saving" :data="data"></EndpointAllowedIps>
 			<DnsInput :saving="saving" :data="data"></DnsInput>
 

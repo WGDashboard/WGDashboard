@@ -1,6 +1,9 @@
-import re, ipaddress
+import ipaddress
+import re
 import subprocess
+
 import sqlalchemy
+
 
 def RegexMatch(regex, text) -> bool:
     """
@@ -12,12 +15,14 @@ def RegexMatch(regex, text) -> bool:
     pattern = re.compile(regex)
     return pattern.search(text) is not None
 
+
 def GetRemoteEndpoint() -> str:
     """
     Using socket to determine default interface IP address. Thanks, @NOXICS
-    @return: 
+    @return:
     """
     import socket
+
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.connect(("1.1.1.1", 80))  # Connecting to a public IP
@@ -38,14 +43,14 @@ def StringToBoolean(value: str):
     @param value: Boolean value in string came from Configuration file
     @return: Boolean value
     """
-    return (value.strip().replace(" ", "").lower() in 
-            ("yes", "true", "t", "1", 1))
+    return value.strip().replace(" ", "").lower() in ("yes", "true", "t", "1", 1)
+
 
 def CheckAddress(ips_str: str) -> bool:
     if len(ips_str) == 0:
         return False
 
-    for ip in ips_str.split(','):
+    for ip in ips_str.split(","):
         stripped_ip = ip.strip()
         try:
             # Verify the IP-address, with the strict flag as false also allows for /32 and /128
@@ -54,19 +59,27 @@ def CheckAddress(ips_str: str) -> bool:
             return False
     return True
 
+
 def CheckPeerKey(peer_key: str) -> bool:
     return re.match(r"^[A-Za-z0-9+/]{43}=$", peer_key)
+
 
 def ValidateDNSAddress(addresses_str: str) -> tuple[bool, str | None]:
     if len(addresses_str) == 0:
         return False, "Got an empty list/string to check for valid DNS-addresses"
 
-    addresses = addresses_str.split(',')
+    addresses = addresses_str.split(",")
     for address in addresses:
         stripped_address = address.strip()
 
-        if not CheckAddress(stripped_address) and not RegexMatch(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z]{0,61}[a-z]", stripped_address):
-            return False, f"{stripped_address} does not appear to be a valid IP-address or FQDN"
+        if not CheckAddress(stripped_address) and not RegexMatch(
+            r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z]{0,61}[a-z]",
+            stripped_address,
+        ):
+            return (
+                False,
+                f"{stripped_address} does not appear to be a valid IP-address or FQDN",
+            )
 
     return True, None
 
@@ -80,22 +93,47 @@ def ValidateEndpointAllowedIPs(IPs) -> tuple[bool, str] | tuple[bool, None]:
             return False, str(e)
     return True, None
 
+
 def GenerateWireguardPublicKey(privateKey: str) -> tuple[bool, str] | tuple[bool, None]:
     try:
-        publicKey = subprocess.check_output(f"wg pubkey", input=privateKey.encode(), shell=True,
-                                            stderr=subprocess.STDOUT)
-        return True, publicKey.decode().strip('\n')
+        publicKey = subprocess.check_output(
+            f"wg pubkey",
+            input=privateKey.encode(),
+            shell=True,
+            stderr=subprocess.STDOUT,
+        )
+        return True, publicKey.decode().strip("\n")
     except subprocess.CalledProcessError:
         return False, None
-    
+
+
 def GenerateWireguardPrivateKey() -> tuple[bool, str] | tuple[bool, None]:
     try:
-        publicKey = subprocess.check_output(f"wg genkey", shell=True,
-                                            stderr=subprocess.STDOUT)
-        return True, publicKey.decode().strip('\n')
+        publicKey = subprocess.check_output(
+            f"wg genkey", shell=True, stderr=subprocess.STDOUT
+        )
+        return True, publicKey.decode().strip("\n")
     except subprocess.CalledProcessError:
         return False, None
-    
+
+
+def ValidatePeerEndpoint(endpoint: str) -> tuple[bool, str | None]:
+    if len(endpoint) == 0:
+        return True, None
+    if ":" not in endpoint:
+        return False, "Endpoint must be in host:port format"
+    host, _, port_str = endpoint.rpartition(":")
+    if not host:
+        return False, "Endpoint host cannot be empty"
+    try:
+        port = int(port_str)
+        if not 1 <= port <= 65535:
+            return False, "Endpoint port must be between 1 and 65535"
+    except ValueError:
+        return False, "Endpoint port must be a number"
+    return True, None
+
+
 def ValidatePasswordStrength(password: str) -> tuple[bool, str] | tuple[bool, None]:
     # Rules:
     #     - Must be over 8 characters & numbers
@@ -104,13 +142,16 @@ def ValidatePasswordStrength(password: str) -> tuple[bool, str] | tuple[bool, No
     #     - Must contain at least 1 special characters from $&+,:;=?@#|'<>.-^*()%!~_-
     if len(password) < 8:
         return False, "Password must be 8 characters or more"
-    if not re.search(r'[a-z]', password):
+    if not re.search(r"[a-z]", password):
         return False, "Password must contain at least 1 lowercase character"
-    if not re.search(r'[A-Z]', password):
+    if not re.search(r"[A-Z]", password):
         return False, "Password must contain at least 1 uppercase character"
-    if not re.search(r'\d', password):
+    if not re.search(r"\d", password):
         return False, "Password must contain at least 1 number"
-    if not re.search(r'[$&+,:;=?@#|\'<>.\-^*()%!~_-]', password):
-        return False, "Password must contain at least 1 special character from $&+,:;=?@#|'<>.-^*()%!~_-"
-    
+    if not re.search(r"[$&+,:;=?@#|\'<>.\-^*()%!~_-]", password):
+        return (
+            False,
+            "Password must contain at least 1 special character from $&+,:;=?@#|'<>.-^*()%!~_-",
+        )
+
     return True, None

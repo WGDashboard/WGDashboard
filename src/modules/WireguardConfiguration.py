@@ -430,7 +430,7 @@ class WireguardConfiguration:
                                     "total_receive": 0,
                                     "total_sent": 0,
                                     "total_data": 0,
-                                    "endpoint": "N/A",
+                                    "endpoint": i.get("Endpoint", "N/A"),
                                     "status": "stopped",
                                     "latest_handshake": "N/A",
                                     "allowed_ip": i.get("AllowedIPs", "N/A"),
@@ -532,7 +532,7 @@ class WireguardConfiguration:
                         "total_receive": 0,
                         "total_sent": 0,
                         "total_data": 0,
-                        "endpoint": "N/A",
+                        "endpoint": i.get("endpoint", "N/A"),
                         "status": "stopped",
                         "latest_handshake": "N/A",
                         "allowed_ip": i.get("allowed_ip", "N/A"),
@@ -561,6 +561,12 @@ class WireguardConfiguration:
 
                 if presharedKeyExist:
                     os.remove(uid)
+
+                if p.get("endpoint", "N/A") not in ("N/A", ""):
+                    subprocess.check_output(
+                        [self.Protocol, "set", self.Name, "peer", p['id'], "endpoint", p["endpoint"]],
+                        stderr=subprocess.STDOUT
+                    )
 
             command = [f"{self.Protocol}-quick", "save", self.Name]
             subprocess.check_output(command, stderr=subprocess.STDOUT)
@@ -844,13 +850,15 @@ class WireguardConfiguration:
         count = 0
         with self.engine.begin() as conn:
             for _ in range(int(len(data_usage) / 2)):
-                conn.execute(
-                    self.peersTable.update().values({
-                        "endpoint": data_usage[count + 1]
-                    }).where(
-                        self.peersTable.c.id == data_usage[count]
+                live_endpoint = data_usage[count + 1]
+                if live_endpoint != "(none)":
+                    conn.execute(
+                        self.peersTable.update().values({
+                            "endpoint": live_endpoint
+                        }).where(
+                            self.peersTable.c.id == data_usage[count]
+                        )
                     )
-                )
                 count += 2
 
     def toggleConfiguration(self) -> tuple[bool, str] | tuple[bool, None]:
