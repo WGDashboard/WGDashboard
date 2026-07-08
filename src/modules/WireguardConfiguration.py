@@ -984,7 +984,11 @@ class WireguardConfiguration:
         if backupFileName not in backups:
             return False
         try:
-            os.remove(os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', backupFileName))
+            backupPath = os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup')
+            for ext in ('.conf', '.sql'):
+                f = os.path.join(backupPath, os.path.splitext(backupFileName)[0] + ext)
+                if os.path.exists(f):
+                    os.remove(f)
         except Exception as e:
             return False
         return True
