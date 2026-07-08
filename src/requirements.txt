@@ -3,7 +3,7 @@ ifcfg==0.24
 psutil==7.2.2
 pyotp==2.9.0
 Flask==3.1.2
-flask-cors==6.0.2
+flask-cors==6.0.5
 icmplib==3.0.4
 gunicorn==26.0.0
 requests==2.34.0
