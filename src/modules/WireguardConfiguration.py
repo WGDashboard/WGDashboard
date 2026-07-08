@@ -550,17 +550,9 @@ class WireguardConfiguration:
                     )
             for p in peers:
                 presharedKeyExist = len(p['preshared_key']) > 0
-                rd = random.Random()
-                uid = str(uuid.UUID(int=rd.getrandbits(128), version=4))
-                if presharedKeyExist:
-                    with open(uid, "w+") as f:
-                        f.write(p['preshared_key'])
 
-                command = [self.Protocol, "set", self.Name, "peer", p['id'], "allowed-ips", cleanedAllowedIPs[p["id"]], "preshared-key", uid if presharedKeyExist else "/dev/null"]
-                subprocess.check_output(command, stderr=subprocess.STDOUT)
-
-                if presharedKeyExist:
-                    os.remove(uid)
+                command = [self.Protocol, "set", self.Name, "peer", p['id'], "allowed-ips", cleanedAllowedIPs[p["id"]], "preshared-key", "/dev/stdin" if presharedKeyExist else "/dev/null"]
+                subprocess.check_output(command, input=p['preshared_key'].encode() if presharedKeyExist else None, stderr=subprocess.STDOUT)
 
             command = [f"{self.Protocol}-quick", "save", self.Name]
             subprocess.check_output(command, stderr=subprocess.STDOUT)
@@ -575,7 +567,8 @@ class WireguardConfiguration:
                 "peers": list(map(lambda k : k['id'], peers))
             })
         except Exception as e:
-            current_app.logger.error("Add peers error", e)
+            output = e.output.decode('UTF-8', 'replace') if isinstance(e, subprocess.CalledProcessError) and e.output else ""
+            current_app.logger.error(f"Add peers error: {e}\n{output}\n{traceback.format_exc()}")
             return False, [], "Internal server error"
         return True, result['peers'], ""
 
@@ -608,11 +601,6 @@ class WireguardConfiguration:
                     )
 
                     presharedKeyExist = len(restrictedPeer['preshared_key']) > 0
-                    rd = random.Random()
-                    uid = str(uuid.UUID(int=rd.getrandbits(128), version=4))
-                    if presharedKeyExist:
-                        with open(uid, "w+") as f:
-                            f.write(restrictedPeer['preshared_key'])
 
                     newAllowedIPs = restrictedPeer['allowed_ip'].replace(" ", "")
                     if not CheckAddress(newAllowedIPs):
@@ -621,10 +609,8 @@ class WireguardConfiguration:
                     if not CheckPeerKey(restrictedPeer["id"]):
                         return False, "Peer key format is incorrect"
 
-                    command = [self.Protocol, "set", self.Name, "peer", restrictedPeer["id"], "allowed-ips", newAllowedIPs, "preshared-key", uid if presharedKeyExist else "/dev/null"]
-                    subprocess.check_output(command, stderr=subprocess.STDOUT)
-
-                    if presharedKeyExist: os.remove(uid)
+                    command = [self.Protocol, "set", self.Name, "peer", restrictedPeer["id"], "allowed-ips", newAllowedIPs, "preshared-key", "/dev/stdin" if presharedKeyExist else "/dev/null"]
+                    subprocess.check_output(command, input=restrictedPeer['preshared_key'].encode() if presharedKeyExist else None, stderr=subprocess.STDOUT)
                 else:
                     return False, "Failed to allow access of peer " + i
         if not self.__wgSave():
