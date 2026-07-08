@@ -316,7 +316,8 @@ class WireguardConfiguration:
             f'{dbName}_history_endpoint', self.metadata,
             sqlalchemy.Column('id', sqlalchemy.String(255), nullable=False),
             sqlalchemy.Column('endpoint', sqlalchemy.String(255), nullable=False),
-            sqlalchemy.Column('time', time_col_type)
+            sqlalchemy.Column('time', time_col_type),
+            extend_existing=True
         )
         
         self.infoTable = sqlalchemy.Table(
