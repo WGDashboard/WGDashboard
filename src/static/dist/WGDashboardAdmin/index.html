@@ -11,6 +11,26 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
 		<title>WGDashboard</title>
         <base href="./">
+        <style>
+            #preloader{
+                width: 100vw; height: 100vh; display: flex
+            }
+            #preloader_placeholder{
+                width: 50px; height: 50px; background-color: #000; margin: auto;
+                animation: 3s ease-in-out fadeInPreloader infinite;
+            }
+            @keyframes fadeInPreloader {
+                0%{
+                    opacity: 0;
+                }
+                50%{
+                    opacity: 1;
+                }
+                100%{
+                    opacity: 0;
+                }
+            }
+        </style>
 		<script>
             const isViteDevMode = document.querySelector('script[src*="@vite/client"]') !== null;
             const base = document.querySelector('base');
@@ -18,10 +38,16 @@
                 base.href = '/';
             }
 		</script>
-		<script type="module" crossorigin src="./assets/index-DXzxfcZW.js"></script>
+		<script type="module" crossorigin src="./assets/index-DM7YJCOo.js"></script>
 		<link rel="stylesheet" crossorigin href="./assets/index-DOyBHXAH.css">
 	</head>
 	<body>
-		<div id="app"></div>
+        <div id="app">
+            <div id="preloader">
+                <div id="preloader_placeholder">
+                    <img style="width: 100%" src="./img/Logo-2-128x128.png" alt="WGDashboard Admin" />
+                </div>
+            </div>
+        </div>
 	</body>
 </html>

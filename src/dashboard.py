@@ -2,13 +2,15 @@ import logging
 import random, shutil, sqlite3, configparser, hashlib, ipaddress, json, os, secrets, subprocess
 import time, re, uuid, bcrypt, psutil, pyotp, threading
 import traceback
+from functools import wraps
+from urllib.parse import unquote
 from uuid import uuid4
 from zipfile import ZipFile
 from datetime import datetime, timedelta
 
 import sqlalchemy
 from jinja2 import Template
-from flask import Flask, request, render_template, session, send_file, current_app
+from flask import Flask, request, render_template, session, send_file, current_app, redirect, url_for
 from flask_cors import CORS
 from icmplib import ping, traceroute
 from flask.json.provider import DefaultJSONProvider
@@ -30,6 +32,7 @@ from modules.PeerJobs import PeerJobs
 from modules.DashboardConfig import DashboardConfig
 from modules.WireguardConfiguration import WireguardConfiguration
 from modules.AmneziaConfiguration import AmneziaConfiguration
+from modules.DashboardOIDC import DashboardOIDC
 
 from client import createClientBlueprint
 
@@ -67,6 +70,21 @@ def ResponseObject(status=True, message=None, data=None, status_code = 200) -> F
     response.status_code = status_code
     response.content_type = "application/json"
     return response
+
+def require_fields(*fields):
+    """Decorator that validates required fields in request.json."""
+    def decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            data = request.json
+            if data is None:
+                return ResponseObject(False, "Request body must be JSON", status_code=400)
+            missing = [field for field in fields if field not in data]
+            if missing:
+                return ResponseObject(False, f"Missing required fields: {', '.join(missing)}", status_code=400)
+            return f(*args, **kwargs)
+        return decorated
+    return decorator
 
 '''
 Flask App
@@ -208,6 +226,7 @@ with app.app_context():
     NewConfigurationTemplates: NewConfigurationTemplates = NewConfigurationTemplates()
     InitWireguardConfigurationsList(startup=True)
     DashboardClients: DashboardClients = DashboardClients(WireguardConfigurations)
+    AdminOIDC = DashboardOIDC("Admin")
     app.register_blueprint(createClientBlueprint(WireguardConfigurations, DashboardConfig, DashboardClients))
 
 _, APP_PREFIX = DashboardConfig.GetConfig("Server", "app_prefix")
@@ -262,6 +281,8 @@ def auth_req():
                 f'{appPrefix}/api/sharePeer/get', 
                 f'{appPrefix}/api/isTotpEnabled', 
                 f'{appPrefix}/api/locale',
+                f'{appPrefix}/api/oidc/providers',
+                f'{appPrefix}/api/oidc/authenticate',
             ]
         
 
@@ -299,6 +320,38 @@ def API_ValidateAuthentication():
 def API_RequireAuthentication():
     return ResponseObject(data=DashboardConfig.GetConfig("Server", "auth_req")[1])
 
+# OIDC for Admin
+@app.get(f'{APP_PREFIX}/api/oidc/providers')
+def API_OIDC_GetProviders():
+    _, oidc = DashboardConfig.GetConfig("OIDC", "admin_enable")
+    if not oidc:
+        return ResponseObject(status=False, message="OIDC is disabled")
+    
+    return ResponseObject(data=AdminOIDC.GetProviders())
+
+@app.post(f'{APP_PREFIX}/api/oidc/authenticate')
+def API_OIDC_Authenticate():
+    _, oidc = DashboardConfig.GetConfig("OIDC", "admin_enable")
+    if not oidc:
+        return ResponseObject(False, "OIDC is disabled")
+
+    requestData = request.get_json()
+    status, data = AdminOIDC.VerifyToken(**requestData)
+    if not status:
+        return ResponseObject(False, "OIDC Authentication Failed. Reason: " + data)
+    session['role'] = 'admin'
+    authToken = hashlib.sha256(f'${data['sid']}{datetime.now()}{app.secret_key}'.encode()).hexdigest()
+    session['username'] = authToken
+    session['signInMethod'] = 'OIDC'
+    session['signInPayload'] = {
+        "Provider": requestData.get('provider'),
+        "Payload": data
+    }
+    resp = ResponseObject()
+    resp.set_cookie('authToken', authToken)
+    return resp
+    
+
 @app.post(f'{APP_PREFIX}/api/authenticate')
 def API_AuthenticateLogin():
     data = request.get_json()
@@ -318,7 +371,10 @@ def API_AuthenticateLogin():
     totpEnabled = DashboardConfig.GetConfig("Account", "enable_totp")[1]
     totpValid = False
     if totpEnabled:
-        totpValid = pyotp.TOTP(DashboardConfig.GetConfig("Account", "totp_key")[1]).now() == data['totp']
+        totp_code = str(data.get("totp", "")).strip()
+        totpValid = pyotp.TOTP(
+	    DashboardConfig.GetConfig("Account", "totp_key")[1]
+        ).verify(totp_code, valid_window=1)
 
     if (valid
             and data['username'] == DashboardConfig.GetConfig("Account", "username")[1]
@@ -327,6 +383,7 @@ def API_AuthenticateLogin():
         authToken = hashlib.sha256(f"{data['username']}{datetime.now()}".encode()).hexdigest()
         session['role'] = 'admin'
         session['username'] = authToken
+        session['signInMethod'] = 'local'
         resp = ResponseObject(True, DashboardConfig.GetConfig("Other", "welcome_session")[1])
         resp.set_cookie("authToken", authToken)
         session.permanent = True
@@ -342,6 +399,14 @@ def API_AuthenticateLogin():
 def API_SignOut():
     resp = ResponseObject(True, "")
     resp.delete_cookie("authToken")
+    if session.get('signInMethod') == "OIDC":
+        status, oidc_config = AdminOIDC.GetProviderConfiguration(session.get('signInPayload').get("Provider"))
+        signOut = requests.get(
+            oidc_config.get("end_session_endpoint"),
+            params={
+                'id_token_hint': session.get('signInPayload').get("Payload").get('sid')
+            }
+        )
     session.clear()
     return resp
 
@@ -1204,52 +1269,75 @@ def API_getDashboardTheme():
 def API_getDashboardVersion():
     return ResponseObject(data=DashboardConfig.GetConfig("Server", "version")[1])
 
-@app.post(f'{APP_PREFIX}/api/savePeerScheduleJob')
+@app.post(f'{APP_PREFIX}/api/PeerScheduleJob')
+@require_fields('Configuration', 'Peer', 'Field', 'Operator', 'Value', 'Action')
 def API_savePeerScheduleJob():
     data = request.json
-    if "Job" not in data.keys():
-        return ResponseObject(False, "Please specify job")
-    job: dict = data['Job']
-    if "Peer" not in job.keys() or "Configuration" not in job.keys():
-        return ResponseObject(False, "Please specify peer and configuration")
-    configuration = WireguardConfigurations.get(job['Configuration'])
-    if configuration is None:
-        return ResponseObject(False, "Configuration does not exist")
-    f, fp = configuration.searchPeer(job['Peer'])
-    if not f:
-        return ResponseObject(False, "Peer does not exist")
-    
-    
-    s, p = AllPeerJobs.saveJob(PeerJob(
-        job['JobID'], job['Configuration'], job['Peer'], job['Field'], job['Operator'], job['Value'],
-        job['CreationDate'], job['ExpireDate'], job['Action']))
-    if s:
-        return ResponseObject(s, data=p)
-    return ResponseObject(s, message=p)
 
-@app.post(f'{APP_PREFIX}/api/deletePeerScheduleJob')
+    configuration = WireguardConfigurations.get(data['Configuration'])
+    if configuration is None:
+        return ResponseObject(False, "Configuration does not exist", status_code=404)
+
+    peerKey = unquote(data['Peer'])
+    found, _ = configuration.searchPeer(peerKey)
+    if not found:
+        return ResponseObject(False, "Peer does not exist", status_code=404)
+
+    jobID = data.get('JobID', str(uuid4()))
+    if len(AllPeerJobs.searchJobById(jobID)) > 0:
+        return ResponseObject(False, "Job already exists", status_code=409)
+
+    success, result = AllPeerJobs.saveJob(PeerJob(
+        jobID, data['Configuration'], peerKey, data['Field'], data['Operator'], data['Value'],
+        datetime.now(), data.get('ExpireDate'), data['Action']))
+    if success:
+        return ResponseObject(success, data=result)
+    return ResponseObject(success, message=result)
+
+@app.put(f'{APP_PREFIX}/api/PeerScheduleJob')
+@require_fields('JobID', 'Configuration', 'Peer', 'Field', 'Operator', 'Value', 'Action')
+def API_updatePeerScheduleJob():
+    data = request.json
+
+    configuration = WireguardConfigurations.get(data['Configuration'])
+    if configuration is None:
+        return ResponseObject(False, "Configuration does not exist", status_code=404)
+
+    peerKey = unquote(data['Peer'])
+    found, _ = configuration.searchPeer(peerKey)
+    if not found:
+        return ResponseObject(False, "Peer does not exist", status_code=404)
+
+    existing = AllPeerJobs.searchJobById(data['JobID'])
+    if len(existing) == 0:
+        return ResponseObject(False, "Job does not exist", status_code=404)
+
+    success, result = AllPeerJobs.saveJob(PeerJob(
+        data['JobID'], data['Configuration'], peerKey, data['Field'], data['Operator'], data['Value'],
+        datetime.now(), data.get('ExpireDate'), data['Action']))
+    if success:
+        return ResponseObject(success, data=result)
+    return ResponseObject(success, message=result)
+
+@app.delete(f'{APP_PREFIX}/api/PeerScheduleJob')
+@require_fields('JobID', 'Configuration', 'Peer')
 def API_deletePeerScheduleJob():
     data = request.json
-    if "Job" not in data.keys():
-        return ResponseObject(False, "Please specify job")
-    job: dict = data['Job']
-    if "Peer" not in job.keys() or "Configuration" not in job.keys():
-        return ResponseObject(False, "Please specify peer and configuration")
-    configuration = WireguardConfigurations.get(job['Configuration'])
+
+    configuration = WireguardConfigurations.get(data['Configuration'])
     if configuration is None:
-        return ResponseObject(False, "Configuration does not exist")
-    # f, fp = configuration.searchPeer(job['Peer'])
-    # if not f:
-    #     return ResponseObject(False, "Peer does not exist")
+        return ResponseObject(False, "Configuration does not exist", status_code=404)
 
-    s, p = AllPeerJobs.deleteJob(PeerJob(
-        job['JobID'], job['Configuration'], job['Peer'], job['Field'], job['Operator'], job['Value'],
-        job['CreationDate'], job['ExpireDate'], job['Action']))
-    if s:
-        return ResponseObject(s)
-    return ResponseObject(s, message=p)
+    peerKey = unquote(data['Peer'])
+    success, result = AllPeerJobs.deleteJob(PeerJob(
+        data['JobID'], data['Configuration'], peerKey, data.get('Field', ''),
+        data.get('Operator', ''), data.get('Value', ''),
+        datetime.now(), data.get('ExpireDate'), data.get('Action', '')))
+    if success:
+        return ResponseObject(success, message="Job deleted successfully")
+    return ResponseObject(success, message=result)
 
-@app.get(f'{APP_PREFIX}/api/getPeerScheduleJobLogs/<configName>')
+@app.get(f'{APP_PREFIX}/api/PeerScheduleJobLogs/<configName>')
 def API_getPeerScheduleJobLogs(configName):
     if configName not in WireguardConfigurations.keys():
         return ResponseObject(False, "Configuration does not exist")
@@ -1274,11 +1362,11 @@ def API_ping_getAllPeersIpAddress():
             for x in allowed_ip:
                 try:
                     ip = ipaddress.ip_network(x, strict=False)
+                    if ip.num_addresses == 1:
+                        parsed.append(str(ip.network_address))
                 except ValueError as e:
                     app.logger.error(f"Failed to parse IP address of {p.id} - {c.Name}")
-                host = list(ip.hosts())
-                if len(host) == 1:
-                    parsed.append(str(host[0]))
+
             endpoint = p.endpoint.replace(" ", "").replace("(none)", "")
             if len(p.name) > 0:
                 cips[f"{p.name} - {p.id}"] = {
@@ -1415,11 +1503,15 @@ def API_Welcome_GetTotpLink():
 @app.post(f'{APP_PREFIX}/api/Welcome_VerifyTotpLink')
 def API_Welcome_VerifyTotpLink():
     data = request.get_json()
-    totp = pyotp.TOTP(DashboardConfig.GetConfig("Account", "totp_key")[1]).now()
-    if totp == data['totp']:
+    totp_code = str(data.get("totp", "")).strip()
+    totpValid = pyotp.TOTP(
+	DashboardConfig.GetConfig("Account", "totp_key")[1]
+    ).verify(totp_code, valid_window=1)
+
+    if totpValid:
         DashboardConfig.SetConfig("Account", "totp_verified", "true")
         DashboardConfig.SetConfig("Account", "enable_totp", "true")
-    return ResponseObject(totp == data['totp'])
+    return ResponseObject(totpValid)
 
 @app.post(f'{APP_PREFIX}/api/Welcome_Finish')
 def API_Welcome_Finish():
@@ -1511,7 +1603,8 @@ def API_Email_Send():
                     subject = Template(data.get('Subject', '')).render(peer=p.toJson(), configurationFile=download)
                     if data.get('IncludeAttachment', False):
                         u = str(uuid4())
-                        attachmentName = f'{u}.conf'
+                        peerName = p.toJson().get('name', '').strip()
+                        attachmentName = f'{peerName if peerName else u}.conf'
                         with open(os.path.join('./attachments', attachmentName,), 'w+') as f:
                             f.write(download['file'])   
                         

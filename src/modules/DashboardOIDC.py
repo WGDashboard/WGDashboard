@@ -82,13 +82,18 @@ class DashboardOIDC:
     
             headers = jwt.get_unverified_header(id_token)
             kid = headers["kid"]
-    
+
             key = next(k for k in jwks["keys"] if k["kid"] == kid)
-                    
+
+            alg = key.get("alg") or headers.get("alg")
+            supported_algs = oidc_config.get("id_token_signing_alg_values_supported")
+            if supported_algs and alg not in supported_algs:
+                return False, f"Unsupported token signing algorithm: {alg}"
+
             payload = jwt.decode(
                 id_token,
                 key,
-                algorithms=[key["alg"]],
+                algorithms=[alg],
                 audience=provider_info.get('client_id'),
                 issuer=issuer,
                 access_token=access_token
@@ -134,7 +139,7 @@ class DashboardOIDC:
                             'openid_configuration': oidc_config
                         }
                         self.provider_secret[k] = providers[k]['client_secret']
-                        current_app.logger.info(f"Registered OIDC Provider: {k}")
+                        current_app.logger.info(f"Registered OIDC Provider[{self.mode}]: {k}")
                     except Exception as e:
                         current_app.logger.error(f"Failed to register OIDC config for {k}", exc_info=e)
         except Exception as e:

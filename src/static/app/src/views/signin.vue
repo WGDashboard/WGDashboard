@@ -7,10 +7,11 @@ import {GetLocale} from "@/utilities/locale.js";
 import LocaleText from "@/components/text/localeText.vue";
 import SignInInput from "@/components/signIn/signInInput.vue";
 import SignInTOTP from "@/components/signIn/signInTOTP.vue";
+import SignInOIDC from "@/components/signIn/signInOIDC.vue";
 
 export default {
 	name: "signin",
-	components: {SignInTOTP, SignInInput, LocaleText, RemoteServerList, Message},
+	components: {SignInOIDC, SignInTOTP, SignInInput, LocaleText, RemoteServerList, Message},
 	async setup(){
 		const store = DashboardConfigurationStore()
 		let theme = "dark"
@@ -171,7 +172,7 @@ export default {
 				</form>
 				<RemoteServerList v-else></RemoteServerList>
 
-				<div class="d-flex mt-3" v-if="!this.store.IsElectronApp">
+				<div class="d-flex mt-3 flex-column" v-if="!this.store.IsElectronApp">
 					<div class="form-check form-switch ms-auto">
 						<input
 							v-model="this.store.CrossServerConfiguration.Enable"
@@ -184,6 +185,8 @@ export default {
 							<LocaleText t="Access Remote Server"></LocaleText>
 						</label>
 					</div>
+
+					<SignInOIDC />
 				</div>
 			</div>
 		</div>

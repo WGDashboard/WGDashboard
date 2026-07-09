@@ -31,6 +31,11 @@ export default {
 	mounted() {
 		this.value = this.store.Configuration.Peers[this.targetData];
 	},
+	computed: {
+		isBoolean(){
+			return typeof this.value === "boolean"
+		}
+	},
 	methods:{
 		async useValidation(){
 			if(this.changed){
@@ -67,7 +72,14 @@ export default {
 				<LocaleText :t="this.title"></LocaleText>
 			</small></strong>
 		</label>
-		<input type="text" class="form-control" 
+		<div v-if="isBoolean" class="form-check form-switch">
+			<input class="form-check-input" type="checkbox" role="switch"
+			       v-model="this.value"
+			       :id="this.uuid"
+			       @change="this.changed = true; useValidation()"
+			       :disabled="this.updating">
+		</div>
+		<input v-else type="text" class="form-control" 
 		       :class="{'is-invalid': showInvalidFeedback, 'is-valid': isValid}"
 		       :id="this.uuid"
 		       v-model="this.value"

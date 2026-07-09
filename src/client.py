@@ -100,7 +100,7 @@ def createClientBlueprint(wireguardConfigurations: dict[WireguardConfiguration],
         date = datetime.datetime.now(tz=datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
         
         emailSender = EmailSender(dashboardConfig)
-        if not emailSender.ready():
+        if not emailSender.is_ready():
             return ResponseObject(False, "We can't send you an email due to your Administrator has not setup email service. Please contact your administrator.") 
         
         data = request.get_json()
