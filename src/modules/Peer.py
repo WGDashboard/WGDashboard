@@ -4,7 +4,7 @@ Peer
 import base64
 import datetime
 import json
-import os, subprocess, uuid, random, re
+import subprocess, re
 from datetime import timedelta
 
 import jinja2
@@ -106,22 +106,14 @@ class Peer:
                 return False, "Private key does not match with the public key"
 
         try:
-            rand = random.Random()
-            uid = str(uuid.UUID(int=rand.getrandbits(128), version=4))
             psk_exist = len(preshared_key) > 0
-
-            if psk_exist:
-                with open(uid, "w+") as f:
-                    f.write(preshared_key)
 
             newAllowedIPs = allowed_ip.replace(" ", "")
             if not CheckAddress(newAllowedIPs):
                     return False, "Allowed IPs entry format is incorrect"
 
-            command = [self.configuration.Protocol, "set", self.configuration.Name, "peer", self.id, "allowed-ips", newAllowedIPs, "preshared-key", uid if psk_exist else "/dev/null"]
-            updateAllowedIp = subprocess.check_output(command, stderr=subprocess.STDOUT)
-
-            if psk_exist: os.remove(uid)
+            command = [self.configuration.Protocol, "set", self.configuration.Name, "peer", self.id, "allowed-ips", newAllowedIPs, "preshared-key", "/dev/stdin" if psk_exist else "/dev/null"]
+            updateAllowedIp = subprocess.check_output(command, input=preshared_key.encode() if psk_exist else None, stderr=subprocess.STDOUT)
 
             if len(updateAllowedIp.decode().strip("\n")) != 0:
                 current_app.logger.error("Update peer failed when updating Allowed IPs")
