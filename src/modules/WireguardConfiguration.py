@@ -316,7 +316,8 @@ class WireguardConfiguration:
             f'{dbName}_history_endpoint', self.metadata,
             sqlalchemy.Column('id', sqlalchemy.String(255), nullable=False),
             sqlalchemy.Column('endpoint', sqlalchemy.String(255), nullable=False),
-            sqlalchemy.Column('time', time_col_type)
+            sqlalchemy.Column('time', time_col_type),
+            extend_existing=True
         )
         
         self.infoTable = sqlalchemy.Table(
@@ -942,8 +943,8 @@ class WireguardConfiguration:
         files.sort(key=lambda x: x[1], reverse=True)
 
         for f, ct in files:
-            if RegexMatch(rf"^({self.Name})_(\d+)\\.(conf)$", f):
-                s = re.search(rf"^({self.Name})_(\d+)\\.(conf)$", f)
+            if RegexMatch(rf"^({self.Name})_(\d+)\.(conf)$", f):
+                s = re.search(rf"^({self.Name})_(\d+)\.(conf)$", f)
                 date = s.group(2)
                 d = {
                     "filename": f,
@@ -984,7 +985,11 @@ class WireguardConfiguration:
         if backupFileName not in backups:
             return False
         try:
-            os.remove(os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', backupFileName))
+            backupPath = os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup')
+            for ext in ('.conf', '.sql'):
+                f = os.path.join(backupPath, os.path.splitext(backupFileName)[0] + ext)
+                if os.path.exists(f):
+                    os.remove(f)
         except Exception as e:
             return False
         return True
