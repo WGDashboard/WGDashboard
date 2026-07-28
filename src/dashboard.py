@@ -38,6 +38,7 @@ from logging.config import dictConfig
 from modules.DashboardClients import DashboardClients
 from modules.DashboardPlugins import DashboardPlugins
 from modules.DashboardWebHooks import DashboardWebHooks
+from modules.WarpManager import WarpManager
 from modules.NewConfigurationTemplates import NewConfigurationTemplates
 
 class CustomJsonEncoder(DefaultJSONProvider):
@@ -1733,6 +1734,29 @@ def API_WebHooks_GetWebHookSessions():
         return ResponseObject(False, "Webhook does not exist")
     
     return ResponseObject(data=DashboardWebHooks.GetWebHookSessions(webHook))
+
+@app.post(f'{APP_PREFIX}/api/warp/createInterface')
+def API_Warp_CreateInterface():
+    data = request.get_json() or {}
+    license_key = data.get("licenseKey")
+    warp_name = data.get("warpName", "warp0")
+    wg_conf_dir = DashboardConfig.GetConfig("Server", "wg_conf_path")[1]
+    
+    status, msg = WarpManager.register_warp(license_key, warp_name, wg_conf_dir)
+    return ResponseObject(status, msg)
+
+@app.post(f'{APP_PREFIX}/api/warp/rotateInterface')
+def API_Warp_RotateInterface():
+    data = request.get_json() or {}
+    config_name = data.get("configName")
+    warp_name = data.get("warpName", "warp0")
+    
+    if not config_name or config_name not in WireguardConfigurations:
+        return ResponseObject(False, "WireGuard configuration not found")
+        
+    config_obj = WireguardConfigurations[config_name]
+    status, msg = WarpManager.attach_outband(config_obj.configPath, warp_name)
+    return ResponseObject(status, msg)
     
 
 '''
