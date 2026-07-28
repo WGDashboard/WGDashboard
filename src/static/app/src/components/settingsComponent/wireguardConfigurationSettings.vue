@@ -6,6 +6,8 @@ import DashboardSettingsWireguardConfigurationAutostart
 	from "@/components/settingsComponent/dashboardSettingsWireguardConfigurationAutostart.vue";
 import DashboardWireguardConfigurationTracking
 	from "@/components/settingsComponent/dashboardWireguardConfigurationTracking.vue";
+import DashboardWarpSettings
+	from "@/components/settingsComponent/dashboardWarpSettings.vue";
 </script>
 
 <template>
@@ -19,6 +21,7 @@ import DashboardWireguardConfigurationTracking
 		</DashboardSettingsInputWireguardConfigurationPath>
 		<DashboardSettingsWireguardConfigurationAutostart></DashboardSettingsWireguardConfigurationAutostart>
 		<DashboardWireguardConfigurationTracking/>
+		<DashboardWarpSettings/>
 	</div>
 </template>
 
