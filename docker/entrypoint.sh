@@ -7,7 +7,7 @@ trap 'stop_service' SIGTERM
 
 # Hash password with bcrypt
 hash_password() {
-  ${WGDASH}/src/venv/bin/python3 -c "import bcrypt; print(bcrypt.hashpw('$1'.encode(), bcrypt.gensalt(12)).decode())"
+  "${WGDASH}"/src/venv/bin/python3 -c "import bcrypt, hashlib, base64; print(bcrypt.hashpw(base64.b64encode(hashlib.sha256(\"$1\".encode(\"utf-8\")).digest()), bcrypt.gensalt(12)).decode()\"utf-8\")"
 }
 
 # Function to set or update section/key/value in the INI file
