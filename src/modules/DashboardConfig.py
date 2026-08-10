@@ -1,7 +1,7 @@
 """
 Dashboard Configuration
 """
-import configparser, secrets, os, pyotp, ipaddress, bcrypt
+import configparser, secrets, os, pyotp, ipaddress, bcrypt, base64, hashlib
 from sqlalchemy_utils import database_exists, create_database
 import sqlalchemy as db
 from datetime import datetime
@@ -244,10 +244,10 @@ class DashboardConfig:
         return True, ""
 
     def generatePassword(self, plainTextPassword: str):
-        return bcrypt.hashpw(plainTextPassword.encode("utf-8"), bcrypt.gensalt())
+        return bcrypt.hashpw(base64.b64encode(hashlib.sha256(plainTextPassword.encode("utf-8")).digest()), bcrypt.gensalt())
 
     def __checkPassword(self, plainTextPassword: str, hashedPassword: bytes):
-        return bcrypt.checkpw(plainTextPassword.encode("utf-8"), hashedPassword)
+        return bcrypt.checkpw(base64.b64encode(hashlib.sha256(plainTextPassword.encode("utf-8")).digest()), hashedPassword)
 
     def SetConfig(self, section: str, key: str, value: str | bool | list[str] | dict[str, str], init: bool = False) -> tuple[bool, str] | tuple[bool, None]:
         if key in self.hiddenAttribute and not init:

@@ -23,7 +23,7 @@ dashboard_language = en-US
 
 [Account]
 username = admin
-password = $2b$12$nWgPW.4adylN2oMhTyS5AeoiAvDj9SZxnXS.lCMkJYCV6jytmHKzu
+password = $2b$12$9OxPP./p8SXAXFVtDaaQ2uMWzwbE2TEACKfNdLwLtxn1d.o8jxlAa
 enable_totp = false
 totp_verified = false
 totp_key = UOXAUPDDUNFTTHXZNQI4J4BWCEJZ63HF

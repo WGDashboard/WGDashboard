@@ -3,7 +3,7 @@ import hashlib
 import random
 import uuid
 
-import bcrypt
+import bcrypt, base64, hashlib
 import pyotp
 import sqlalchemy as db
 import requests
@@ -147,7 +147,8 @@ class DashboardClients:
             return False
         existingClient = self.SignIn_UserExistence(Email)
         if existingClient:
-            return bcrypt.checkpw(Password.encode("utf-8"), existingClient.get("Password").encode("utf-8"))            
+            encodePassword = base64.b64encode(hashlib.sha256(Password.encode("utf-8")).digest())
+            return bcrypt.checkpw(encodePassword, existingClient.get("Password").encode("utf-8"))
         return False
         
     def SignIn_UserExistence(self, Email):
@@ -280,7 +281,7 @@ class DashboardClients:
             with self.engine.begin() as conn:
                 newClientUUID = str(uuid.uuid4())
                 totpKey = pyotp.random_base32()
-                encodePassword = Password.encode('utf-8')
+                encodePassword = base64.b64encode(hashlib.sha256(Password.encode('utf-8')).digest())
                 conn.execute(
                     self.dashboardClientsTable.insert().values({
                         "ClientID": newClientUUID,
@@ -318,11 +319,12 @@ class DashboardClients:
             return pwStrength, msg
         try:
             with self.engine.begin() as conn:
+                encodeNewPassword = base64.b64encode(hashlib.sha256(NewPassword.encode('utf-8')).digest())
                 conn.execute(
                     self.dashboardClientsTable.update().values({
                         "TotpKeyVerified": None,
                         "TotpKey": pyotp.random_base32(),
-                        "Password": bcrypt.hashpw(NewPassword.encode('utf-8'), bcrypt.gensalt()).decode("utf-8"),
+                        "Password": bcrypt.hashpw(encodeNewPassword, bcrypt.gensalt()).decode("utf-8"),
                     }).where(
                         self.dashboardClientsTable.c.ClientID == ClientID
                     )
@@ -354,9 +356,10 @@ class DashboardClients:
             return pwStrength, msg
         try:
             with self.engine.begin() as conn:
+                encodeNewPassword = base64.b64encode(hashlib.sha256(NewPassword.encode('utf-8')).digest())
                 conn.execute(
                     self.dashboardClientsTable.update().values({
-                        "Password": bcrypt.hashpw(NewPassword.encode('utf-8'), bcrypt.gensalt()).decode("utf-8"),
+                        "Password": bcrypt.hashpw(encodeNewPassword, bcrypt.gensalt()).decode("utf-8"),
                     }).where(
                         self.dashboardClientsTable.c.ClientID == ClientID
                     )
@@ -495,4 +498,3 @@ class DashboardClients:
     
     def UnassignClient(self, AssignmentID):
         return self.DashboardClientsPeerAssignment.UnassignClients(AssignmentID)
-        

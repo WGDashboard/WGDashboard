@@ -1,6 +1,6 @@
 import logging
 import random, shutil, sqlite3, configparser, hashlib, ipaddress, json, os, secrets, subprocess
-import time, re, uuid, bcrypt, psutil, pyotp, threading
+import time, re, uuid, bcrypt, psutil, pyotp, threading, hashlib, base64
 import traceback
 from functools import wraps
 from urllib.parse import unquote
@@ -366,7 +366,8 @@ def API_AuthenticateLogin():
         resp.set_cookie("authToken", authToken)
         session.permanent = True
         return resp
-    valid = bcrypt.checkpw(data['password'].encode("utf-8"),
+    encodePassword = base64.b64encode(hashlib.sha256(data['password'].encode("utf-8")).digest())
+    valid = bcrypt.checkpw(encodePassword,
                            DashboardConfig.GetConfig("Account", "password")[1].encode("utf-8"))
     totpEnabled = DashboardConfig.GetConfig("Account", "enable_totp")[1]
     totpValid = False
