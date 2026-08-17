@@ -8,7 +8,7 @@ icmplib==3.0.4
 gunicorn==26.0.0
 requests==2.34.2
 tcconfig==0.30.1
-sqlalchemy==2.0.51
+sqlalchemy==2.0.52
 sqlalchemy_utils==0.42.1
 psycopg[binary]==3.3.4
 PyMySQL==1.2.0
