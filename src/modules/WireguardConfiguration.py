@@ -126,6 +126,15 @@ class WireguardConfiguration:
                 self.__parser["Interface"]["I3"] = self.I3
                 self.__parser["Interface"]["I4"] = self.I4
                 self.__parser["Interface"]["I5"] = self.I5
+                self.__parser["Interface"]["HeaderProtectionKey"] = self.HeaderProtectionKey
+                self.__parser["Interface"]["ContentPaddingAddition"] = self.ContentPaddingAddition
+                self.__parser["Interface"]["RekeyAfterTime"] = self.RekeyAfterTime
+                self.__parser["Interface"]["RekeyTimeout"] = self.RekeyTimeout
+                self.__parser["Interface"]["RejectAfterTime"] = self.RejectAfterTime
+                self.__parser["Interface"]["KeepaliveTimeout"] = self.KeepaliveTimeout
+                self.__parser["Interface"]["MaxHandshakeAttempts"] = self.MaxHandshakeAttempts
+                self.__parser["Interface"]["RandomTrailers"] = self.RandomTrailers
+                self.__parser["Interface"]["DisableCookies"] = self.DisableCookies
 
             if "Backup" not in data.keys():
                 self.createDatabase()
@@ -1008,7 +1017,7 @@ class WireguardConfiguration:
             original = [l.rstrip("\n") for l in f.readlines()]
             allowEdit = ["Address", "PreUp", "PostUp", "PreDown", "PostDown", "ListenPort", "Table"]
             if self.Protocol == 'awg':
-                allowEdit += ["Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4", "I1", "I2", "I3", "I4", "I5"]
+                allowEdit += ["Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4", "I1", "I2", "I3", "I4", "I5", "HeaderProtectionKey", "ContentPaddingAddition", "RekeyAfterTime", "RekeyTimeout", "RejectAfterTime", "KeepaliveTimeout", "MaxHandshakeAttempts", "RandomTrailers", "DisableCookies"]
             start = original.index("[Interface]")
             try:
                 end = original.index("[Peer]")

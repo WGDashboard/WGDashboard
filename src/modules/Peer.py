@@ -206,7 +206,16 @@ class Peer:
                 "I2": self.configuration.I2,
                 "I3": self.configuration.I3,
                 "I4": self.configuration.I4,
-                "I5": self.configuration.I5
+                "I5": self.configuration.I5,
+                "HeaderProtectionKey": self.configuration.HeaderProtectionKey,
+                "ContentPaddingAddition": self.configuration.ContentPaddingAddition,
+                "RekeyAfterTime": self.configuration.RekeyAfterTime,
+                "RekeyTimeout": self.configuration.RekeyTimeout,
+                "RejectAfterTime": self.configuration.RejectAfterTime,
+                "KeepaliveTimeout": self.configuration.KeepaliveTimeout,
+                "MaxHandshakeAttempts": self.configuration.MaxHandshakeAttempts,
+                "RandomTrailers": self.configuration.RandomTrailers,
+                "DisableCookies": self.configuration.DisableCookies
             })
 
         peerSection = {

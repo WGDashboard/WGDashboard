@@ -37,6 +37,15 @@ class AmneziaConfiguration(WireguardConfiguration):
         self.I3 = "0"
         self.I4 = "0"
         self.I5 = "0"
+        self.HeaderProtectionKey = "0"
+        self.ContentPaddingAddition = 0
+        self.RekeyAfterTime = 0
+        self.RekeyTimeout = 0
+        self.RejectAfterTime = 0
+        self.KeepaliveTimeout = 0
+        self.MaxHandshakeAttempts = 0
+        self.RandomTrailers = 0
+        self.DisableCookies = 0
 
         super().__init__(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, name, data, backup, startup, wg=False)
 
@@ -79,7 +88,16 @@ class AmneziaConfiguration(WireguardConfiguration):
             "I2": self.I2,
             "I3": self.I3,
             "I4": self.I4,
-            "I5": self.I5
+            "I5": self.I5,
+            "HeaderProtectionKey": self.HeaderProtectionKey,
+            "ContentPaddingAddition": self.ContentPaddingAddition,
+            "RekeyAfterTime": self.RekeyAfterTime,
+            "RekeyTimeout": self.RekeyTimeout,
+            "RejectAfterTime": self.RejectAfterTime,
+            "KeepaliveTimeout": self.KeepaliveTimeout,
+            "MaxHandshakeAttempts": self.MaxHandshakeAttempts,
+            "RandomTrailers": self.RandomTrailers,
+            "DisableCookies": self.DisableCookies
         }
 
     def createDatabase(self, dbName = None):
