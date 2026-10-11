@@ -124,17 +124,28 @@ class DashboardConfig:
             'preshared_key': db.String(255)
         }
 
+        runtime_column_names = ("endpoint", "status", "latest_handshake")
+        peer_columns = {
+            name: column_type for name, column_type in expected_columns.items()
+            if name not in runtime_column_names
+        }
+        runtime_columns = {
+            "id": expected_columns["id"],
+            **{name: expected_columns[name] for name in runtime_column_names}
+        }
+
         inspector = db.inspect(self.engine)
 
         with self.engine.begin() as conn:
             for cfg_name, cfg_obj in wireguardConfigurations.items():
-                tables_to_check = [
-                    cfg_name,
-                    f'{cfg_name}_restrict_access',
-                    f'{cfg_name}_deleted'
-                ]
+                tables_to_check = {
+                    cfg_name: peer_columns,
+                    f'{cfg_name}_runtime': runtime_columns,
+                    f'{cfg_name}_restrict_access': expected_columns,
+                    f'{cfg_name}_deleted': expected_columns
+                }
 
-                for table_name in tables_to_check:
+                for table_name, columns in tables_to_check.items():
                     if not table_name:
                         continue
                     if not inspector.has_table(table_name):
@@ -142,7 +153,7 @@ class DashboardConfig:
 
                     existing_columns = [c['name'] for c in inspector.get_columns(table_name)]
 
-                    for col_name, col_type in expected_columns.items():
+                    for col_name, col_type in columns.items():
                         if col_name not in existing_columns:
                             type_str = col_type().compile(dialect=self.engine.dialect)
                             current_app.logger.info(f"Adding missing column '{col_name}' to table '{table_name}'")
