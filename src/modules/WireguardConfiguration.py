@@ -240,7 +240,7 @@ class WireguardConfiguration:
             self.Status = self.getStatus()
 
     def __dropDatabase(self):
-        existingTables = [self.Name, f'{self.Name}_restrict_access', f'{self.Name}_transfer', f'{self.Name}_deleted']
+        existingTables = [self.Name, f'{self.Name}_restrict_access', f'{self.Name}_transfer', f'{self.Name}_deleted', f'{self.Name}_history_endpoint']
         try:
             with self.engine.begin() as conn:
                 for name in existingTables:
@@ -1092,6 +1092,7 @@ class WireguardConfiguration:
                 doRenameStatement("_restrict_access")
                 doRenameStatement("_deleted")
                 doRenameStatement("_transfer")
+                doRenameStatement("_history_endpoint")
                 conn.execute(
                     self.infoTable.update()
                     .where(self.infoTable.c.ID == self.Name)
