@@ -28,6 +28,7 @@ from modules.SystemStatus import SystemStatus
 from modules.PeerShareLinks import PeerShareLinks
 from modules.PeerJobs import PeerJobs
 from modules.DashboardConfig import DashboardConfig
+from modules.DashboardAccounts import DashboardAccounts
 from modules.WireguardConfiguration import WireguardConfiguration
 from modules.AmneziaConfiguration import AmneziaConfiguration
 
@@ -199,6 +200,7 @@ app.json = CustomJsonEncoder(app)
 with app.app_context():
     SystemStatus = SystemStatus()
     DashboardConfig = DashboardConfig()
+    DashboardAccounts: DashboardAccounts = DashboardAccounts(DashboardConfig)
     EmailSender = EmailSender(DashboardConfig)
     AllPeerShareLinks: PeerShareLinks = PeerShareLinks(DashboardConfig, WireguardConfigurations)
     AllPeerJobs: PeerJobs = PeerJobs(DashboardConfig, WireguardConfigurations, AllPeerShareLinks)
@@ -256,6 +258,7 @@ def auth_req():
                 # f'/static/', 
                 f'{appPrefix}/api/validateAuthentication', 
                 f'{appPrefix}/api/authenticate', 
+                f'{appPrefix}/api/authenticateTotp', 
                 # f'{appPrefix}/api/getDashboardConfiguration',
                 f'{appPrefix}/api/getDashboardTheme', 
                 f'{appPrefix}/api/getDashboardVersion', 
@@ -274,6 +277,18 @@ def auth_req():
                     and not request.path.startswith(f'{appPrefix}/assets')
                     and request.path not in whiteList
             ):
+                response = Flask.make_response(app, {
+                    "status": False,
+                    "message": "Unauthorized access.",
+                    "data": None
+                })
+                response.content_type = "application/json"
+                response.status_code = 401
+                return response
+
+            if (session.get("role") == "admin" and session.get("account") is not None
+                    and not DashboardAccounts.Exists(session.get("account"))):
+                session.clear()
                 response = Flask.make_response(app, {
                     "status": False,
                     "message": "Unauthorized access.",
@@ -309,34 +324,58 @@ def API_AuthenticateLogin():
         authToken = hashlib.sha256(f"{request.headers.get('wg-dashboard-apikey')}{datetime.now()}".encode()).hexdigest()
         session['role'] = 'admin'
         session['username'] = authToken
+        session['account'] = None
         resp = ResponseObject(True, DashboardConfig.GetConfig("Other", "welcome_session")[1])
         resp.set_cookie("authToken", authToken)
         session.permanent = True
         return resp
-    valid = bcrypt.checkpw(data['password'].encode("utf-8"),
-                           DashboardConfig.GetConfig("Account", "password")[1].encode("utf-8"))
-    totpEnabled = DashboardConfig.GetConfig("Account", "enable_totp")[1]
-    totpValid = False
-    if totpEnabled:
-        totpValid = pyotp.TOTP(DashboardConfig.GetConfig("Account", "totp_key")[1]).now() == data['totp']
-
-    if (valid
-            and data['username'] == DashboardConfig.GetConfig("Account", "username")[1]
-            and ((totpEnabled and totpValid) or not totpEnabled)
-    ):
-        authToken = hashlib.sha256(f"{data['username']}{datetime.now()}".encode()).hexdigest()
-        session['role'] = 'admin'
-        session['username'] = authToken
-        resp = ResponseObject(True, DashboardConfig.GetConfig("Other", "welcome_session")[1])
-        resp.set_cookie("authToken", authToken)
-        session.permanent = True
-        DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login success: {data['username']}")
-        return resp
-    DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login failed: {data['username']}")
-    if totpEnabled:
-        return ResponseObject(False, "Sorry, your username, password or OTP is incorrect.")
-    else:
+    username = data.get('username')
+    session.pop('pendingTotpAccount', None)
+    session.pop('pendingTotpAt', None)
+    valid, totpRequired = DashboardAccounts.CheckPassword(username, data.get('password', ''))
+    if not valid:
+        DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login failed: {username}")
         return ResponseObject(False, "Sorry, your username or password is incorrect.")
+
+    if totpRequired:
+        if data.get('totp'):
+            if DashboardAccounts.CheckTotp(username, data.get('totp')):
+                return CompleteAdminSignIn(username)
+            DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login failed (OTP): {username}")
+            return ResponseObject(False, "Sorry, your OTP is incorrect.")
+        session['pendingTotpAccount'] = username
+        session['pendingTotpAt'] = datetime.now().timestamp()
+        return ResponseObject(False, "Please enter the OTP from your authenticator.", data={"totpRequired": True})
+    return CompleteAdminSignIn(username)
+
+@app.post(f'{APP_PREFIX}/api/authenticateTotp')
+def API_AuthenticateTotp():
+    data = request.get_json()
+    username = session.get('pendingTotpAccount')
+    pendingAt = session.get('pendingTotpAt')
+    if username is None or pendingAt is None or datetime.now().timestamp() - pendingAt > TOTP_SIGN_IN_TIMEOUT:
+        session.pop('pendingTotpAccount', None)
+        session.pop('pendingTotpAt', None)
+        return ResponseObject(False, "Your sign in session has expired, please sign in again.", data={"expired": True})
+    if DashboardAccounts.CheckTotp(username, data.get('totp')):
+        return CompleteAdminSignIn(username)
+    DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login failed (OTP): {username}")
+    return ResponseObject(False, "Sorry, your OTP is incorrect.")
+
+TOTP_SIGN_IN_TIMEOUT = 300
+
+def CompleteAdminSignIn(username: str):
+    session.pop('pendingTotpAccount', None)
+    session.pop('pendingTotpAt', None)
+    authToken = hashlib.sha256(f"{username}{datetime.now()}".encode()).hexdigest()
+    session['role'] = 'admin'
+    session['username'] = authToken
+    session['account'] = username
+    resp = ResponseObject(True, DashboardConfig.GetConfig("Other", "welcome_session")[1])
+    resp.set_cookie("authToken", authToken)
+    session.permanent = True
+    DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login success: {username}")
+    return resp
 
 @app.get(f'{APP_PREFIX}/api/signout')
 def API_SignOut():
@@ -650,13 +689,30 @@ def API_restoreWireguardConfigurationBackup():
     
 @app.get(f'{APP_PREFIX}/api/getDashboardConfiguration')
 def API_getDashboardConfiguration():
-    return ResponseObject(data=DashboardConfig.toJson())
+    config = DashboardConfig.toJson()
+    account = DashboardAccounts.GetAccount(session.get("account"))
+    if account is not None:
+        config["Account"] = {
+            "username": account["username"],
+            "enable_totp": account["enable_totp"],
+            "totp_verified": account["totp_verified"],
+            "primary": account["primary"]
+        }
+    return ResponseObject(data=config)
 
 @app.post(f'{APP_PREFIX}/api/updateDashboardConfigurationItem')
 def API_updateDashboardConfigurationItem():
     data = request.get_json()
     if "section" not in data.keys() or "key" not in data.keys() or "value" not in data.keys():
         return ResponseObject(False, "Invalid request.")
+    if data["section"] == "Account":
+        valid, msg, newUsername = DashboardAccounts.UpdateAccountItem(session.get("account"), data["key"], data["value"])
+        if not valid:
+            return ResponseObject(False, msg)
+        if newUsername is not None and session.get("account") is not None:
+            session["account"] = newUsername
+        account = DashboardAccounts.GetAccount(session.get("account"))
+        return ResponseObject(True, data=account.get(data["key"]) if account else None)
     valid, msg = DashboardConfig.SetConfig(
         data["section"], data["key"], data['value'])
     if not valid:
@@ -667,6 +723,32 @@ def API_updateDashboardConfigurationItem():
             WireguardConfigurations.clear()
             InitWireguardConfigurationsList()
     return ResponseObject(True, data=DashboardConfig.GetConfig(data["section"], data["key"])[1])
+
+@app.get(f'{APP_PREFIX}/api/accounts')
+def API_getDashboardAccounts():
+    return ResponseObject(data={
+        "accounts": DashboardAccounts.GetAccounts(),
+        "current": DashboardAccounts.GetAccount(session.get("account"))["username"]
+    })
+
+@app.post(f'{APP_PREFIX}/api/accounts/add')
+def API_addDashboardAccount():
+    data = request.get_json()
+    status, msg = DashboardAccounts.AddAccount(data.get("username"), data.get("password"), data.get("repeatPassword"))
+    if status:
+        DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Account created: {data.get('username')}")
+        return ResponseObject(True, data=DashboardAccounts.GetAccounts())
+    return ResponseObject(False, msg)
+
+@app.post(f'{APP_PREFIX}/api/accounts/delete')
+def API_deleteDashboardAccount():
+    data = request.get_json()
+    status, msg = DashboardAccounts.DeleteAccount(data.get("username"),
+                                                  DashboardAccounts.GetAccount(session.get("account"))["username"])
+    if status:
+        DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Account deleted: {data.get('username')}")
+        return ResponseObject(True, data=DashboardAccounts.GetAccounts())
+    return ResponseObject(False, msg)
 
 @app.get(f'{APP_PREFIX}/api/getDashboardAPIKeys')
 def API_getDashboardAPIKeys():
@@ -1398,33 +1480,27 @@ Sign Up
 
 @app.get(f'{APP_PREFIX}/api/isTotpEnabled')
 def API_isTotpEnabled():
-    return (
-        ResponseObject(data=DashboardConfig.GetConfig("Account", "enable_totp")[1] and DashboardConfig.GetConfig("Account", "totp_verified")[1]))
+    return ResponseObject(data=DashboardAccounts.AnyTotpEnabled())
 
 
 @app.get(f'{APP_PREFIX}/api/Welcome_GetTotpLink')
 def API_Welcome_GetTotpLink():
-    if not DashboardConfig.GetConfig("Account", "totp_verified")[1]:
-        DashboardConfig.SetConfig("Account", "totp_key", pyotp.random_base32(), True)
-        return ResponseObject(
-            data=pyotp.totp.TOTP(DashboardConfig.GetConfig("Account", "totp_key")[1]).provisioning_uri(
-                issuer_name="WGDashboard"))
+    uri = DashboardAccounts.GetTotpProvisioningUri(session.get("account"))
+    if uri is not None:
+        return ResponseObject(data=uri)
     return ResponseObject(False)
 
 
 @app.post(f'{APP_PREFIX}/api/Welcome_VerifyTotpLink')
 def API_Welcome_VerifyTotpLink():
     data = request.get_json()
-    totp = pyotp.TOTP(DashboardConfig.GetConfig("Account", "totp_key")[1]).now()
-    if totp == data['totp']:
-        DashboardConfig.SetConfig("Account", "totp_verified", "true")
-        DashboardConfig.SetConfig("Account", "enable_totp", "true")
-    return ResponseObject(totp == data['totp'])
+    return ResponseObject(DashboardAccounts.VerifyTotp(session.get("account"), data.get('totp')))
 
 @app.post(f'{APP_PREFIX}/api/Welcome_Finish')
 def API_Welcome_Finish():
     data = request.get_json()
     if DashboardConfig.GetConfig("Other", "welcome_session")[1]:
+        wasPrimary = session.get("account") is not None and DashboardAccounts.IsPrimary(session.get("account"))
         if data["username"] == "":
             return ResponseObject(False, "Username cannot be blank.")
 
@@ -1440,6 +1516,8 @@ def API_Welcome_Finish():
                                                                       })
         if not updateUsername or not updatePassword:
             return ResponseObject(False, f"{updateUsernameErr},{updatePasswordErr}".strip(","))
+        if wasPrimary:
+            session["account"] = DashboardAccounts.PrimaryUsername()
 
         DashboardConfig.SetConfig("Other", "welcome_session", False)
     return ResponseObject()
