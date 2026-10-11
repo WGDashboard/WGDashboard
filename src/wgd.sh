@@ -54,6 +54,7 @@ help () {
     printf "|    debug: To start WGDashboard in debug mode (i.e run in foreground).         |\n"
     printf "|    update: To update WGDashboard to the newest version from GitHub.           |\n"
     printf "|    install: To install WGDashboard.                                           |\n"
+    printf "|    cleanup-orphan-tables: Preview or delete orphan SQLite configuration data. |\n"
     printf "| Thank you for using! Your support is my motivation ;)                         |\n"
     printf "=================================================================================\n"
 }
@@ -653,6 +654,8 @@ else
         _determineOS
     elif [ "$1" = "ping" ]; then
         _determinePypiMirror
+    elif [ "$1" = "cleanup-orphan-tables" ]; then
+        "$venv_python" -m migrations.cleanup_orphan_tables "${@:2}" || exit $?
     else
         help
     fi
