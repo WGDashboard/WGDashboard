@@ -14,15 +14,11 @@ export default {
 	async setup(){
 		const store = DashboardConfigurationStore()
 		let theme = "dark"
-		let totpEnabled = false;
 		let version = undefined;
 		if (!store.IsElectronApp){
 			await Promise.all([
 				fetchGet("/api/getDashboardTheme", {}, (res) => {
 					theme = res.data
-				}),
-				fetchGet("/api/isTotpEnabled", {}, (res) => {
-					totpEnabled = res.data
 				}),
 				fetchGet("/api/getDashboardVersion", {}, (res) => {
 					version = res.data
@@ -30,15 +26,16 @@ export default {
 			]);
 		}
 		store.removeActiveCrossServer();
-		return {store, theme, totpEnabled, version}
+		return {store, theme, version}
 	},
 	data(){
 		return {
 			data: {
 				username: "",
 				password: "",
-				totp: "",
 			},
+			totp: "",
+			stage: "credentials",
 			loginError: false,
 			loginErrorMessage: "",
 			loading: false
@@ -52,36 +49,55 @@ export default {
 			return GetLocale(key)
 		},
 		formValid(){
-			return this.data.username && this.data.password && ((this.totpEnabled && this.data.totp) || !this.totpEnabled)
+			return this.data.username && this.data.password
+		},
+		totpValid(){
+			return /^[0-9]{6}$/.test(this.totp)
 		}
 	},
 	methods: {
 		GetLocale,
+		signedIn(response){
+			this.loginError = false;
+			this.$refs["signInBtn"].classList.add("signedIn")
+			if (response.message){
+				this.$router.push('/welcome')
+			}else{
+				if (this.store.Redirect !== undefined){
+					this.$router.push(this.store.Redirect)
+				}else{
+					this.$router.push('/')
+				}
+			}
+		},
+		markInvalid(){
+			document.querySelectorAll("input[required]").forEach(x => {
+				x.classList.remove("is-valid")
+				x.classList.add("is-invalid")
+			});
+		},
+		backToCredentials(){
+			this.stage = "credentials"
+			this.totp = ""
+			this.data.password = ""
+			this.loading = false
+		},
 		async auth(){
 			if (this.formValid){
 				this.loading = true
 				await fetchPost("/api/authenticate", this.data, (response) => {
 					if (response.status){
-						this.loginError = false;
-						this.$refs["signInBtn"].classList.add("signedIn")
-						if (response.message){
-							this.$router.push('/welcome')
-						}else{
-							if (this.store.Redirect !== undefined){
-								this.$router.push(this.store.Redirect)
-							}else{
-								this.$router.push('/')
-							}
-						}
+						this.signedIn(response)
+					}else if (response.data?.totpRequired){
+						this.stage = "totp"
+						this.totp = ""
+						this.loading = false
+						this.$nextTick(() => document.querySelector("#totp")?.focus())
 					}else{
 						this.store.newMessage("Server", response.message, "danger")
-						document.querySelectorAll("input[required]").forEach(x => {
-							x.classList.remove("is-valid")
-							x.classList.add("is-invalid")
-						});
+						this.markInvalid()
 						this.loading = false
 					}
-					
 				})
 			}else{
 				document.querySelectorAll("input[required]").forEach(x => {
@@ -94,6 +110,25 @@ export default {
 					}
 				});
 			}
+		},
+		async authTotp(){
+			if (!this.totpValid || this.loading) return
+			this.loading = true
+			await fetchPost("/api/authenticateTotp", {totp: this.totp}, (response) => {
+				if (response.status){
+					this.signedIn(response)
+				}else{
+					this.store.newMessage("Server", response.message, "danger")
+					if (response.data?.expired){
+						this.backToCredentials()
+					}else{
+						this.totp = ""
+						this.markInvalid()
+						this.loading = false
+						this.$nextTick(() => document.querySelector("#totp")?.focus())
+					}
+				}
+			})
 		}
 	}
 }
@@ -111,9 +146,10 @@ export default {
 				<span class="dashboardLogo display-3">
 					<strong>WGDashboard</strong>
 				</span>
-				<form @submit="(e) => {e.preventDefault(); this.auth();}"
+				<form @submit="(e) => {e.preventDefault(); this.stage === 'totp' ? this.authTotp() : this.auth();}"
 				      class="mt-3"
 				      v-if="!this.store.CrossServerConfiguration.Enable">
+					<template v-if="this.stage === 'credentials'">
 					<div class="form-floating mb-2">
 						<input type="text"
 						       required
@@ -140,24 +176,37 @@ export default {
 							<LocaleText t="Password"></LocaleText>	
 						</label>
 					</div>
-					<div class="form-floating mb-2" v-if="this.totpEnabled">
-						<input type="text"
-						       id="totp"
-						       required
-						       :disabled="loading"
-						       placeholder="totp"
-						       v-model="this.data.totp"
-						       class="form-control rounded-3" 
-						       maxlength="6" 
-						       inputmode="numeric" 
-						       autocomplete="one-time-code">
-						<label for="floatingInput" class="d-flex">
-							<i class="bi bi-lock-fill me-2"></i>
-							<LocaleText t="OTP from your authenticator"></LocaleText>
-						</label>
-					</div>
+					</template>
+					<template v-else>
+						<p class="text-muted mb-2">
+							<LocaleText t="Enter the 6-digit code from your authenticator app"></LocaleText>
+							<span class="d-block"><small><i class="bi bi-person-circle me-1"></i>{{ this.data.username }}</small></span>
+						</p>
+						<div class="form-floating mb-2">
+							<input type="text"
+							       id="totp"
+							       required
+							       :disabled="loading"
+							       placeholder="totp"
+							       v-model="this.totp"
+							       @input="this.totp = this.totp.replace(/[^0-9]/g, ''); if (this.totpValid) this.authTotp()"
+							       class="form-control rounded-3"
+							       maxlength="6"
+							       inputmode="numeric"
+							       autocomplete="one-time-code">
+							<label for="totp" class="d-flex">
+								<i class="bi bi-lock-fill me-2"></i>
+								<LocaleText t="OTP from your authenticator"></LocaleText>
+							</label>
+						</div>
+						<a href="#" class="text-body small text-decoration-none"
+						   @click.prevent="this.backToCredentials()">
+							<i class="bi bi-chevron-left me-1"></i>
+							<LocaleText t="Back"></LocaleText>
+						</a>
+					</template>
 					<button class="btn btn-lg btn-dark ms-auto mt-5 w-100 d-flex btn-brand signInBtn rounded-3" 
-					        :disabled="this.loading || !this.formValid"
+					        :disabled="this.loading || (this.stage === 'totp' ? !this.totpValid : !this.formValid)"
 					        ref="signInBtn">
 							<span v-if="!this.loading" class="d-flex w-100">
 								<LocaleText t="Sign In"></LocaleText>
