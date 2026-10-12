@@ -235,14 +235,13 @@ class WireguardConfiguration:
         existingTables = [self.Name, f'{self.Name}_restrict_access', f'{self.Name}_transfer', f'{self.Name}_deleted']
         try:
             with self.engine.begin() as conn:
-                for t in existingTables:
+                for name in existingTables:
+                    table = sqlalchemy.Table(name, sqlalchemy.MetaData())
                     conn.execute(
-                        sqlalchemy.text(
-                            f'DROP TABLE "{t}"'
-                        )
+                        sqlalchemy.schema.DropTable(table, if_exists=True)
                     )
-        except Exception as e:
-            current_app.logger.error("Dropping table failed")
+        except Exception:
+            current_app.logger.exception("Dropping table failed")
             return False
         return True
 
@@ -327,11 +326,19 @@ class WireguardConfiguration:
                 rows = conn.execute(i.select()).mappings().fetchall()
                 for row in rows:
                     insert_stmt = i.insert().values(dict(row))
-                    yield str(insert_stmt.compile(compile_kwargs={"literal_binds": True}))
+                    yield str(
+                        insert_stmt.compile(
+                            dialect=self.engine.dialect,
+                            compile_kwargs={"literal_binds": True},
+                        )
+                    )
 
     def __importDatabase(self, sqlFilePath, restore = False) -> bool:
         if not restore:
-            self.__dropDatabase()
+            if not self.__dropDatabase():
+                raise RuntimeError(
+                    f"Failed to drop tables for configuration {self.Name}"
+                )
         self.createDatabase()
         if not os.path.exists(sqlFilePath):
             return False
