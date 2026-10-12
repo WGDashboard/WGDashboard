@@ -45,7 +45,6 @@ help () {
   printf "|    debug: To start WGDashboard in debug mode (i.e run in foreground).         |\n"
   printf "|    update: To update WGDashboard to the newest version from GitHub.           |\n"
   printf "|    install: To install WGDashboard.                                           |\n"
-  printf "|    migrate-runtime: Migrate SQLite peer runtime tables (offline).             |\n"
   printf "| Thank you for using! Your support is my motivation ;)                         |\n"
   printf "=================================================================================\n"
 }
@@ -548,8 +547,6 @@ else
     		_determineOS
     elif [ "$1" = "ping" ]; then
         	_determinePypiMirror
-    elif [ "$1" = "migrate-runtime" ]; then
-        python3 ./migrations/migrate_peer_runtime.py "${@:2}" || exit $?
 	else
 		help
 	fi
