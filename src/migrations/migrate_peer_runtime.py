@@ -6,6 +6,7 @@ Requires SQLite 3.35+ for DROP COLUMN.
 """
 
 import argparse
+import configparser
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,17 +32,34 @@ def columns(connection, table):
     )}
 
 
-def find_interfaces(connection):
+def find_interfaces(connection, skipped=None):
     rows = connection.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
     ).fetchall()
     existing = {row[0] for row in rows}
+    # An empty unregistered peer table may be a leftover from legacy config discovery.
+    registered = None
+    if "ConfigurationsInfo" in existing:
+        info_cols = columns(connection, "ConfigurationsInfo")
+        if "ID" not in info_cols:
+            raise MigrationError("ConfigurationsInfo: missing ID column")
+        registered = {row[0] for row in connection.execute('SELECT "ID" FROM "ConfigurationsInfo"')}
     interfaces = []
     for (name,) in rows:
         if name.endswith(("_runtime", "_restrict_access", "_deleted", "_transfer", "_history_endpoint")):
             continue
         if not PEER_MARKERS.issubset(columns(connection, name)):
             continue
+        if registered is not None and name not in registered:
+            count = connection.execute(
+                f"SELECT COUNT(*) FROM {quote_identifier(name)}"
+            ).fetchone()[0]
+            if count == 0:
+                if skipped is not None:
+                    skipped.append((name, "not in ConfigurationsInfo; 0 peers"))
+                continue
+            if skipped is not None:
+                skipped.append((name, f"not in ConfigurationsInfo; {count} peers, preserved for migration"))
         main_columns = columns(connection, name)
         present = set(RUNTIME_FIELDS) & main_columns
         if present and present != set(RUNTIME_FIELDS):
@@ -141,17 +159,37 @@ def migrate(path, *, dry_run=False, backup=True):
         raise MigrationError(f"SQLite 3.35+ required; found {sqlite3.sqlite_version}")
     uri = f"file:{path}?mode=rw"
     with closing(sqlite3.connect(uri, uri=True, timeout=5)) as conn:
-        interfaces = find_interfaces(conn)
+        warnings = []
+        interfaces = find_interfaces(conn, warnings)
         pending = [name for name in interfaces if set(RUNTIME_FIELDS) & columns(conn, name)]
         for name in interfaces:
             if name not in pending:
                 verify(conn, name)
+        excluded = {name for name, reason in warnings if reason.endswith("0 peers")}
+        if dry_run:
+            already = [name for name in interfaces if name not in pending]
+            print(f"Need migration ({len(pending)}):")
+            for name in pending:
+                print(f"  - {name}")
+            print(f"Already migrated ({len(already)}):")
+            for name in already:
+                print(f"  - {name}")
+            print(f"Skipped unregistered empty tables ({len(excluded)}):")
+            for name in sorted(excluded):
+                print(f"  - {name} (WARNING: not in ConfigurationsInfo; 0 peers)")
+            for name, reason in warnings:
+                if name not in excluded:
+                    print(f"WARNING: {name}: {reason}")
+        else:
+            for name, reason in warnings:
+                print(f"WARNING: {name}: {reason}")
         if not pending:
             print(f"No migration needed ({len(interfaces)} interface tables checked).")
             return 0
-        print(f"Interface tables to migrate ({len(pending)}):")
-        for name in pending:
-            print(f"  - {name}")
+        if not dry_run:
+            print(f"Interface tables to migrate ({len(pending)}):")
+            for name in pending:
+                print(f"  - {name}")
         if dry_run:
             print("Dry run: no changes made.")
             return len(pending)
@@ -179,10 +217,21 @@ def main(argv=None):
     parser.add_argument('--database', type=Path, default=default_db,
                         help='SQLite DB file (default: src/db/wgdashboard.db)')
     parser.add_argument('--dry-run', action='store_true', help='Only list pending interface tables')
+    parser.add_argument('--backup-dir', type=Path, default=Path('db'),
+                        help='Directory for persistent external DB snapshots')
     args = parser.parse_args(argv)
     try:
-        migrate(args.database, dry_run=args.dry_run)
-    except (sqlite3.Error, OSError, MigrationError) as exc:
+        config = configparser.ConfigParser(strict=False)
+        config.read('wg-dashboard.ini')
+        backend = config.get('Database', 'type', fallback='sqlite').lower()
+        if backend in ('mysql', 'postgresql'):
+            from .migrate_peer_runtime_external import migrate_external
+            migrate_external(dry_run=args.dry_run, backup_dir=args.backup_dir)
+        elif backend == 'sqlite':
+            migrate(args.database, dry_run=args.dry_run)
+        else:
+            raise MigrationError(f'Unsupported database type: {backend}')
+    except Exception as exc:
         print(f"Migration failed: {exc}", file=sys.stderr)
         return 1
     return 0
