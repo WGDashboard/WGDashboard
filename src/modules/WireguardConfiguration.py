@@ -86,16 +86,24 @@ class WireguardConfiguration:
         self.dbType = self.DashboardConfig.GetConfig("Database", "type")[1]
 
         if name is not None:
-            if data is not None and "Backup" in data.keys():
+            # First validate the configuration, without changing the database.
+            self.__parseConfigurationFile()
+
+            # Only valid configurations may create or update tables.
+            self.DashboardConfig.EnsureDatabaseIntegrity({self.Name: self})
+
+            if data is not None and "Backup" in data:
                 db = self.__importDatabase(
                     os.path.join(
                         self.__getProtocolPath(),
                         'WGDashboard_Backup',
-                        data["Backup"].replace(".conf", ".sql")), True)
+                        data["Backup"].replace(".conf", ".sql")
+                    ),
+                    True
+                )
             else:
                 self.createDatabase()
 
-            self.__parseConfigurationFile()
             self.__initPeersList()
         else:
             self.Name = data["ConfigurationName"]
