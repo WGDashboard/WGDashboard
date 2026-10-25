@@ -19,7 +19,7 @@
     "@vueuse/shared": "^15.0.0",
     "animate.css": "^4.1.1",
     "bootstrap": "^5.3.2",
-    "bootstrap-icons": "^1.11.3",
+    "bootstrap-icons": "^1.13.2",
     "cidr-tools": "^13.0.4",
     "css-color-converter": "^2.0.0",
     "dayjs": "^1.11.23",
