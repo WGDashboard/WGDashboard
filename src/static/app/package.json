@@ -12,7 +12,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@volar/language-server": "2.4.28",
+    "@volar/language-server": "2.4.30",
     "@vue/language-server": "3.3.13",
     "@vuepic/vue-datepicker": "^14.0.0",
     "@vueuse/core": "^15.0.0",
