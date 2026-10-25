@@ -89,6 +89,25 @@ def require_fields(*fields):
 '''
 Flask App
 '''
+def migrate_peer_runtime_on_startup():
+    """Upgrade legacy peer tables before constructing configuration objects."""
+    config = configparser.ConfigParser(strict=False)
+    config.read('wg-dashboard.ini')
+    backend = config.get('Database', 'type', fallback='sqlite').lower()
+
+    # A fresh SQLite installation has no database to migrate yet.
+    if backend == 'sqlite' and not os.path.isfile(
+        os.path.join(os.path.dirname(__file__), 'db', 'wgdashboard.db')
+    ):
+        return
+
+    from migrations.migrate_peer_runtime import main as migrate_main
+    if migrate_main([]) != 0:
+        raise RuntimeError('Peer runtime migration failed; WGDashboard startup aborted')
+
+
+migrate_peer_runtime_on_startup()
+
 _, APP_PREFIX_INIT = DashboardConfig().GetConfig("Server", "app_prefix")
 app = Flask("WGDashboard",
             template_folder=os.path.abspath("./static/dist/WGDashboardAdmin"),
