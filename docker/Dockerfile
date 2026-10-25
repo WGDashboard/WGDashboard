@@ -55,7 +55,7 @@ RUN make && chmod +x wg*
 #
 
 # Use the python-alpine image for building pip dependencies
-FROM python:3.14-alpine3.24 AS pip-builder
+FROM python:3.15-alpine3.24 AS pip-builder
 
 ARG TARGETPLATFORM
 
@@ -110,7 +110,7 @@ RUN npm ci && npm run build
 #
 
 # Running with the python-alpine image.
-FROM python:3.14-alpine3.24 AS final
+FROM python:3.15-alpine3.24 AS final
 LABEL maintainer="dselen@nerthus.nl"
 
 # Install only the runtime dependencies
