@@ -4,7 +4,7 @@
 #
 
 # Pull the current golang-alpine image.
-FROM golang:1.27-alpine3.23 AS awg-go
+FROM golang:1.26-alpine3.24 AS awg-go
 
 # Install build-dependencies.
 RUN apk add --no-cache \
@@ -55,7 +55,7 @@ RUN make && chmod +x wg*
 #
 
 # Use the python-alpine image for building pip dependencies
-FROM python:3.14-alpine3.23 AS pip-builder
+FROM python:3.14-alpine3.24 AS pip-builder
 
 ARG TARGETPLATFORM
 
@@ -86,12 +86,31 @@ RUN . /opt/wgdashboard/src/venv/bin/activate && \
     pip3 install -r /opt/wgdashboard/src/requirements.txt
 
 #
+# WGDashboard FRONTEND BUILDING
+# Base: Node Alpine
+#
+FROM node:26-alpine3.24 AS frontend-builder
+
+WORKDIR /workspace
+
+# Copy frontend source, package files and lockfiles
+COPY ./src/static/ ./
+
+# Build the admin frontend
+WORKDIR /workspace/app
+RUN npm ci && npm run build
+
+# Build the client frontend
+WORKDIR /workspace/client
+RUN npm ci && npm run build
+
+#
 # WGDashboard RUNNING STAGE
 # Base: Alpine
 #
 
 # Running with the python-alpine image.
-FROM python:3.14-alpine3.23 AS final
+FROM python:3.14-alpine3.24 AS final
 LABEL maintainer="dselen@nerthus.nl"
 
 # Install only the runtime dependencies
@@ -121,11 +140,25 @@ ENV TZ="Europe/Amsterdam" \
 RUN mkdir /data /configs -p ${WGDASH}/src /etc/amnezia/amneziawg \
     && echo "name_servers=${global_dns}" >> /etc/resolvconf.conf
 
-# Copy the venv and source files from local compiled locations or repos
+# Copy application source
 COPY ./src ${WGDASH}/src
-COPY --from=pip-builder /opt/wgdashboard/src/venv /opt/wgdashboard/src/venv
+
+# Copy Python dependencies
+COPY --from=pip-builder \
+    /opt/wgdashboard/src/venv \
+    ${WGDASH}/src/venv
+
+RUN rm -rf ${WGDASH}/src/static/dist \
+           ${WGDASH}/src/static/app \
+           ${WGDASH}/src/static/client
+
+COPY --from=frontend-builder \
+    /workspace/dist/ \
+    ${WGDASH}/src/static/dist/
+
 COPY ./docker/wg0.conf.template /tmp/wg0.conf.template
 COPY ./docker/wg-dashboard-oidc-providers.json.template /tmp/wg-dashboard-oidc-providers.json.template
+
 # Copy in the runtime script, essential.
 COPY ./docker/entrypoint.sh /entrypoint.sh
 
