@@ -1,9 +1,14 @@
 .git
 .github
-*.md
 tests/
 docs/
+
+*.md
+
+**/node_modules
+**/venv
+**/__pycache__
+**/*.pyc
+
 src/db
 src/wg-dashboard.ini
-src/static/app
-src/static/client
