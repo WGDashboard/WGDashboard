@@ -9,16 +9,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "axios": "^1.18.0",
+    "axios": "^1.20.0",
     "bootstrap": "^5.3.8",
-    "bootstrap-icons": "^1.13.1",
-    "dayjs": "^1.11.21",
+    "bootstrap-icons": "^1.13.2",
+    "dayjs": "^1.11.23",
     "oidc-client-ts": "^3.5.0",
-    "pinia": "^3.0.4",
+    "pinia": "^4.1.0",
     "qrcode": "^1.5.4",
     "uuid": "^14.0.3",
     "vue": "^3.5.44",
-    "vue-router": "^5.1.0"
+    "vue-router": "^5.4.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.10",
