@@ -213,6 +213,75 @@ ENTRYPOINT ["/bin/bash", "/entrypoint.sh"]
 - Access the web interface via `http://your-ip:10086` (or whichever port you specified in the compose).
 - The first time run will auto-generate WireGuard keys and configs (configs are generated from the template).
 
+## 🧑‍💻 Local Development with Docker
+
+You can develop against WGDashboard locally by mounting the `src/` directory into the container. This lets you edit Python and frontend code on your host and see changes reflected immediately (with a service restart for Python).
+
+Create a `docker/compose-local.yaml` alongside the existing `compose.yaml`:
+
+```yaml
+services:
+  wgdashboard:
+    image: ghcr.io/wgdashboard/wgdashboard:latest
+    restart: unless-stopped
+    container_name: wgdashboard
+
+    ports:
+      - 10086:10086/tcp
+      - 51820:51820/udp
+
+    volumes:
+      - aconf:/etc/amnezia/amneziawg
+      - conf:/etc/wireguard
+      - data:/data
+      # Mount local src for live editing
+      - ../src:/opt/wgdashboard/src
+      # Keep venv in a named volume so it isn't overwritten by the mount
+      - venv:/opt/wgdashboard/src/venv
+
+    cap_add:
+      - NET_ADMIN
+
+volumes:
+  aconf:
+  conf:
+  data:
+  venv:
+```
+
+The key additions compared to the production compose file:
+- `../src:/opt/wgdashboard/src` — mounts your local `src/` directory into the container so code changes are reflected without rebuilding the image.
+- `venv:/opt/wgdashboard/src/venv` — keeps the Python virtual environment in a named Docker volume. Without this, the host mount would overwrite the venv created during image build.
+
+To start the development container:
+
+```bash
+cd docker
+docker compose -f compose-local.yaml up -d
+```
+
+After editing Python files (e.g. `src/dashboard.py`), restart the container to pick up changes:
+
+```bash
+docker restart wgdashboard
+```
+
+For frontend changes, install dependencies and rebuild the Vue app on your host:
+
+```bash
+cd src/static/app
+npm install
+npm run build
+```
+
+Then restart the container so it serves the updated dist files:
+
+```bash
+docker restart wgdashboard
+```
+
+---
+
 ## Closing remarks:
 
 For feedback please submit an issue to the repository. Or message dselen@nerthus.nl.

@@ -12,7 +12,7 @@ from .Utilities import (GetRemoteEndpoint, ValidateDNSAddress)
 from .DashboardAPIKey import DashboardAPIKey
 
 class DashboardConfig:
-    DashboardVersion = 'v4.3.3'
+    DashboardVersion = 'v4.3.4'
     ConfigurationPath = os.getenv('CONFIGURATION_PATH', '.')
     ConfigurationFilePath = os.path.join(ConfigurationPath, 'wg-dashboard.ini')
 
@@ -51,7 +51,8 @@ class DashboardConfig:
                 "peer_display_mode": "grid",
                 "remote_endpoint": GetRemoteEndpoint(),
                 "peer_MTU": "1420",
-                "peer_keep_alive": "21"
+                "peer_keep_alive": "21",
+                "peer_preshared_key_default": "false"
             },
             "Other": {
                 "welcome_session": "true"
@@ -153,10 +154,10 @@ class DashboardConfig:
 
     def getConnectionString(self, database) -> str or None:
         sqlitePath = os.path.join(DashboardConfig.ConfigurationPath, "db")
-        
+
         if not os.path.isdir(sqlitePath):
             os.mkdir(sqlitePath)
-        
+
         if self.GetConfig("Database", "type")[1] == "postgresql":
             cn = f'postgresql+psycopg2://{self.GetConfig("Database", "username")[1]}:{self.GetConfig("Database", "password")[1]}@{self.GetConfig("Database", "host")[1]}/{database}'
         elif self.GetConfig("Database", "type")[1] == "mysql":

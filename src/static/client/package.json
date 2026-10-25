@@ -1,6 +1,6 @@
 {
   "name": "client",
-  "version": "v1.0",
+  "version": "v1.0.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,20 +9,20 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "axios": "^1.9.0",
-    "bootstrap": "^5.3.6",
+    "axios": "^1.18.0",
+    "bootstrap": "^5.3.8",
     "bootstrap-icons": "^1.13.1",
-    "dayjs": "^1.11.13",
-    "oidc-client-ts": "^3.2.1",
-    "pinia": "^3.0.2",
+    "dayjs": "^1.11.21",
+    "oidc-client-ts": "^3.5.0",
+    "pinia": "^3.0.4",
     "qrcode": "^1.5.4",
-    "uuid": "^11.1.0",
-    "vue": "^3.5.13",
-    "vue-router": "^4.5.1"
+    "uuid": "^14.0.0",
+    "vue": "^3.5.35",
+    "vue-router": "^5.1.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^5.2.3",
-    "vite": "^6.2.4",
-    "vite-plugin-vue-devtools": "^7.7.2"
+    "@vitejs/plugin-vue": "^6.0.6",
+    "vite": "^8.0.16",
+    "vite-plugin-vue-devtools": "^8.1.2"
   }
 }

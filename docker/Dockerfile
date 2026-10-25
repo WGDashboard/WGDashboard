@@ -30,7 +30,7 @@ RUN go version && \
 # AWG TOOLS BUILDING STAGE
 # Base: Alpine
 #
-FROM alpine:3.23 AS awg-tools
+FROM alpine:3.24 AS awg-tools
 
 # Install needed dependencies.
 RUN apk add --no-cache \

@@ -206,7 +206,11 @@ class Peer:
                 "I2": self.configuration.I2,
                 "I3": self.configuration.I3,
                 "I4": self.configuration.I4,
-                "I5": self.configuration.I5
+                "I5": self.configuration.I5,
+                "J1": self.configuration.J1,
+                "J2": self.configuration.J2,
+                "J3": self.configuration.J3,
+                "Itime": self.configuration.Itime
             })
 
         peerSection = {

@@ -4,17 +4,21 @@ const getHeaders = () => {
 	let headers = {
 		"Content-Type": "application/json"
 	}
-	const store = DashboardConfigurationStore();
-	const crossServer = store.getActiveCrossServer();
-	if (crossServer){
-		headers['wg-dashboard-apikey'] = crossServer.apiKey
-        if (crossServer.headers){
-            for (let header of Object.values(crossServer.headers)){
-                if (header.key && header.value && !Object.keys(headers).includes(header.key)){
-                    headers[header.key] = header.value
-                }
-            }
-        }
+	try{
+		const store = DashboardConfigurationStore();
+		const crossServer = store.getActiveCrossServer();
+		if (crossServer){
+			headers['wg-dashboard-apikey'] = crossServer.apiKey
+			if (crossServer.headers){
+				for (let header of Object.values(crossServer.headers)){
+					if (header.key && header.value && !Object.keys(headers).includes(header.key)){
+						headers[header.key] = header.value
+					}
+				}
+			}
+		}
+	}catch (e) {
+		
 	}
 
 
@@ -22,11 +26,13 @@ const getHeaders = () => {
 }
 
 export const getUrl = (url) => {
-	const store = DashboardConfigurationStore();
-	const apiKey = store.getActiveCrossServer();
-	if (apiKey){
-		return `${apiKey.host}${url}`
-	}
+	try{
+		const store = DashboardConfigurationStore();
+		const apiKey = store.getActiveCrossServer();
+		if (apiKey){
+			return `${apiKey.host}${url}`
+		}
+	}catch (e){}
 	if (import.meta.env.MODE === 'development') {
 		return url;
 	}
@@ -62,6 +68,52 @@ export const fetchPost = async (url, body, callback) => {
 	await fetch(`${getUrl(url)}`, {
 		headers: getHeaders(),
 		method: "POST",
+		body: JSON.stringify(body)
+	}).then((x) => {
+		const store = DashboardConfigurationStore();
+		if (!x.ok){
+			if (x.status !== 200){
+				if (x.status === 401){
+					store.newMessage("WGDashboard", "Sign in session ended, please sign in again", "warning")
+				}
+				throw new Error(x.statusText)
+			}
+		}else{
+			return x.json()
+		}
+	}).then(x => callback ? callback(x) : undefined).catch(x => {
+		console.log("Error:", x)
+		router.push({path: '/signin'})
+	})
+}
+
+export const fetchPut = async (url, body, callback) => {
+	await fetch(`${getUrl(url)}`, {
+		headers: getHeaders(),
+		method: "PUT",
+		body: JSON.stringify(body)
+	}).then((x) => {
+		const store = DashboardConfigurationStore();
+		if (!x.ok){
+			if (x.status !== 200){
+				if (x.status === 401){
+					store.newMessage("WGDashboard", "Sign in session ended, please sign in again", "warning")
+				}
+				throw new Error(x.statusText)
+			}
+		}else{
+			return x.json()
+		}
+	}).then(x => callback ? callback(x) : undefined).catch(x => {
+		console.log("Error:", x)
+		router.push({path: '/signin'})
+	})
+}
+
+export const fetchDelete = async (url, body, callback) => {
+	await fetch(`${getUrl(url)}`, {
+		headers: getHeaders(),
+		method: "DELETE",
 		body: JSON.stringify(body)
 	}).then((x) => {
 		const store = DashboardConfigurationStore();

@@ -32,11 +32,15 @@ class AmneziaConfiguration(WireguardConfiguration):
         self.H2 = 2
         self.H3 = 3
         self.H4 = 4
-        self.I1 = "0"
-        self.I2 = "0"
-        self.I3 = "0"
-        self.I4 = "0"
-        self.I5 = "0"
+        self.I1 = ""
+        self.I2 = ""
+        self.I3 = ""
+        self.I4 = ""
+        self.I5 = ""
+        self.J1 = ""
+        self.J2 = ""
+        self.J3 = ""
+        self.Itime = ""
 
         super().__init__(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, name, data, backup, startup, wg=False)
 
@@ -79,7 +83,11 @@ class AmneziaConfiguration(WireguardConfiguration):
             "I2": self.I2,
             "I3": self.I3,
             "I4": self.I4,
-            "I5": self.I5
+            "I5": self.I5,
+            "J1": self.J1,
+            "J2": self.J2,
+            "J3": self.J3,
+            "Itime": self.Itime
         }
 
     def createDatabase(self, dbName = None):
