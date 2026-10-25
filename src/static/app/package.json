@@ -23,7 +23,7 @@
     "cidr-tools": "^13.0.4",
     "css-color-converter": "^2.0.0",
     "dayjs": "^1.11.23",
-    "electron-builder": "^26.7.0",
+    "electron-builder": "^26.18.0",
     "fuse.js": "^7.5.0",
     "i": "^0.3.7",
     "is-cidr": "^7.0.3",
