@@ -1,6 +1,21 @@
 import re, ipaddress
 import subprocess
 import sqlalchemy
+from jinja2.sandbox import SandboxedEnvironment
+
+sandboxEnvironment = SandboxedEnvironment()
+
+def RenderSandboxedTemplate(source: str, **context) -> str:
+    """
+    Render a Jinja2 template within a sandboxed environment. Template sources built with
+    user-provided content (e.g. email body, peer configuration file) must go through this
+    function, so unsafe attribute access (such as __globals__) is denied and template
+    injection cannot escalate into arbitrary code execution.
+    @param source: Template source string, may contain user-provided content
+    @param context: Variables passed into the template
+    @return: Rendered template
+    """
+    return sandboxEnvironment.from_string(source).render(**context)
 
 def RegexMatch(regex, text) -> bool:
     """
