@@ -3,7 +3,6 @@ WireGuard Configuration
 """
 from typing import Any
 
-import jinja2
 import sqlalchemy, random, shutil, configparser, ipaddress, os, subprocess, time, re, uuid, psutil, traceback
 from zipfile import ZipFile
 from datetime import datetime, timedelta
@@ -21,7 +20,8 @@ from .Utilities import StringToBoolean, \
     ValidateDNSAddress, \
     ValidateEndpointAllowedIPs, \
     CheckAddress, \
-    CheckPeerKey
+    CheckPeerKey, \
+    RenderSandboxedTemplate
 from .WireguardConfigurationInfo import WireguardConfigurationInfo, PeerGroupsClass
 from .DashboardWebHooks import DashboardWebHooks
 
@@ -1242,7 +1242,7 @@ class WireguardConfiguration:
         elif key == "OverridePeerSettings":
             for (key, val) in value.items():
                 try:
-                    status, msg = self.__validateOverridePeerSettings(key, jinja2.Template(val).render(configuration=self.toJson()))
+                    status, msg = self.__validateOverridePeerSettings(key, RenderSandboxedTemplate(val, configuration=self.toJson()))
                     if not status:
                         return False, msg, key
                 except Exception as e:

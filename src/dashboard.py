@@ -9,8 +9,7 @@ from zipfile import ZipFile
 from datetime import datetime, timedelta
 
 import sqlalchemy
-from jinja2 import Template
-from flask import Flask, request, render_template, session, send_file, current_app, redirect, url_for
+from flask import Flask, request, render_template, session, send_file, current_app
 from flask_cors import CORS
 from icmplib import ping, traceroute
 from flask.json.provider import DefaultJSONProvider
@@ -20,7 +19,8 @@ from sqlalchemy import RowMapping
 
 from modules.Utilities import (
     RegexMatch, StringToBoolean, ValidateDNSAddress,
-    GenerateWireguardPublicKey, GenerateWireguardPrivateKey
+    GenerateWireguardPublicKey, GenerateWireguardPrivateKey,
+    RenderSandboxedTemplate
 )
 from packaging import version
 from modules.Email import EmailSender
@@ -1597,10 +1597,9 @@ def API_Email_Send():
             if configuration is not None:
                 fp, p = configuration.searchPeer(data.get('Peer'))
                 if fp:
-                    template = Template(body)
                     download = p.downloadPeer()
-                    body = template.render(peer=p.toJson(), configurationFile=download)
-                    subject = Template(data.get('Subject', '')).render(peer=p.toJson(), configurationFile=download)
+                    body = RenderSandboxedTemplate(body, peer=p.toJson(), configurationFile=download)
+                    subject = RenderSandboxedTemplate(data.get('Subject', ''), peer=p.toJson(), configurationFile=download)
                     if data.get('IncludeAttachment', False):
                         u = str(uuid4())
                         peerName = p.toJson().get('name', '').strip()
@@ -1629,11 +1628,10 @@ def API_Email_PreviewBody():
         return ResponseObject(False, "Peer does not exist")
 
     try:
-        template = Template(body)
         download = p.downloadPeer()
         return ResponseObject(data={
-            "Body": Template(body).render(peer=p.toJson(), configurationFile=download),
-            "Subject": Template(subject).render(peer=p.toJson(), configurationFile=download)
+            "Body": RenderSandboxedTemplate(body, peer=p.toJson(), configurationFile=download),
+            "Subject": RenderSandboxedTemplate(subject, peer=p.toJson(), configurationFile=download)
         })
     except Exception as e:
         return ResponseObject(False, message=str(e))

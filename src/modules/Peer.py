@@ -7,12 +7,12 @@ import json
 import os, subprocess, uuid, random, re
 from datetime import timedelta
 
-import jinja2
 import sqlalchemy as db
 from .PeerJob import PeerJob
 from  flask import current_app
 from .PeerShareLink import PeerShareLink
-from .Utilities import GenerateWireguardPublicKey, CheckAddress, ValidateDNSAddress
+from .Utilities import GenerateWireguardPublicKey, CheckAddress, ValidateDNSAddress, \
+    RenderSandboxedTemplate
 
 
 class Peer:
@@ -237,7 +237,7 @@ class Peer:
                 if val is not None and ((type(val) is str and len(val) > 0) or (type(val) is int and val > 0)):
                     final["file"] += f"{key} = {val}\n"
 
-        final["file"] = jinja2.Template(final["file"]).render(configuration=self.configuration)
+        final["file"] = RenderSandboxedTemplate(final["file"], configuration=self.configuration)
 
 
         if self.configuration.Protocol == "awg":
