@@ -4,7 +4,7 @@
 #
 
 # Pull the current golang-alpine image.
-FROM golang:1.27-alpine3.24 AS awg-go
+FROM golang:1.27-alpine3.24 AS awg-go-builder
 
 # Install build-dependencies.
 RUN apk add --no-cache \
@@ -30,7 +30,7 @@ RUN go version && \
 # AWG TOOLS BUILDING STAGE
 # Base: Alpine
 #
-FROM alpine:3.24 AS awg-tools
+FROM alpine:3.24 AS awg-tools-builder
 
 # Install needed dependencies.
 RUN apk add --no-cache \
@@ -121,9 +121,9 @@ RUN apk add --no-cache \
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Copy only the final binaries from the AWG builder stages
-COPY --from=awg-go /usr/bin/amneziawg-go /usr/bin/amneziawg-go
-COPY --from=awg-tools /workspace/awg-tools/src/wg /usr/bin/awg
-COPY --from=awg-tools /workspace/awg-tools/src/wg-quick/linux.bash /usr/bin/awg-quick
+COPY --from=awg-go-builder /usr/bin/amneziawg-go /usr/bin/amneziawg-go
+COPY --from=awg-tools-builder /workspace/awg-tools/src/wg /usr/bin/awg
+COPY --from=awg-tools-builder /workspace/awg-tools/src/wg-quick/linux.bash /usr/bin/awg-quick
 
 # Environment variables
 ARG wg_net="10.0.0.1"

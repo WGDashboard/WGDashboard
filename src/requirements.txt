@@ -13,5 +13,5 @@ sqlalchemy_utils==0.43.0
 psycopg[binary]==3.3.6
 PyMySQL==1.2.3
 tzlocal==5.4.5
-python-jose==3.5.0
+python-jose[cryptography]==3.5.0
 pydantic==2.14.1
