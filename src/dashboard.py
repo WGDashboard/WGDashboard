@@ -43,6 +43,7 @@ from modules.DashboardPlugins import DashboardPlugins
 from modules.DashboardWebHooks import DashboardWebHooks
 from modules.DashboardPushNotifications import DashboardPushNotifications
 from modules.DashboardPeerPaymentsStore import DashboardPeerPayments
+from modules.DashboardPeerPayments import ParsePaidUntilInput, UNLIMITED_PAID_UNTIL_STR
 from modules.NewConfigurationTemplates import NewConfigurationTemplates
 from modules.DashboardBlocklist import DashboardBlocklist
 
@@ -1086,7 +1087,19 @@ def API_addPeers(configName):
             mtu: int = data.get('mtu', None)
             keep_alive: int = data.get('keepalive', None)
             notes: str = data.get('notes', '')
-            preshared_key: str = data.get('preshared_key', "")            
+            preshared_key: str = data.get('preshared_key', "")
+            # Срок оплаты при создании. "Безлимит" (paid_unlimited) задаёт
+            # бессрочную дату-маркер: пир всегда считается оплаченным, без
+            # указания дня окончания.
+            paid_until: str = data.get('paid_until', "") or ""
+            paid_unlimited: bool = data.get('paid_unlimited', False)
+            if not isinstance(paid_until, str):
+                paid_until = str(paid_until)
+            if paid_unlimited:
+                paid_until = UNLIMITED_PAID_UNTIL_STR
+            parsedPaidUntil, paidErr = ParsePaidUntilInput(paid_until)
+            if paidErr:
+                return ResponseObject(False, paidErr)
     
             if type(mtu) is not int or mtu < 0 or mtu > 1460:
                 default: str = DashboardConfig.GetConfig("Peers", "peer_mtu")[1]
@@ -1146,7 +1159,8 @@ def API_addPeers(configName):
                             "endpoint_allowed_ip": endpoint_allowed_ip,
                             "mtu": mtu,
                             "keepalive": keep_alive,
-                            "notes": ""
+                            "notes": "",
+                            "paid_until": parsedPaidUntil
                         })
                         if addedCount == bulkAddAmount:
                             break
@@ -1211,7 +1225,8 @@ def API_addPeers(configName):
                         "DNS": dns_addresses,
                         "mtu": mtu,
                         "keepalive": keep_alive,
-                        "notes": notes
+                        "notes": notes,
+                        "paid_until": parsedPaidUntil
                     }]
                 )
                 return ResponseObject(status=status, message=message, data=addedPeers)

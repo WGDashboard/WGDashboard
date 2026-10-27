@@ -12,7 +12,7 @@ import sqlalchemy as db
 from .PeerJob import PeerJob
 from  flask import current_app
 from .PeerShareLink import PeerShareLink
-from .DashboardPeerPayments import ComputePaymentStatus, ParsePaidUntilInput
+from .DashboardPeerPayments import ComputePaymentStatus, IsUnlimitedPaidUntil, ParsePaidUntilInput
 from .Utilities import GenerateWireguardPublicKey, CheckAddress, ValidateDNSAddress, ValidateSplitTunnelList
 
 
@@ -159,6 +159,11 @@ class Peer:
         """
         if not isinstance(Days, int) or Days < 1 or Days > 3650:
             return False, "Days must be an integer between 1 and 3650"
+        # "Безлимит" уже оплачен навсегда: продлевать нечего, а прибавление
+        # timedelta к дате 9999-12-31 поднимает OverflowError. Возвращаем
+        # успех без записи, чтобы кнопка "Продлить" не выглядела сломанной.
+        if IsUnlimitedPaidUntil(self.paid_until):
+            return True, None
         base = self.paid_until
         if base is None:
             base = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)

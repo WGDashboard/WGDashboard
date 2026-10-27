@@ -16,6 +16,7 @@ import PersistentKeepAliveInput
 	from "@/components/configurationComponents/newPeersComponents/persistentKeepAliveInput.vue";
 import {WireguardConfigurationsStore} from "@/stores/WireguardConfigurationsStore.js";
 import NotesInput from "./newPeersComponents/notesInput.vue";
+import PaidUntilInput from "./newPeersComponents/paidUntilInput.vue";
 
 const dashboardStore = DashboardConfigurationStore()
 const wireguardStore = WireguardConfigurationsStore()
@@ -29,6 +30,8 @@ const peerData = ref({
 	DNS: dashboardStore.Configuration.Peers.peer_global_dns,
 	endpoint_allowed_ip: dashboardStore.Configuration.Peers.peer_endpoint_allowed_ip,
 	notes: "",
+	paid_until: "",
+	paid_unlimited: false,
 	keepalive: parseInt(dashboardStore.Configuration.Peers.peer_keep_alive),
 	mtu: parseInt(dashboardStore.Configuration.Peers.peer_mtu),
 	preshared_key: "",
@@ -107,6 +110,7 @@ watch(() => {
 								<hr class="mb-0 mt-2">
 								<NameInput :saving="saving" :data="peerData"></NameInput>
 								<NotesInput :saving="saving" :data="peerData"></NotesInput>
+								<PaidUntilInput :saving="saving" :data="peerData"></PaidUntilInput>
 								<PrivatePublicKeyInput :saving="saving" :data="peerData"></PrivatePublicKeyInput>
 								<AllowedIPsInput :availableIp="availableIp" :saving="saving" :data="peerData"></AllowedIPsInput>
 							</template>

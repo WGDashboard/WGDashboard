@@ -81,6 +81,11 @@ export default {
 			return this.searchPeersLength - this.order <= 3
 		},
 		paymentBadge(){
+			// "Безлимит": срок - дата-маркер 9999-12-31 при статусе active,
+			// поэтому проверяем её раньше общего свитча по статусу
+			if (this.Peer.PaidUntilFormatted === '9999-12-31'){
+				return {cls: 'text-bg-success', icon: 'bi-infinity', text: GetLocale('Unlimited')}
+			}
 			switch (this.Peer.PaymentStatus){
 				case 'active':
 					return {cls: 'text-bg-success', icon: 'bi-check-circle-fill', text: GetLocale('Paid')}
@@ -95,6 +100,7 @@ export default {
 		// Подсказка с точным числом дней: в бейдже умещается только
 		// общий статус, поэтому конкретика уходит в title
 		paymentTitle(){
+			if (this.Peer.PaidUntilFormatted === '9999-12-31') return GetLocale('Unlimited')
 			const days = this.Peer.DaysRemaining
 			if (days === null || days === undefined) return GetLocale('No payment date set')
 			if (days < 0) return this.localizeCount('Overdue by {n} day(s)', Math.abs(days))
@@ -118,7 +124,9 @@ export default {
 		// поясу браузера и дата может "уехать" на день назад
 		paymentDate(){
 			const value = this.Peer.PaidUntilFormatted
-			if (!value || value.length < 10) return ''
+			// Для "Безлимит" дату-маркер не показываем: у бейджа уже есть
+			// иконка бесконечности, а "31.12.9999" только путает
+			if (!value || value.length < 10 || value.slice(0, 10) === '9999-12-31') return ''
 			const [y, m, d] = value.slice(0, 10).split('-')
 			return `${d}.${m}.${y}`
 		}

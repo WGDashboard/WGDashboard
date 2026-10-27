@@ -560,7 +560,9 @@ class WireguardConfiguration:
                         "keepalive": i['keepalive'],
                         "notes": i.get("notes", ""),
                         "telegram": i.get("telegram", ""),
-                        "paid_until": None,
+                        # Срок оплаты приходит из API_addPeers уже разобранным
+                        # (datetime или None); здесь только сохраняем
+                        "paid_until": i.get("paid_until"),
                         "payment_comment": i.get("payment_comment", ""),
                         "remote_endpoint": self.DashboardConfig.GetConfig("Peers", "remote_endpoint")[1],
                         "preshared_key": i["preshared_key"]

@@ -22,6 +22,21 @@ from typing import Any
 # счётчиками в сводке, поэтому он задаётся в одном месте.
 EXPIRING_WITHIN_DAYS = 5
 
+# Срок для бессрочной оплаты ("Безлимит"). Хранится в существующей колонке
+# paid_until без миграции схемы: дата достаточно далека, чтобы никогда не
+# наступить, а SQLite DATETIME спокойно её принимает (TIMESTAMP в MySQL
+# ограничен 2038 годом, но проект работает на SQLite).
+UNLIMITED_PAID_UNTIL_STR = "9999-12-31"
+UNLIMITED_PAID_UNTIL = datetime.date(9999, 12, 31)
+
+
+def IsUnlimitedPaidUntil(value: Any) -> bool:
+    """
+    Проверяет, является ли срок бессрочным ("Безлимит").
+    """
+    parsed = NormalizePaidUntil(value)
+    return parsed is not None and parsed.date() == UNLIMITED_PAID_UNTIL
+
 
 def NormalizePaidUntil(value: Any) -> datetime.datetime | None:
     """
@@ -55,6 +70,12 @@ def ComputePaymentStatus(paidUntil: Any) -> tuple[str, int | None, str | None]:
     parsed = NormalizePaidUntil(paidUntil)
     if parsed is None:
         return "unset", None, None
+    # "Безлимит": бессрочный пир. Статус остаётся active, чтобы вся
+    # существующая логика (счётчики сводки, фильтры, уведомления) работала
+    # без изменений; DaysRemaining не имеет смысла, поэтому None, а дата
+    # отдаётся маркером - фронтенд по нему показывает бейдж "Безлимит".
+    if parsed.date() == UNLIMITED_PAID_UNTIL:
+        return "active", None, UNLIMITED_PAID_UNTIL_STR
     today = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     # Срок считается истёкшим в конце указанного дня: полночь, к которой
     # прибавлен срок, ещё относится к оплаченному дню.

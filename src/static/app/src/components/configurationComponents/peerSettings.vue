@@ -16,7 +16,10 @@ export default {
 			dataChanged: false,
 			showKey: false,
 			saving: false,
-			extendDays: 30
+			extendDays: 30,
+			// "Безлимит": срок оплаты не задаётся, пир оплачен навсегда.
+			// На бэкенде хранится дата-маркер 9999-12-31 в колонке paid_until
+			paidUnlimited: false
 		}
 	},
 	setup(){
@@ -27,8 +30,17 @@ export default {
 		reset(){
 			if (this.selectedPeer){
 				this.data = JSON.parse(JSON.stringify(this.selectedPeer))
+				this.paidUnlimited = this.data.PaidUntilFormatted === '9999-12-31';
 				this.dataChanged = false;
 			}
+		},
+		// При включении "Безлимит" очищаем дату: срок больше не задаётся,
+		// а при выключении поле снова доступно для ввода
+		toggleUnlimited(){
+			if (this.paidUnlimited){
+				this.data.PaidUntilFormatted = "";
+			}
+			this.dataChanged = true;
 		},
 		// Метод, а не computed: Vue вызывает computed-геттер без
 		// аргументов, и параметры до localizeCount не доходят
@@ -66,9 +78,11 @@ export default {
 			 * подстановки отправлялся бы старый paid_until из объекта пира,
 			 * и сохранение выглядело бы как "ничего не изменилось", хотя
 			 * запрос уходит и отвечает успехом.
+			 * "Безлимит" отправляет дату-маркер 9999-12-31: бэкенд хранит её
+			 * в обычной колонке paid_until и всегда считает пир оплаченным.
 			 */
 			const payload = Object.assign({}, this.data, {
-				paid_until: this.data.PaidUntilFormatted || ""
+				paid_until: this.paidUnlimited ? '9999-12-31' : (this.data.PaidUntilFormatted || "")
 			});
 			fetchPost(`/api/updatePeerSettings/${this.$route.params.id}`, payload, (res) => {
 				this.saving = false;
@@ -80,6 +94,7 @@ export default {
 						this.data.DaysRemaining = res.data.DaysRemaining;
 						this.data.PaymentStatus = res.data.PaymentStatus;
 						this.data.paid_until = res.data.paid_until;
+						this.paidUnlimited = this.data.PaidUntilFormatted === '9999-12-31';
 					}
 					this.$emit("refresh")
 					this.dashboardConfigurationStore.newMessage("Server", "Peer saved", "success")
@@ -148,6 +163,11 @@ export default {
 	},
 	computed: {
 		paymentBadge(){
+			// "Безлимит" хранится как дата-маркер 9999-12-31 при статусе
+			// active; показываем отдельный бейдж вместо даты окончания
+			if (this.data?.PaidUntilFormatted === '9999-12-31'){
+				return {icon: 'bi-infinity', text: 'Unlimited'}
+			}
 			switch (this.data?.PaymentStatus){
 				case 'active':
 					return {icon: 'bi-check-circle-fill', text: 'Paid'}
@@ -222,9 +242,21 @@ export default {
 										</small>
 									</label>
 									<input type="date" class="form-control form-control-sm rounded-3"
-									       :disabled="this.saving"
+									       :disabled="this.saving || this.paidUnlimited"
 									       v-model="this.data.PaidUntilFormatted"
 									       id="peer_paid_until">
+									<div class="form-check form-switch mt-2">
+										<input class="form-check-input" type="checkbox" role="switch"
+										       v-model="this.paidUnlimited"
+										       :disabled="this.saving"
+										       @change="this.toggleUnlimited()"
+										       id="peer_paid_unlimited_switch">
+										<label class="form-check-label" for="peer_paid_unlimited_switch">
+											<small class="fw-bold">
+												<LocaleText t="Unlimited"></LocaleText>
+											</small>
+										</label>
+									</div>
 								</div>
 								<div class="col-6">
 									<label for="peer_extend_days" class="form-label">
