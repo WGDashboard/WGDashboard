@@ -99,6 +99,17 @@ class DashboardConfig:
                 # Предупреждать за N дней до конца оплаты (0 = не предупреждать)
                 "expiring_days": "7"
             },
+            "Blocklist": {
+                # Блокировка подсетей по адресам назначения (nftables)
+                "enabled": "false",
+                # Встроенный список: "lite" (1291 подсеть) или "full" (12895)
+                "list_size": "full",
+                # Пользовательский URL списка; перекрывает list_size
+                "custom_url": "",
+                "auto_update": "true",
+                "update_interval_hours": "6",
+                "last_update": ""
+            },
             "WireGuardConfiguration": {
                 "autostart": "",
                 "peer_tracking": "false"

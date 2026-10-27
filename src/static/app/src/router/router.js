@@ -131,6 +131,14 @@ const router = createRouter({
                         title: "Webhooks"
                     }
                 },
+                {
+                    name: "Blocklist",
+                    path: "blocklist",
+                    component: () => import("@/components/settingsComponent/dashboardBlocklist.vue"),
+                    meta: {
+                        title: "Blocklist"
+                    }
+                },
 				{
 					name: "Configuration",
 					path: 'configuration/:id',

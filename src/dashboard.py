@@ -44,6 +44,7 @@ from modules.DashboardWebHooks import DashboardWebHooks
 from modules.DashboardPushNotifications import DashboardPushNotifications
 from modules.DashboardPeerPaymentsStore import DashboardPeerPayments
 from modules.NewConfigurationTemplates import NewConfigurationTemplates
+from modules.DashboardBlocklist import DashboardBlocklist
 
 class CustomJsonEncoder(DefaultJSONProvider):
     def __init__(self, app):
@@ -177,6 +178,42 @@ def pushNotificationBackgroundThread():
             # применялась сразу, а не по окончании текущего периода
             time.sleep(30)
 
+def blocklistBackgroundThread():
+    """
+    Фоновый поток #4: автообновление списка блокировки.
+
+    Проверяет "пора ли" раз в 5 минут: интервал из настроек может быть
+    и 1 час, и неделя, поэтому точный таймер не нужен, а новая настройка
+    подхватывается без перезапуска.
+    """
+    with app.app_context():
+        app.logger.info("Background Thread #4 (blocklist) Started")
+        app.logger.info("Background Thread #4 PID:" + str(threading.get_native_id()))
+        time.sleep(60)
+        while True:
+            try:
+                if DashboardBlocklistEngine.IsEnabled() and DashboardBlocklistEngine.IsAutoUpdateDue():
+                    status, msg = DashboardBlocklistEngine.Refresh()
+                    if not status:
+                        app.logger.error(f"Blocklist auto-update failed: {msg}")
+            except Exception as e:
+                app.logger.error("Background Thread #4 Error", e)
+            time.sleep(300)
+
+def refreshBlocklistPorts():
+    """
+    Пере-применение блок-листа при изменении набора конфигураций:
+    исключение udp sport в OUTPUT собирается из listen-портов, при
+    создании/удалении/переименовании конфигурации оно должно обновиться сразу.
+    """
+    try:
+        if DashboardBlocklistEngine.IsEnabled():
+            status, msg = DashboardBlocklistEngine.apply()
+            if not status:
+                app.logger.error(f"Blocklist re-apply failed: {msg}")
+    except Exception as e:
+        app.logger.error("Blocklist re-apply error", e)
+
 def gunicornConfig():
     _, app_ip = DashboardConfig.GetConfig("Server", "app_ip")
     _, app_port = DashboardConfig.GetConfig("Server", "app_port")
@@ -233,6 +270,8 @@ def startThreads():
     scheduleJobThread.start()
     pushThread = threading.Thread(target=pushNotificationBackgroundThread, daemon=True)
     pushThread.start()
+    blocklistThread = threading.Thread(target=blocklistBackgroundThread, daemon=True)
+    blocklistThread.start()
 
 dictConfig({
     'version': 1,
@@ -271,6 +310,15 @@ with app.app_context():
         WireguardConfigurations, DashboardConfig)
     DashboardPushNotifications: DashboardPushNotifications = DashboardPushNotifications(
         DashboardConfig, DashboardPeerPayments)
+    # Блок-лист после загрузки конфигураций: apply() собирает listen-порты
+    DashboardBlocklistEngine: DashboardBlocklist = DashboardBlocklist(
+        WireguardConfigurations, DashboardConfig)
+    if DashboardBlocklistEngine.IsEnabled():
+        blStatus, blMsg = DashboardBlocklistEngine.apply()
+        if not blStatus:
+            app.logger.error(f"Blocklist startup apply failed: {blMsg}")
+        else:
+            app.logger.info("Blocklist startup apply succeeded")
     app.register_blueprint(createClientBlueprint(WireguardConfigurations, DashboardConfig, DashboardClients))
 
 _, APP_PREFIX = DashboardConfig.GetConfig("Server", "app_prefix")
@@ -441,6 +489,58 @@ def API_NewConfigurationTemplates_DeleteTemplate():
     status, msg = NewConfigurationTemplates.DeleteTemplate(template)
     return ResponseObject(status, msg)
 
+@app.get(f'{APP_PREFIX}/api/blocklist/get')
+def API_Blocklist_Get():
+    return ResponseObject(True, data=DashboardBlocklistEngine.toJson())
+
+@app.post(f'{APP_PREFIX}/api/blocklist/toggle')
+def API_Blocklist_Toggle():
+    data = request.get_json()
+    if "enabled" not in data.keys():
+        return ResponseObject(False, "Please provide enabled")
+    status, msg = DashboardBlocklistEngine.Toggle(bool(data["enabled"]))
+    return ResponseObject(status, msg, DashboardBlocklistEngine.toJson())
+
+@app.post(f'{APP_PREFIX}/api/blocklist/settings')
+def API_Blocklist_Settings():
+    data = request.get_json()
+    status, msg = DashboardBlocklistEngine.UpdateSettings(
+        listSize=data.get("list_size", None),
+        customUrl=data.get("custom_url", None),
+        autoUpdate=data.get("auto_update", None),
+        updateIntervalHours=data.get("update_interval_hours", None))
+    if not status:
+        return ResponseObject(False, msg)
+    # Источник списка мог смениться: подтягиваем свежие данные,
+    # если включён - пере применяем
+    if DashboardBlocklistEngine.IsEnabled():
+        refreshStatus, refreshMsg = DashboardBlocklistEngine.Refresh()
+        if not refreshStatus:
+            return ResponseObject(False, refreshMsg, DashboardBlocklistEngine.toJson())
+    return ResponseObject(True, data=DashboardBlocklistEngine.toJson())
+
+@app.post(f'{APP_PREFIX}/api/blocklist/refresh')
+def API_Blocklist_Refresh():
+    status, msg = DashboardBlocklistEngine.Refresh()
+    return ResponseObject(status, msg, DashboardBlocklistEngine.toJson())
+
+@app.post(f'{APP_PREFIX}/api/blocklist/entries/add')
+def API_Blocklist_AddEntry():
+    data = request.get_json()
+    if not data.get("cidr", None):
+        return ResponseObject(False, "Please provide cidr")
+    status, msg = DashboardBlocklistEngine.AddManualEntry(
+        data["cidr"], data.get("comment", ""))
+    return ResponseObject(status, msg, DashboardBlocklistEngine.toJson())
+
+@app.post(f'{APP_PREFIX}/api/blocklist/entries/delete')
+def API_Blocklist_DeleteEntry():
+    data = request.get_json()
+    if not data.get("cidr", None):
+        return ResponseObject(False, "Please provide cidr")
+    status, msg = DashboardBlocklistEngine.DeleteManualEntry(data["cidr"])
+    return ResponseObject(status, msg, DashboardBlocklistEngine.toJson())
+
 @app.post(f'{APP_PREFIX}/api/addWireguardConfiguration')
 def API_addWireguardConfiguration():
     data = request.get_json()
@@ -511,6 +611,7 @@ def API_addWireguardConfiguration():
         WireguardConfigurations[data['ConfigurationName']] = (
             WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data)) if data.get('Protocol') == 'wg' else (
             AmneziaConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data))
+    refreshBlocklistPorts()
     return ResponseObject()
 
 @app.get(f'{APP_PREFIX}/api/toggleWireguardConfiguration')
@@ -534,6 +635,9 @@ def API_updateWireguardConfiguration():
         return ResponseObject(False, "Configuration does not exist", status_code=404)
     
     status, msg = WireguardConfigurations[name].updateConfigurationSettings(data)
+    if status:
+        # Порт прослушивания мог смениться - обновляем исключение в OUTPUT
+        refreshBlocklistPorts()
     
     return ResponseObject(status, message=msg, data=WireguardConfigurations[name])
 
@@ -589,6 +693,8 @@ def API_deleteWireguardConfiguration():
     status = rp.deleteConfiguration()
     if not status:
         WireguardConfigurations[data.get("ConfigurationName")] = rp
+    else:
+        refreshBlocklistPorts()
     return ResponseObject(status)
 
 @app.post(f'{APP_PREFIX}/api/renameWireguardConfiguration')
@@ -608,6 +714,7 @@ def API_renameWireguardConfiguration():
     status, message = rc.renameConfiguration(data.get("NewConfigurationName"))
     if status:
         WireguardConfigurations[data.get("NewConfigurationName")] = (WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data.get("NewConfigurationName")) if rc.Protocol == 'wg' else AmneziaConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data.get("NewConfigurationName")))
+        refreshBlocklistPorts()
     else:
         WireguardConfigurations[data.get("ConfigurationName")] = rc
     return ResponseObject(status, message)

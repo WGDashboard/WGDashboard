@@ -98,6 +98,13 @@ export default {
 						</RouterLink>
 					</li>
 					<li class="nav-item">
+						<RouterLink class="nav-link rounded-3" to="/blocklist"
+									active-class="active">
+							<i class="bi bi-shield-fill-x me-2"></i>
+							<LocaleText t="Blocklist"></LocaleText>
+						</RouterLink>
+					</li>
+					<li class="nav-item">
 						<a class="nav-link rounded-3" role="button" @click="openAgentModal = true">
 							<i class="bi bi-question-circle me-2"></i>
 							<LocaleText t="Help"></LocaleText>
