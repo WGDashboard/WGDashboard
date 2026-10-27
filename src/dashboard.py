@@ -114,7 +114,6 @@ def peerInformationBackgroundThread():
                             c.getPeersEndpoint()
                             c.getPeers()
                             if DashboardConfig.GetConfig('WireGuardConfiguration', 'peer_tracking')[1] is True:
-                                print("[WGDashboard] Tracking Peers")
                                 if delay == 6:
                                     if c.configurationInfo.PeerTrafficTracking:
                                         c.logPeersTraffic()
