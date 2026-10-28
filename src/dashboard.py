@@ -881,13 +881,16 @@ def API_addPeers(configName):
             allowed_ips_validation: bool = data.get('allowed_ips_validation', True)
             
             config = WireguardConfigurations.get(configName)
-            _ovr = config.configurationInfo.OverridePeerSettings if config.configurationInfo else None
-            endpoint_allowed_ip: str = data.get('endpoint_allowed_ip',
-                (_ovr.EndpointAllowedIPs if _ovr and _ovr.EndpointAllowedIPs else None)
-                or DashboardConfig.GetConfig("Peers", "peer_endpoint_allowed_ip")[1])
-            dns_addresses: str = data.get('DNS',
-                (_ovr.DNS if _ovr and _ovr.DNS else None)
-                or DashboardConfig.GetConfig("Peers", "peer_global_DNS")[1])
+            overridePeerSettings = config.configurationInfo.OverridePeerSettings
+            
+            endpoint_allowed_ip: str = data.get('endpoint_allowed_ip', (
+                overridePeerSettings.EndpointAllowedIPs
+                    if overridePeerSettings.EndpointAllowedIPs else DashboardConfig.GetConfig("Peers", "peer_endpoint_allowed_ip")[1]
+            ))
+            dns_addresses: str = data.get('DNS', (
+                overridePeerSettings.DNS
+                    if overridePeerSettings.DNS else DashboardConfig.GetConfig("Peers", "peer_global_DNS")[1]
+            ))
             
             
             mtu: int = data.get('mtu', None)
@@ -896,8 +899,10 @@ def API_addPeers(configName):
             preshared_key: str = data.get('preshared_key', "")            
     
             if type(mtu) is not int or mtu < 0 or mtu > 1460:
-                _mtu = str(_ovr.MTU) if _ovr and _ovr.MTU else None
-                default: str = _mtu or DashboardConfig.GetConfig("Peers", "peer_mtu")[1]
+                default: str = (
+                    str(overridePeerSettings.MTU)
+                        if overridePeerSettings.MTU else DashboardConfig.GetConfig("Peers", "peer_mtu")[1]
+                )
                 if default.isnumeric():
                     try:
                         mtu = int(default)
@@ -906,8 +911,10 @@ def API_addPeers(configName):
                 else:
                     mtu = 0
             if type(keep_alive) is not int or keep_alive < 0:
-                _ka = str(_ovr.PersistentKeepalive) if _ovr and _ovr.PersistentKeepalive else None
-                default = _ka or DashboardConfig.GetConfig("Peers", "peer_keep_alive")[1]
+                default = (
+                    str(overridePeerSettings.PersistentKeepalive)
+                        if overridePeerSettings.PersistentKeepalive else DashboardConfig.GetConfig("Peers", "peer_keep_alive")[1]
+                )
                 if default.isnumeric():
                     try:
                         keep_alive = int(default)
