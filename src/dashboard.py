@@ -1054,9 +1054,8 @@ def API_addPeers(configName):
                     if ipStatus:
                         for subnet in availableIps.keys():
                             for ip in availableIps[subnet]:
-                                allowed_ips = [ip]
+                                allowed_ips.append(ip)
                                 break
-                            break  
                     else:
                         return ResponseObject(False, "No more available IP can assign") 
 
