@@ -1,7 +1,7 @@
 """
 AmneziaWG Configuration
 """
-import random, sqlalchemy, os, subprocess, re, uuid
+import sqlalchemy, subprocess, re, traceback
 from flask import current_app
 from .PeerJobs import PeerJobs
 from .AmneziaPeer import AmneziaPeer
@@ -287,17 +287,8 @@ class AmneziaConfiguration(WireguardConfiguration):
                     )
             for p in peers:
                 presharedKeyExist = len(p['preshared_key']) > 0
-                rd = random.Random()
-                uid = str(uuid.UUID(int=rd.getrandbits(128), version=4))
-                if presharedKeyExist:
-                    with open(uid, "w+") as f:
-                        f.write(p['preshared_key'])
-
-                command = [self.Protocol, "set", self.Name, "peer", p['id'], "allowed-ips", cleanedAllowedIPs[p["id"]], "preshared-key", uid if presharedKeyExist else "/dev/null"]
-                subprocess.check_output(command, stderr=subprocess.STDOUT)
-
-                if presharedKeyExist:
-                    os.remove(uid)
+                command = [self.Protocol, "set", self.Name, "peer", p['id'], "allowed-ips", cleanedAllowedIPs[p["id"]], "preshared-key", "/dev/stdin" if presharedKeyExist else "/dev/null"]
+                subprocess.check_output(command, input=p['preshared_key'].encode() if presharedKeyExist else None, stderr=subprocess.STDOUT)
 
             command = [f"{self.Protocol}-quick", "save", self.Name]
             subprocess.check_output(command, stderr=subprocess.STDOUT)
@@ -312,7 +303,8 @@ class AmneziaConfiguration(WireguardConfiguration):
                 "peers": list(map(lambda k : k['id'], peers))
             })
         except Exception as e:
-            current_app.logger.error("Add peers error", e)
+            output = e.output.decode('UTF-8', 'replace') if isinstance(e, subprocess.CalledProcessError) and e.output else ""
+            current_app.logger.error(f"Add peers error: {e}\n{output}\n{traceback.format_exc()}")
             return False, [], "Internal server error"
         return True, result['peers'], ""
 
