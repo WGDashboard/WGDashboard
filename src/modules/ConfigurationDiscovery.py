@@ -14,6 +14,7 @@ WG_PEER_KEYS = frozenset({
 AWG_INTERFACE_KEYS = frozenset({
     "jc", "jmin", "jmax", "s1", "s2", "s3", "s4", "h1", "h2", "h3", "h4",
     "i1", "i2", "i3", "i4", "i5",
+    "j1", "j2", "j3", "itime",
     "headerprotectionkey", "contentpaddingaddition", "randomtrailers",
     "rekeyaftertime", "rekeytimeout", "rejectaftertime",
     "keepalivetimeout", "maxhandshakeattempts", "disablecookies",
