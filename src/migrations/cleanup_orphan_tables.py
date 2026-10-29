@@ -49,7 +49,10 @@ def discover_candidates(connection):
     # consider ConfigurationsInfo IDs so a metadata-only orphan is visible.
     main = {
         name for name in tables
-        if not name.endswith(SUFFIXES) and PEER_MARKERS.issubset(table_columns(connection, name))
+        if (
+                PEER_MARKERS.issubset(table_columns(connection, name))
+                and (name in metadata or not name.endswith(SUFFIXES))
+        )
     }
     candidates = main | metadata
     result = {}
@@ -128,6 +131,18 @@ def cleanup(args):
         # opts into cleaning invalid/mismatched configs as well.
         protected = present - (set(invalid) if args.include_invalid else set())
         orphans = {name: item for name, item in candidates.items() if name not in protected}
+        for name, item in orphans.items():
+            for other_name, other_item in candidates.items():
+                if other_name == name:
+                    continue
+
+                overlapping = set(item["tables"]) & set(other_item["tables"])
+                if overlapping:
+                    raise CleanupError(
+                        f"Refusing cleanup of {name!r}: tables overlap with "
+                        f"configuration {other_name!r}: "
+                        f"{', '.join(sorted(overlapping))}"
+                    )
         print(f"Database: {database}")
         print(f"WG configs: {wg_dir} | AWG configs: {awg_dir}")
         print(f"Known interfaces in DB: {len(candidates)}; protected files: {len(protected)}")
