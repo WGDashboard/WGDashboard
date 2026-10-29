@@ -258,6 +258,24 @@ set_envvars() {
   done
 }
 
+# Run user-provided drop-in scripts, e.g. to install additional packages
+run_custom_init() {
+  local init_dir="/data/custom-init.d"
+
+  [[ -d "$init_dir" ]] || return 0
+
+  printf "\n------------------ RUNNING CUSTOM SCRIPTS ------------------\n"
+
+  for script in "$init_dir"/*; do
+    [[ -f "$script" ]] || continue
+
+    echo "Running custom script: ${script}"
+    if ! bash "$script"; then
+      echo "Custom script ${script} exited with an error, continuing."
+    fi
+  done
+}
+
 # Start service and monitor logs
 start_and_monitor() {
   printf "\n---------------------- STARTING CORE -----------------------\n"
@@ -331,4 +349,5 @@ start_and_monitor() {
 # Main execution flow
 ensure_installation
 set_envvars
+run_custom_init
 start_and_monitor
