@@ -49,11 +49,20 @@ export default {
 				H2: 0,
 				H3: 0,
 				H4: 0,
-				I1: "0",
-				I2: "0",
-				I3: "0",
-				I4: "0",
-				I5: "0"
+				I1: "",
+				I2: "",
+				I3: "",
+				I4: "",
+				I5: "",
+				HeaderProtectionKey: "",
+				ContentPaddingAddition: "0-64",
+				RekeyAfterTime: "100-140",
+				RekeyTimeout: "4-7",
+				RejectAfterTime: "160-200",
+				KeepaliveTimeout: "8-12",
+				MaxHandshakeAttempts: "14-20",
+				RandomTrailers: "on",
+				DisableCookies: "on"
 			},
 			numberOfAvailableIPs: "0",
 			error: false,
@@ -72,9 +81,15 @@ export default {
 			this.newConfiguration[key] = this.rand(1, 2**31);
 		});
 
-		// Initialize I1 to I5 as "0"
-		['I1', 'I2', 'I3', 'I4', 'I5'].forEach(key => {
-			this.newConfiguration[key] = "0";
+    // Initialize HeaderProtectionKey
+    let headerProtectionKey = new Uint8Array(32);
+		window.crypto.getRandomValues(headerProtectionKey);
+    this.newConfiguration.HeaderProtectionKey = btoa(String.fromCharCode(...headerProtectionKey));
+
+    // S1-S4 are recommended be the same to work with RandomTrailers and must 12 or more to work with HeaderProtectionKey
+    let constantS = 12 + this.rand(1, 2**5);
+		['S1', 'S2', 'S3', 'S4'].forEach(key => {
+			this.newConfiguration[key] = constantS;
 		});
 	},
 	methods: {
@@ -388,7 +403,7 @@ export default {
 
 								<div class="card rounded-3" 
 								     v-if="this.newConfiguration.Protocol === 'awg'"
-								     v-for="key in ['Jc', 'Jmin', 'Jmax', 'S1', 'S2', 'S3', 'S4', 'H1', 'H2', 'H3', 'H4', 'I1', 'I2', 'I3', 'I4', 'I5']">
+								     v-for="key in ['Jc', 'Jmin', 'Jmax', 'S1', 'S2', 'S3', 'S4', 'H1', 'H2', 'H3', 'H4', 'I1', 'I2', 'I3', 'I4', 'I5', 'HeaderProtectionKey', 'ContentPaddingAddition', 'RekeyAfterTime', 'RekeyTimeout', 'RejectAfterTime', 'KeepaliveTimeout', 'MaxHandshakeAttempts', 'RandomTrailers', 'DisableCookies']">
 									<div class="card-header">{{ key }}</div>
 									<div class="card-body">
 										<input type="text"

@@ -126,6 +126,15 @@ class WireguardConfiguration:
                     "I3": self.I3,
                     "I4": self.I4,
                     "I5": self.I5,
+                    "HeaderProtectionKey": self.HeaderProtectionKey,
+                    "ContentPaddingAddition": self.ContentPaddingAddition,
+                    "RekeyAfterTime": self.RekeyAfterTime,
+                    "RekeyTimeout": self.RekeyTimeout,
+                    "RejectAfterTime": self.RejectAfterTime,
+                    "KeepaliveTimeout": self.KeepaliveTimeout,
+                    "MaxHandshakeAttempts": self.MaxHandshakeAttempts,
+                    "RandomTrailers": self.RandomTrailers,
+                    "DisableCookies": self.DisableCookies,
                     "J1": self.J1,
                     "J2": self.J2,
                     "J3": self.J3,
@@ -1029,7 +1038,7 @@ class WireguardConfiguration:
             allowEdit = ["Address", "PreUp", "PostUp", "PreDown", "PostDown", "ListenPort", "Table"]
             awgKeys = []
             if self.Protocol == 'awg':
-                awgKeys = ["Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4", "I1", "I2", "I3", "I4", "I5", "J1", "J2", "J3", "Itime"]
+                awgKeys = ["Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4", "I1", "I2", "I3", "I4", "I5", "HeaderProtectionKey", "ContentPaddingAddition", "RekeyAfterTime", "RekeyTimeout", "RejectAfterTime", "KeepaliveTimeout", "MaxHandshakeAttempts", "RandomTrailers", "DisableCookies", "J1", "J2", "J3", "Itime"]
                 allowEdit += awgKeys
             start = original.index("[Interface]")
             try:
