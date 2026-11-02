@@ -126,6 +126,15 @@ class WireguardConfiguration:
                     "I3": self.I3,
                     "I4": self.I4,
                     "I5": self.I5,
+                    "HeaderProtectionKey": self.HeaderProtectionKey,
+                    "ContentPaddingAddition": self.ContentPaddingAddition,
+                    "RekeyAfterTime": self.RekeyAfterTime,
+                    "RekeyTimeout": self.RekeyTimeout,
+                    "RejectAfterTime": self.RejectAfterTime,
+                    "KeepaliveTimeout": self.KeepaliveTimeout,
+                    "MaxHandshakeAttempts": self.MaxHandshakeAttempts,
+                    "RandomTrailers": self.RandomTrailers,
+                    "DisableCookies": self.DisableCookies,
                     "J1": self.J1,
                     "J2": self.J2,
                     "J3": self.J3,
@@ -240,7 +249,7 @@ class WireguardConfiguration:
             self.Status = self.getStatus()
 
     def __dropDatabase(self):
-        existingTables = [self.Name, f'{self.Name}_restrict_access', f'{self.Name}_transfer', f'{self.Name}_deleted']
+        existingTables = [self.Name, f'{self.Name}_restrict_access', f'{self.Name}_transfer', f'{self.Name}_deleted', f'{self.Name}_history_endpoint']
         try:
             with self.engine.begin() as conn:
                 for name in existingTables:
@@ -315,7 +324,8 @@ class WireguardConfiguration:
             f'{dbName}_history_endpoint', self.metadata,
             sqlalchemy.Column('id', sqlalchemy.String(255), nullable=False),
             sqlalchemy.Column('endpoint', sqlalchemy.String(255), nullable=False),
-            sqlalchemy.Column('time', time_col_type)
+            sqlalchemy.Column('time', time_col_type),
+            extend_existing=True
         )
         
         self.infoTable = sqlalchemy.Table(
@@ -949,8 +959,8 @@ class WireguardConfiguration:
         files.sort(key=lambda x: x[1], reverse=True)
 
         for f, ct in files:
-            if RegexMatch(rf"^({self.Name})_(\d+)\\.(conf)$", f):
-                s = re.search(rf"^({self.Name})_(\d+)\\.(conf)$", f)
+            if RegexMatch(rf"^({self.Name})_(\d+)\.(conf)$", f):
+                s = re.search(rf"^({self.Name})_(\d+)\.(conf)$", f)
                 date = s.group(2)
                 d = {
                     "filename": f,
@@ -991,7 +1001,11 @@ class WireguardConfiguration:
         if backupFileName not in backups:
             return False
         try:
-            os.remove(os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', backupFileName))
+            backupPath = os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup')
+            for ext in ('.conf', '.sql'):
+                f = os.path.join(backupPath, os.path.splitext(backupFileName)[0] + ext)
+                if os.path.exists(f):
+                    os.remove(f)
         except Exception as e:
             return False
         return True
@@ -1024,7 +1038,7 @@ class WireguardConfiguration:
             allowEdit = ["Address", "PreUp", "PostUp", "PreDown", "PostDown", "ListenPort", "Table"]
             awgKeys = []
             if self.Protocol == 'awg':
-                awgKeys = ["Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4", "I1", "I2", "I3", "I4", "I5", "J1", "J2", "J3", "Itime"]
+                awgKeys = ["Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4", "I1", "I2", "I3", "I4", "I5", "HeaderProtectionKey", "ContentPaddingAddition", "RekeyAfterTime", "RekeyTimeout", "RejectAfterTime", "KeepaliveTimeout", "MaxHandshakeAttempts", "RandomTrailers", "DisableCookies", "J1", "J2", "J3", "Itime"]
                 allowEdit += awgKeys
             start = original.index("[Interface]")
             try:
@@ -1092,6 +1106,7 @@ class WireguardConfiguration:
                 doRenameStatement("_restrict_access")
                 doRenameStatement("_deleted")
                 doRenameStatement("_transfer")
+                doRenameStatement("_history_endpoint")
                 conn.execute(
                     self.infoTable.update()
                     .where(self.infoTable.c.ID == self.Name)

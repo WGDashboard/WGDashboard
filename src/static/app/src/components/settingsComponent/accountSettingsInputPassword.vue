@@ -130,6 +130,7 @@ export default {
 				</div>
 			</div>
 			<button
+                type="button"
 				:disabled="!this.passwordValid"
 				class="ms-auto btn bg-success-subtle text-success-emphasis border-1 border-success-subtle rounded-3 shadow-sm" @click="this.useValidation()">
 				<i class="bi bi-save2-fill me-2"></i>

@@ -121,6 +121,20 @@ Updating the WGDashboard container should be through 'The Docker Way' - by pulli
 
 ---
 
+## 🧩 Custom Startup Scripts
+
+Every file placed in `/data/custom-init.d/` is executed with `bash` at container startup, in alphabetical order, right before WGDashboard starts. A failing script is logged but does not stop the container.
+
+This is useful for installing additional packages, for example `/data/custom-init.d/apk-add`:
+```bash
+apk update > /dev/null 2>&1
+apk add --no-cache util-linux openssh-client > /dev/null 2>&1
+```
+
+> 📁 When using a Docker volume for `/data`, you can also bind-mount the directory directly, e.g. `./custom-init.d:/data/custom-init.d:ro`.
+
+---
+
 ## 🔐 Port Forwarding Note
 
 When using multiple WireGuard interfaces, remember to **open their respective ports** on the host.
@@ -202,6 +216,7 @@ ENTRYPOINT ["/bin/bash", "/entrypoint.sh"]
 
 - **`ensure_installation`**: Sets up the app, database, and Python environment.
 - **`set_envvars`**: Writes `wg-dashboard.ini` and applies environment variables.
+- **`run_custom_init`**: Runs user scripts from `/data/custom-init.d/`.
 - **`start_core`**: Starts the main WGDashboard service.
 - **`ensure_blocking`**: Tails the error log to keep the container process alive.
 

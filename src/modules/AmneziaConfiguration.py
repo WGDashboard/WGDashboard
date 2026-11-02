@@ -37,6 +37,15 @@ class AmneziaConfiguration(WireguardConfiguration):
         self.I3 = ""
         self.I4 = ""
         self.I5 = ""
+        self.HeaderProtectionKey = ""
+        self.ContentPaddingAddition = 0
+        self.RekeyAfterTime = 0
+        self.RekeyTimeout = 0
+        self.RejectAfterTime = 0
+        self.KeepaliveTimeout = 0
+        self.MaxHandshakeAttempts = 0
+        self.RandomTrailers = 0
+        self.DisableCookies = 0
         self.J1 = ""
         self.J2 = ""
         self.J3 = ""
@@ -84,6 +93,15 @@ class AmneziaConfiguration(WireguardConfiguration):
             "I3": self.I3,
             "I4": self.I4,
             "I5": self.I5,
+            "HeaderProtectionKey": self.HeaderProtectionKey,
+            "ContentPaddingAddition": self.ContentPaddingAddition,
+            "RekeyAfterTime": self.RekeyAfterTime,
+            "RekeyTimeout": self.RekeyTimeout,
+            "RejectAfterTime": self.RejectAfterTime,
+            "KeepaliveTimeout": self.KeepaliveTimeout,
+            "MaxHandshakeAttempts": self.MaxHandshakeAttempts,
+            "RandomTrailers": self.RandomTrailers,
+            "DisableCookies": self.DisableCookies,
             "J1": self.J1,
             "J2": self.J2,
             "J3": self.J3,
@@ -152,7 +170,8 @@ class AmneziaConfiguration(WireguardConfiguration):
             f'{dbName}_history_endpoint', self.metadata,
             sqlalchemy.Column('id', sqlalchemy.String(255), nullable=False),
             sqlalchemy.Column('endpoint', sqlalchemy.String(255), nullable=False),
-            sqlalchemy.Column('time', time_col_type)
+            sqlalchemy.Column('time', time_col_type),
+            extend_existing=True
         )
         
         self.infoTable = sqlalchemy.Table(

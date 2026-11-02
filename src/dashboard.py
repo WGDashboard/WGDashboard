@@ -945,8 +945,17 @@ def API_addPeers(configName):
             allowed_ips: list[str] = data.get('allowed_ips', [])
             allowed_ips_validation: bool = data.get('allowed_ips_validation', True)
             
-            endpoint_allowed_ip: str = data.get('endpoint_allowed_ip', DashboardConfig.GetConfig("Peers", "peer_endpoint_allowed_ip")[1])
-            dns_addresses: str = data.get('DNS', DashboardConfig.GetConfig("Peers", "peer_global_DNS")[1])
+            config = WireguardConfigurations.get(configName)
+            overridePeerSettings = config.configurationInfo.OverridePeerSettings
+            
+            endpoint_allowed_ip: str = data.get('endpoint_allowed_ip', (
+                overridePeerSettings.EndpointAllowedIPs
+                    if overridePeerSettings.EndpointAllowedIPs else DashboardConfig.GetConfig("Peers", "peer_endpoint_allowed_ip")[1]
+            ))
+            dns_addresses: str = data.get('DNS', (
+                overridePeerSettings.DNS
+                    if overridePeerSettings.DNS else DashboardConfig.GetConfig("Peers", "peer_global_DNS")[1]
+            ))
             
             
             mtu: int = data.get('mtu', None)
@@ -955,7 +964,10 @@ def API_addPeers(configName):
             preshared_key: str = data.get('preshared_key', "")            
     
             if type(mtu) is not int or mtu < 0 or mtu > 1460:
-                default: str = DashboardConfig.GetConfig("Peers", "peer_mtu")[1]
+                default: str = (
+                    str(overridePeerSettings.MTU)
+                        if overridePeerSettings.MTU else DashboardConfig.GetConfig("Peers", "peer_mtu")[1]
+                )
                 if default.isnumeric():
                     try:
                         mtu = int(default)
@@ -964,7 +976,10 @@ def API_addPeers(configName):
                 else:
                     mtu = 0
             if type(keep_alive) is not int or keep_alive < 0:
-                default = DashboardConfig.GetConfig("Peers", "peer_keep_alive")[1]
+                default = (
+                    str(overridePeerSettings.PersistentKeepalive)
+                        if overridePeerSettings.PersistentKeepalive else DashboardConfig.GetConfig("Peers", "peer_keep_alive")[1]
+                )
                 if default.isnumeric():
                     try:
                         keep_alive = int(default)
@@ -973,7 +988,6 @@ def API_addPeers(configName):
                 else:
                     keep_alive = 0
             
-            config = WireguardConfigurations.get(configName)
             if not config.getStatus():
                 config.toggleConfiguration()
             ipStatus, availableIps = config.getAvailableIP(-1)
@@ -1040,9 +1054,8 @@ def API_addPeers(configName):
                     if ipStatus:
                         for subnet in availableIps.keys():
                             for ip in availableIps[subnet]:
-                                allowed_ips = [ip]
+                                allowed_ips.append(ip)
                                 break
-                            break  
                     else:
                         return ResponseObject(False, "No more available IP can assign") 
 
@@ -1140,23 +1153,36 @@ def API_GetPeerHistoricalEndpoints():
     if not configurationName or not id:
         return ResponseObject(False, "Please provide configurationName and id")
     fp, p = WireguardConfigurations.get(configurationName).searchPeer(id)
-    if fp:
-        result = p.getEndpoints()
-        geo = {}
-        try:
-            r = requests.post(f"http://ip-api.com/batch?fields=city,country,lat,lon,query",
-                              data=json.dumps([x['endpoint'] for x in result]))
-            d = r.json()
-            
-                
-        except Exception as e:
-            return ResponseObject(data=result, message="Failed to request IP address geolocation. " + str(e))
-        
-        return ResponseObject(data={
-            "endpoints": p.getEndpoints(),
-            "geolocation": d
-        })
-    return ResponseObject(False, "Peer does not exist")
+    if not fp:
+        return ResponseObject(False, "Peer does not exist")
+    endpoints = p.getEndpoints()
+    ips = [x['endpoint'] for x in endpoints]
+    unique_ips = list(set(ips))
+    def chunks(lst, size=100):
+        for i in range(0, len(lst), size):
+            yield lst[i:i + size]
+    geo_cache = {}
+    try:
+        for batch in chunks(unique_ips, 100):
+            r = requests.post(
+                "http://ip-api.com/batch?fields=city,country,lat,lon,query",
+                data=json.dumps(batch),
+                timeout=5
+            )
+            r.raise_for_status()
+            data = r.json()
+            for item in data:
+                geo_cache[item["query"]] = item
+        geolocation = [geo_cache[ip] for ip in ips]
+    except Exception as e:
+        return ResponseObject(
+            data={"endpoints": endpoints},
+            message="Failed to request IP address geolocation. " + str(e)
+        )
+    return ResponseObject(data={
+        "endpoints": endpoints,
+        "geolocation": geolocation
+    })
 
 @app.get(f'{APP_PREFIX}/api/getPeerSessions')
 def API_GetPeerSessions():
