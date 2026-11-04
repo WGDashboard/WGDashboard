@@ -393,12 +393,12 @@ _checkNode(){
     then
         printf "[WGDashboard] %s Node.js and npm are still not installed, halting script now.\n" "$heavy_crossmark"
         printf "%s\n" "$helpMsg"
-        kill $TOP_PID
+        return 1
     elif ! _isNodeVersionSupported
     then
         printf "[WGDashboard] %s Found Node.js %s, but the frontend requires Node.js 20.19+ or 22.12+. Halting install now.\n" "$heavy_crossmark" "$(node --version)"
         printf "%s\n" "$helpMsg"
-        kill $TOP_PID
+        return 1
     else
         printf "[WGDashboard] %s Node.js %s and npm %s are installed\n" "$heavy_checkmark" "$(node --version)" "$(npm --version)"
     fi
@@ -406,19 +406,50 @@ _checkNode(){
 
 _compileFrontend(){
     _logSection "Compiling Frontend"
-    _checkNode
+    if ! _checkNode; then
+        return 1
+    fi
 
-    local dir
-    for dir in "${frontend_dirs[@]}"; do
+    local staging_root live_dir backup_dir dir output_dir index
+    local frontend_output_dirs=("WGDashboardAdmin" "WGDashboardClient")
+    staging_root=$(mktemp -d "$PWD/static/.dist-staging.XXXXXX") || return 1
+    live_dir="$PWD/static/dist"
+    backup_dir="${staging_root}.previous"
+
+    for index in "${!frontend_dirs[@]}"; do
+        dir="${frontend_dirs[$index]}"
+        output_dir="$staging_root/${frontend_output_dirs[$index]}"
         printf "[WGDashboard] %s Compiling frontend in %s\n" "$install" "$dir"
-        if ! ( cd "$dir" && npm ci && npm run build ) &>> ./log/install.txt
+        if ! ( cd "$dir" && npm ci && npm run build -- --outDir "$output_dir" --emptyOutDir ) &>> ./log/install.txt
         then
             printf "[WGDashboard] %s Failed to compile frontend in %s, halting script now.\n" "$heavy_crossmark" "$dir"
             printf "%s\n" "$helpMsg"
-            kill $TOP_PID
+            rm -rf "$staging_root"
             return 1
         fi
     done
+
+    if [[ ! -f "$staging_root/WGDashboardAdmin/index.html" || ! -f "$staging_root/WGDashboardClient/client.html" ]]; then
+        printf "[WGDashboard] %s Frontend build did not produce the expected entry files.\n" "$heavy_crossmark"
+        rm -rf "$staging_root"
+        return 1
+    fi
+
+    if [[ -e "$live_dir" ]] && ! mv "$live_dir" "$backup_dir"; then
+        printf "[WGDashboard] %s Could not preserve the current frontend bundle.\n" "$heavy_crossmark"
+        rm -rf "$staging_root"
+        return 1
+    fi
+    if ! mv "$staging_root" "$live_dir"; then
+        printf "[WGDashboard] %s Could not install the new frontend bundle.\n" "$heavy_crossmark"
+        if [[ -e "$backup_dir" ]]; then
+            mv "$backup_dir" "$live_dir"
+        fi
+        rm -rf "$staging_root"
+        return 1
+    fi
+    rm -rf "$backup_dir"
+
     printf "[WGDashboard] %s Frontend is compiled\n" "$heavy_checkmark"
 }
 
@@ -456,7 +487,9 @@ install_wgd(){
     _installPythonVenv
     _installPythonPip
     _checkWireguard
-    _compileFrontend
+    if ! _compileFrontend; then
+        return 1
+    fi
     sudo chmod -R 755 /etc/wireguard/
 
     _check_and_set_venv
@@ -601,7 +634,10 @@ update_wgd() {
         printf "[WGDashboard] Downloading %s from GitHub..." "$new_ver"
         { date; git stash; git pull https://github.com/WGDashboard/WGDashboard.git $new_ver --force; } >> ./log/update.txt
         chmod +x ./wgd.sh
-        sudo ./wgd.sh install
+        if ! sudo ./wgd.sh install; then
+            printf "[WGDashboard] %s Update installation failed. Check ./log/install.txt; the previous frontend bundle was preserved when possible.\n" "$heavy_crossmark"
+            return 1
+        fi
         printf "[WGDashboard] Update completed!\n"
         rm wgd.sh.old
     else

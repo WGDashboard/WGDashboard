@@ -33,6 +33,7 @@ pnpm-debug.log*
 lerna-debug.log*
 
 dist
+/src/static/.dist-staging.*
 
 node_modules
 .DS_Store
