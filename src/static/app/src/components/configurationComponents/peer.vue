@@ -101,6 +101,14 @@ export default {
 						<samp>{{Peer.allowed_ip}}</samp>
 					</small>
 				</div>
+				<div :class="{'d-flex gap-2 align-items-center' : dashboardStore.Configuration.Server.dashboard_peer_list_display === 'list'}">
+					<small class="text-muted">
+						<LocaleText t="Endpoint"></LocaleText>
+					</small>
+					<small class="d-block">
+						<samp>{{Peer.endpoint && Peer.endpoint !== 'N/A' ? Peer.endpoint : '(none)'}}</samp>
+					</small>
+				</div>
 				<div class="d-flex align-items-center gap-1"
 					:class="{'ms-auto': dashboardStore.Configuration.Server.dashboard_peer_list_display === 'list'}"
 				>

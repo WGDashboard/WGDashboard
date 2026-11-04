@@ -92,6 +92,16 @@ defineEmits(['close'])
 								<div class="card rounded-3 bg-transparent h-100">
 									<div class="card-body py-2 d-flex flex-column justify-content-center">
 										<p class="mb-0 text-muted"><small>
+											<LocaleText t="Endpoint"></LocaleText>
+										</small></p>
+										<samp>{{selectedPeer.endpoint && selectedPeer.endpoint !== 'N/A' ? selectedPeer.endpoint : '(none)'}}</samp>
+									</div>
+								</div>
+							</div>
+							<div style="word-break: break-all" class="col-12 col-lg-6">
+								<div class="card rounded-3 bg-transparent h-100">
+									<div class="card-body py-2 d-flex flex-column justify-content-center">
+										<p class="mb-0 text-muted"><small>
 											<LocaleText t="Public Key"></LocaleText>
 										</small></p>
 										<samp>{{selectedPeer.id}}</samp>
