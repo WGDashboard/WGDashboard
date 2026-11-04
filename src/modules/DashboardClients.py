@@ -1,6 +1,6 @@
 import datetime
 import hashlib
-import random
+import secrets
 import uuid
 
 import bcrypt
@@ -305,7 +305,9 @@ class DashboardClients:
     def GetClientAssignedPeers(self, ClientID):
         return self.DashboardClientsPeerAssignment.GetAssignedPeers(ClientID)
     
-    def ResetClientPassword(self, ClientID, NewPassword, ConfirmNewPassword) -> tuple[bool, str] | tuple[bool, None]:
+    def ResetClientPassword(
+        self, ClientID, NewPassword, ConfirmNewPassword, ResetToken
+    ) -> tuple[bool, str] | tuple[bool, None]:
         c = self.GetClient(ClientID)
         if c is None:
             return False, "Client does not exist"
@@ -316,18 +318,36 @@ class DashboardClients:
         pwStrength, msg = ValidatePasswordStrength(NewPassword)
         if not pwStrength:
             return pwStrength, msg
+
+        if not isinstance(ResetToken, str) or not ResetToken or len(ResetToken) > 128:
+            return False, "Reset token is either invalid or expired"
+
+        tokenDigest = hashlib.sha256(ResetToken.encode("utf-8")).hexdigest()
+        now = datetime.datetime.now()
         try:
             with self.engine.begin() as conn:
+                tokenClaimed = conn.execute(
+                    self.dashboardClientsPasswordResetLinkTable.update().values({
+                        "ExpiryDate": now
+                    }).where(
+                        db.and_(
+                            self.dashboardClientsPasswordResetLinkTable.c.ClientID == ClientID,
+                            self.dashboardClientsPasswordResetLinkTable.c.ResetToken == tokenDigest,
+                            self.dashboardClientsPasswordResetLinkTable.c.ExpiryDate > now
+                        )
+                    )
+                )
+                if tokenClaimed.rowcount != 1:
+                    return False, "Reset token is either invalid or expired"
+
                 conn.execute(
                     self.dashboardClientsTable.update().values({
-                        "TotpKeyVerified": None,
-                        "TotpKey": pyotp.random_base32(),
                         "Password": bcrypt.hashpw(NewPassword.encode('utf-8'), bcrypt.gensalt()).decode("utf-8"),
                     }).where(
                         self.dashboardClientsTable.c.ClientID == ClientID
                     )
                 )
-                self.logger.log(Message=f"User {ClientID} reset password and TOTP")
+                self.logger.log(Message=f"User {ClientID} reset password")
         except Exception as e:
             self.logger.log(Status="false", Message=f"User {ClientID} reset password failed, reason: {str(e)}")
             return False, "Reset password failed."
@@ -420,11 +440,24 @@ class DashboardClients:
         if c is None:
             return False
         
-        newToken = str(random.randint(0, 999999)).zfill(6)
+        newToken = secrets.token_urlsafe(32)
+        tokenDigest = hashlib.sha256(newToken.encode("utf-8")).hexdigest()
+        now = datetime.datetime.now()
         with self.engine.begin() as conn:
+            recentToken = conn.execute(
+                self.dashboardClientsPasswordResetLinkTable.select().where(
+                    db.and_(
+                        self.dashboardClientsPasswordResetLinkTable.c.ClientID == ClientID,
+                        self.dashboardClientsPasswordResetLinkTable.c.CreatedDate > now - datetime.timedelta(minutes=2)
+                    )
+                ).limit(1)
+            ).first()
+            if recentToken:
+                return False
+
             conn.execute(
                 self.dashboardClientsPasswordResetLinkTable.update().values({
-                    "ExpiryDate": datetime.datetime.now()
+                    "ExpiryDate": now
                 
                 }).where(
                     db.and_(
@@ -435,10 +468,10 @@ class DashboardClients:
             )
             conn.execute(
                 self.dashboardClientsPasswordResetLinkTable.insert().values({
-                    "ResetToken": newToken,
+                    "ResetToken": tokenDigest,
                     "ClientID": ClientID,
-                    "CreatedDate": datetime.datetime.now(),
-                    "ExpiryDate": datetime.datetime.now() + datetime.timedelta(minutes=30)
+                    "CreatedDate": now,
+                    "ExpiryDate": now + datetime.timedelta(minutes=30)
                 })
             )
         
@@ -446,13 +479,14 @@ class DashboardClients:
         
     def ValidateClientPasswordResetToken(self, ClientID, Token):
         c = self.GetClient(ClientID)
-        if c is None:
+        if c is None or not isinstance(Token, str) or not Token or len(Token) > 128:
             return False
+        tokenDigest = hashlib.sha256(Token.encode("utf-8")).hexdigest()
         with self.engine.connect() as conn:
             t = conn.execute(
                 self.dashboardClientsPasswordResetLinkTable.select().where(
                     db.and_(self.dashboardClientsPasswordResetLinkTable.c.ClientID == ClientID,
-                            self.dashboardClientsPasswordResetLinkTable.c.ResetToken == Token,
+                            self.dashboardClientsPasswordResetLinkTable.c.ResetToken == tokenDigest,
                             self.dashboardClientsPasswordResetLinkTable.c.ExpiryDate > datetime.datetime.now())
                     
                 )
@@ -460,13 +494,16 @@ class DashboardClients:
         return t is not None
     
     def RevokeClientPasswordResetToken(self, ClientID, Token):
+        if not isinstance(Token, str) or len(Token) > 128:
+            return False
+        tokenDigest = hashlib.sha256(Token.encode("utf-8")).hexdigest()
         with self.engine.begin() as conn:
             conn.execute(
                 self.dashboardClientsPasswordResetLinkTable.update().values({
                     "ExpiryDate": datetime.datetime.now()
                 }).where(
                     db.and_(self.dashboardClientsPasswordResetLinkTable.c.ClientID == ClientID,
-                            self.dashboardClientsPasswordResetLinkTable.c.ResetToken == Token)
+                            self.dashboardClientsPasswordResetLinkTable.c.ResetToken == tokenDigest)
                 )
             )
         return True

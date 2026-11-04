@@ -113,10 +113,12 @@ def createClientBlueprint(wireguardConfigurations: dict[WireguardConfiguration],
             return ResponseObject(False, "Please provide a valid Email")
         
         token = dashboardClients.GenerateClientPasswordResetToken(u.get('ClientID'))
+        if not token:
+            return ResponseObject(False, "A reset token was recently sent. Please wait 2 minutes before requesting another.")
         
         status, msg = emailSender.send(
             email, "[WGDashboard | Client] Reset Password",
-            f"Hi {email}, \n\nIt looks like you're trying to reset your password at {date} \n\nEnter this 6 digits code on the Forgot Password to continue:\n\n{token}\n\nThis code will expire in 30 minutes for your security. If you didn’t request a password reset, you can safely ignore this email—your current password will remain unchanged.\n\nIf you need help, feel free to contact support.\n\nBest regards,\n\nWGDashboard"
+            f"Hi {email}, \n\nIt looks like you're trying to reset your password at {date} \n\nEnter this reset token on the Forgot Password page to continue:\n\n{token}\n\nThis token will expire in 30 minutes for your security. If you didn’t request a password reset, you can safely ignore this email—your current password will remain unchanged.\n\nIf you need help, feel free to contact support.\n\nBest regards,\n\nWGDashboard"
         )
         
         return ResponseObject(status, msg)
@@ -150,11 +152,9 @@ def createClientBlueprint(wireguardConfigurations: dict[WireguardConfiguration],
             return ResponseObject(False, "Please provide a valid Email")
         
         if not dashboardClients.ValidateClientPasswordResetToken(u.get('ClientID'), token):
-            return ResponseObject(False, "Verification code is either invalid or expired")
+            return ResponseObject(False, "Reset token is either invalid or expired")
         
-        status, msg = dashboardClients.ResetClientPassword(u.get('ClientID'), password, confirmPassword)
-        
-        dashboardClients.RevokeClientPasswordResetToken(u.get('ClientID'), token)
+        status, msg = dashboardClients.ResetClientPassword(u.get('ClientID'), password, confirmPassword, token)
         
         return ResponseObject(status, msg)
             
