@@ -191,6 +191,12 @@ const searchPeers = computed(() => {
 			wireguardConfigurationStore.Filter.ShowAllPeersWhenHiddenTags || (!wireguardConfigurationStore.Filter.ShowAllPeersWhenHiddenTags && taggedPeers.value.includes(x.id))
 		));
 
+	if (dashboardStore.Configuration.Server.dashboard_sort === "traffic"){
+		return result.sort((a, b) => {
+			return (b.total_data + b.cumu_data) - (a.total_data + a.cumu_data)
+		}).slice(0, showPeersCount.value);
+	}
+
 	if (dashboardStore.Configuration.Server.dashboard_sort === "restricted"){
 		return result.sort((a, b) => {
 			if ( a[dashboardStore.Configuration.Server.dashboard_sort]

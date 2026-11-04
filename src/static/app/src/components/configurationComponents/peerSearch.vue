@@ -24,6 +24,7 @@ export default {
 				status: GetLocale("Status"),
 				name: GetLocale("Name"),
 				allowed_ip: GetLocale("Allowed IPs"),
+				traffic: GetLocale("Total Usage"),
 				restricted: GetLocale("Restricted")
 			},
 			interval: {
