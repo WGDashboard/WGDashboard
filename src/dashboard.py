@@ -33,6 +33,7 @@ from modules.DashboardConfig import DashboardConfig
 from modules.WireguardConfiguration import WireguardConfiguration
 from modules.AmneziaConfiguration import AmneziaConfiguration
 from modules.DashboardOIDC import DashboardOIDC
+from modules.ConfigurationDiscovery import detect_configuration_protocol
 
 from client import createClientBlueprint
 
@@ -157,39 +158,53 @@ def ProtocolsEnabled() -> list[str]:
     return protocols
 
 def InitWireguardConfigurationsList(startup: bool = False):
-    if os.path.exists(DashboardConfig.GetConfig("Server", "wg_conf_path")[1]):
-        confs = os.listdir(DashboardConfig.GetConfig("Server", "wg_conf_path")[1])
-        confs.sort()
-        for i in confs:
-            if RegexMatch("^(.{1,}).(conf)$", i):
-                i = i.replace('.conf', '')
-                try:
-                    if i in WireguardConfigurations.keys():
-                        if WireguardConfigurations[i].configurationFileChanged():
-                            with app.app_context():
-                                WireguardConfigurations[i] = WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i)
-                    else:
-                        with app.app_context():
-                            WireguardConfigurations[i] = WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i, startup=startup)
-                except WireguardConfiguration.InvalidConfigurationFileException as e:
-                    app.logger.error(f"{i} have an invalid configuration file.")
-
-    if "awg" in ProtocolsEnabled():
-        confs = os.listdir(DashboardConfig.GetConfig("Server", "awg_conf_path")[1])
-        confs.sort()
-        for i in confs:
-            if RegexMatch("^(.{1,}).(conf)$", i):
-                i = i.replace('.conf', '')
-                try:
-                    if i in WireguardConfigurations.keys():
-                        if WireguardConfigurations[i].configurationFileChanged():
-                            with app.app_context():
-                                WireguardConfigurations[i] = AmneziaConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i)
-                    else:
-                        with app.app_context():
-                            WireguardConfigurations[i] = AmneziaConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, i, startup=startup)
-                except WireguardConfiguration.InvalidConfigurationFileException as e:
-                    app.logger.error(f"{i} have an invalid configuration file.")
+    configuration_paths = (("wg", "wg_conf_path", WireguardConfiguration),
+                           ("awg", "awg_conf_path", AmneziaConfiguration))
+    enabled = ProtocolsEnabled()
+    discovered = set()
+    successful_scan = True
+    for protocol, setting, configuration_class in configuration_paths:
+        if protocol not in enabled:
+            continue
+        directory = DashboardConfig.GetConfig("Server", setting)[1]
+        if not os.path.isdir(directory):
+            app.logger.warning("Configuration directory unavailable: %s", directory)
+            successful_scan = False
+            continue
+        try:
+            filenames = sorted(os.listdir(directory))
+        except OSError as exc:
+            app.logger.error("Cannot scan configuration directory %s: %s", directory, exc)
+            successful_scan = False
+            continue
+        for filename in filenames:
+            if not filename.endswith(".conf"):
+                continue
+            path = os.path.join(directory, filename)
+            if not os.path.isfile(path):
+                continue
+            name = filename[:-5]
+            detected, reason = detect_configuration_protocol(path)
+            if detected != protocol:
+                app.logger.warning("Skipping %s: %s", path,
+                                   reason if detected is None else
+                                   f"detected {detected} configuration in {protocol} directory")
+                continue
+            discovered.add(name)
+            try:
+                existing = WireguardConfigurations.get(name)
+                if existing is not None and existing.Protocol == protocol and not existing.configurationFileChanged():
+                    continue
+                with app.app_context():
+                    WireguardConfigurations[name] = configuration_class(
+                        DashboardConfig, AllPeerJobs, AllPeerShareLinks,
+                        DashboardWebHooks, name, startup=startup if existing is None else False)
+            except WireguardConfiguration.InvalidConfigurationFileException:
+                app.logger.error("%s has an invalid configuration file.", name)
+    # Do not discard registered configurations when a directory scan was incomplete.
+    if successful_scan:
+        for name in set(WireguardConfigurations) - discovered:
+            del WireguardConfigurations[name]
 
 def startThreads():
     bgThread = threading.Thread(target=peerInformationBackgroundThread, daemon=True)
@@ -326,7 +341,7 @@ def API_OIDC_GetProviders():
     _, oidc = DashboardConfig.GetConfig("OIDC", "admin_enable")
     if not oidc:
         return ResponseObject(status=False, message="OIDC is disabled")
-    
+
     return ResponseObject(data=AdminOIDC.GetProviders())
 
 @app.post(f'{APP_PREFIX}/api/oidc/authenticate')
@@ -350,7 +365,7 @@ def API_OIDC_Authenticate():
     resp = ResponseObject()
     resp.set_cookie('authToken', authToken)
     return resp
-    
+
 
 @app.post(f'{APP_PREFIX}/api/authenticate')
 def API_AuthenticateLogin():
