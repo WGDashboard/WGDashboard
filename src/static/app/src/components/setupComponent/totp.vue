@@ -120,7 +120,7 @@ export default {
 
 <template>
 	<div class="container-fluid login-container-fluid d-flex main pt-5 overflow-scroll"
-	     :data-bs-theme="this.store.Configuration.Server.dashboard_theme">
+	     :data-bs-theme="(this.store.Configuration && this.store.Configuration.Server && this.store.Configuration.Server.dashboard_theme) || 'dark'">
 		<div class="m-auto text-body" style="width: 500px">
 			<div class="d-flex flex-column">
 				<div class="mb-2 d-flex align-items-center gap-2">

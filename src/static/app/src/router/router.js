@@ -209,6 +209,17 @@ router.beforeEach(async (to, from, next) => {
 	document.querySelector(".loadingBar").classList.remove("loadingDone")
 	document.querySelector(".loadingBar").classList.add("loading")
 	if (to.meta.requiresAuth){
+		// The MFA enrolment page must not load the dashboard configuration:
+		// the API is blocked (403) until the MFA is verified.
+		if (to.path === '/2FASetup'){
+			if (await checkAuth()){
+				next()
+			}else{
+				dashboardConfigurationStore.Redirect = to;
+				next("/signin")
+			}
+			return
+		}
 		if (!dashboardConfigurationStore.getActiveCrossServer()){
 			if (await checkAuth()){
 				await dashboardConfigurationStore.getConfiguration()

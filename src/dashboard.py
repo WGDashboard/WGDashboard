@@ -2128,7 +2128,12 @@ Index Page
 
 @app.get(f'{APP_PREFIX}/')
 def index():
-    return render_template('index.html', APP_PREFIX=APP_PREFIX)
+    # The SPA shell must never be cached: it references the hashed bundles, and a stale
+    # shell would keep loading an old frontend after an update.
+    response = current_app.make_response(render_template('index.html', APP_PREFIX=APP_PREFIX))
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    return response
 
 if __name__ == "__main__":
     startThreads()

@@ -56,7 +56,9 @@ export const fetchGet = async (url, params=undefined, callback=undefined) => {
 						// MFA is mandatory: send the user to the enrolment page
 						return x.json().then((body) => {
 							if (body && body.mfaSetupRequired){
-								router.push('/2FASetup')
+								if (router.currentRoute.value.path !== '/2FASetup'){
+									router.push('/2FASetup')
+								}
 								return
 							}
 							throw new Error(x.statusText)
@@ -89,7 +91,9 @@ export const fetchPost = async (url, body, callback) => {
 				if (x.status === 403){
 					return x.json().then((body) => {
 						if (body && body.mfaSetupRequired){
-							router.push('/2FASetup')
+							if (router.currentRoute.value.path !== '/2FASetup'){
+								router.push('/2FASetup')
+							}
 							return
 						}
 						throw new Error(x.statusText)
