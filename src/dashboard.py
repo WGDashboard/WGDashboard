@@ -1,3 +1,4 @@
+from pathlib import Path
 import logging
 import random, shutil, sqlite3, configparser, hashlib, ipaddress, json, os, secrets, subprocess
 import time, re, uuid, bcrypt, psutil, pyotp, threading
@@ -612,7 +613,10 @@ def API_getWireguardConfigurationBackup():
     configurationName = request.args.get('configurationName')
     if configurationName is None or configurationName not in WireguardConfigurations.keys():
         return ResponseObject(False, "Configuration does not exist",  status_code=404)
-    return ResponseObject(data=WireguardConfigurations[configurationName].getBackups())
+    configuration = WireguardConfigurations[configurationName]
+    if request.args.get("metadata") == "1":
+        return ResponseObject(data={"backups": configuration.getBackups(metadataOnly=True)})
+    return ResponseObject(data=configuration.getBackups())
 
 @app.get(f'{APP_PREFIX}/api/getAllWireguardConfigurationBackup')
 def API_getAllWireguardConfigurationBackup():
@@ -624,43 +628,58 @@ def API_getAllWireguardConfigurationBackup():
     for i in existingConfiguration:
         b = WireguardConfigurations[i].getBackups(True)
         if len(b) > 0:
-            data['ExistingConfigurations'][i] = WireguardConfigurations[i].getBackups(True)
+            data['ExistingConfigurations'][i] = b
             
     for protocol in ProtocolsEnabled():
         directory = os.path.join(DashboardConfig.GetConfig("Server", f"{protocol}_conf_path")[1], 'WGDashboard_Backup')
         if os.path.exists(directory):
-            files = [(file, os.path.getctime(os.path.join(directory, file)))
-                     for file in os.listdir(directory) if os.path.isfile(os.path.join(directory, file))]
-            files.sort(key=lambda x: x[1], reverse=True)
-        
-            for f, ct in files:
-                if RegexMatch(r"^(.+)_(\d+)\.(conf)$", f):
-                    s = re.search(r"^(.+)_(\d+)\.(conf)$", f)
-                    name = s.group(1)
-                    if name not in existingConfiguration:
-                        if name not in data['NonExistingConfigurations'].keys():
-                            data['NonExistingConfigurations'][name] = []
-                        
-                        date = s.group(2)
-                        d = {
-                            "protocol": protocol,
-                            "filename": f,
-                            "backupDate": date,
-                            "content": open(os.path.join(DashboardConfig.GetConfig("Server", f"{protocol}_conf_path")[1], 'WGDashboard_Backup', f), 'r').read()
-                        }
-                        if f.replace(".conf", ".sql") in list(os.listdir(directory)):
-                            d['database'] = True
-                            d['databaseContent'] = open(os.path.join(DashboardConfig.GetConfig("Server", f"{protocol}_conf_path")[1], 'WGDashboard_Backup', f.replace(".conf", ".sql")), 'r').read()
-                        data['NonExistingConfigurations'][name].append(d)
+            with os.scandir(directory) as entries:
+                files = {entry.name for entry in entries if entry.is_file()}
+            for filename in sorted(files, reverse=True):
+                match = re.fullmatch(r"(.+)_(\d+)\.conf", filename)
+                if not match or match[1] in existingConfiguration:
+                    continue
+                conf = Path(directory) / filename
+                sql = conf.with_suffix(".sql")
+                backup = {
+                    "protocol": protocol,
+                    "filename": filename,
+                    "backupDate": match[2][:14],
+                    "content": conf.read_text(),
+                }
+                if sql.name in files:
+                    backup["database"] = True
+                    backup["databaseContent"] = sql.read_text()
+                data["NonExistingConfigurations"].setdefault(match[1], []).append(backup)
     return ResponseObject(data=data)
 
-@app.get(f'{APP_PREFIX}/api/createWireguardConfigurationBackup')
+@app.route(f'{APP_PREFIX}/api/createWireguardConfigurationBackup', methods=["GET", "POST"])
 def API_createWireguardConfigurationBackup():
-    configurationName = request.args.get('configurationName')
-    if configurationName is None or configurationName not in WireguardConfigurations.keys():
-        return ResponseObject(False, "Configuration does not exist",  status_code=404)
-    return ResponseObject(status=WireguardConfigurations[configurationName].backupConfigurationFile()[0], 
-                          data=WireguardConfigurations[configurationName].getBackups())
+    configuration = WireguardConfigurations.get(request.args.get("configurationName"))
+    if configuration is None:
+        return ResponseObject(False, "Configuration does not exist", status_code=404)
+    try:
+        status, _ = configuration.backupConfigurationFile()
+        if not status:
+            return ResponseObject(False, "Backup creation failed", status_code=500)
+        if request.method == "POST":
+            return ResponseObject(data=configuration.getBackups(metadataOnly=True))
+        return ResponseObject(data=configuration.getBackups())
+    except Exception:
+        current_app.logger.exception("Could not create backup for %s", configuration.Name)
+        return ResponseObject(False, "Backup creation failed. Check the server log.", status_code=500)
+
+
+@app.get(f'{APP_PREFIX}/api/getWireguardConfigurationBackupContent')
+def API_getWireguardConfigurationBackupContent():
+    configuration = WireguardConfigurations.get(request.args.get("configurationName"))
+    if configuration is None:
+        return ResponseObject(False, "Configuration does not exist", status_code=404)
+    content = configuration.getBackupContent(request.args.get("backupFileName"))
+    if content is None:
+        return ResponseObject(False, "Backup file does not exist", status_code=404)
+    return ResponseObject(data=content)
+
 
 @app.post(f'{APP_PREFIX}/api/deleteWireguardConfigurationBackup')
 def API_deleteWireguardConfigurationBackup():
@@ -682,8 +701,8 @@ def API_deleteWireguardConfigurationBackup():
 
 @app.get(f'{APP_PREFIX}/api/downloadWireguardConfigurationBackup')
 def API_downloadWireguardConfigurationBackup():
-    configurationName = os.path.basename(request.args.get('configurationName'))
-    backupFileName = os.path.basename(request.args.get('backupFileName'))
+    configurationName = request.args.get('configurationName')
+    backupFileName = request.args.get('backupFileName')
 
     if configurationName is None or configurationName not in WireguardConfigurations.keys():
         return ResponseObject(False, "Configuration does not exist", status_code=404)

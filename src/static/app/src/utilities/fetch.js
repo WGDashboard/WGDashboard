@@ -64,6 +64,26 @@ export const fetchGet = async (url, params=undefined, callback=undefined) => {
 	})
 }
 
+export const fetchBackup = async (url, params, body) => {
+	const query = new URLSearchParams(params).toString()
+	const response = await fetch(getUrl(query ? `${url}?${query}` : url), {
+		headers: getHeaders(),
+		method: body === undefined ? "GET" : "POST",
+		body: body === undefined ? undefined : JSON.stringify(body)
+	})
+	if (response.status === 401) {
+		DashboardConfigurationStore().newMessage(
+			"WGDashboard", "Sign in session ended, please sign in again", "warning"
+		)
+		router.push({path: "/signin"})
+	}
+	const result = await response.json().catch(() => null)
+	if (!response.ok || !result?.status) {
+		throw new Error(result?.message || `Backup request failed (HTTP ${response.status})`)
+	}
+	return result.data
+}
+
 export const fetchPost = async (url, body, callback) => {
 	await fetch(`${getUrl(url)}`, {
 		headers: getHeaders(),

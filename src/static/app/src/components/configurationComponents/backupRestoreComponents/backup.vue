@@ -1,59 +1,70 @@
 <script setup>
 import dayjs from "dayjs";
 import {computed, ref} from "vue";
-import {fetchGet, fetchPost, getUrl} from "@/utilities/fetch.js";
+import {fetchBackup, getUrl} from "@/utilities/fetch.js";
 import {useRoute} from "vue-router";
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
 import LocaleText from "@/components/text/localeText.vue";
-const props = defineProps(["b", "delay"])
+const props = defineProps(["b", "delay", "busy"])
 const deleteConfirmation = ref(false)
 const restoreConfirmation = ref(false)
 const route = useRoute()
 const emit = defineEmits(["refresh", "refreshPeersList"])
 const store = DashboardConfigurationStore()
 const loading = ref(false);
-const deleteBackup = () => {
-	loading.value = true;
-	fetchPost("/api/deleteWireguardConfigurationBackup", {
-		ConfigurationName: route.params.id,
-		BackupFileName: props.b.filename
-	}, (res) => {
-		loading.value = false;
-		if (res.status){
-			emit("refresh")
-			store.newMessage("Server", "Backup deleted", "success")
-		}else{
-			store.newMessage("Server", "Backup failed to delete", "danger")
-		}
-	})
+const backupParams = () => ({configurationName: route.params.id, backupFileName: props.b.filename})
+const backupBody = () => ({ConfigurationName: route.params.id, BackupFileName: props.b.filename})
+
+const deleteBackup = async () => {
+	loading.value = true
+	try {
+		await fetchBackup("/api/deleteWireguardConfigurationBackup", {}, backupBody())
+		emit("refresh")
+		store.newMessage("Server", "Backup deleted", "success")
+	} catch (err) {
+		store.newMessage("Server", err.message, "danger")
+	} finally {
+		loading.value = false
+		deleteConfirmation.value = false
+	}
 }
 
-const restoreBackup = () => {
-	loading.value = true;
-	fetchPost("/api/restoreWireguardConfigurationBackup", {
-		ConfigurationName: route.params.id,
-		BackupFileName: props.b.filename
-	}, (res) => {
-		loading.value = false;
-		restoreConfirmation.value = false;
-		if (res.status){
-			emit("refreshPeersList")
-			store.newMessage("Server", "Backup restored with " + props.b.filename, "success")
-		}else{
-			store.newMessage("Server", "Backup failed to restore", "danger")
-		}
-	})
+const restoreBackup = async () => {
+	loading.value = true
+	try {
+		await fetchBackup("/api/restoreWireguardConfigurationBackup", {}, backupBody())
+		emit("refreshPeersList")
+		store.newMessage("Server", "Backup restored with " + props.b.filename, "success")
+	} catch (err) {
+		store.newMessage("Server", err.message, "danger")
+	} finally {
+		loading.value = false
+		restoreConfirmation.value = false
+	}
 }
 
 const downloadBackup = () => {
-	window.location.href = getUrl(`/api/downloadWireguardConfigurationBackup?configurationName=${route.params.id}&backupFileName=${props.b.filename}`);
+	window.location.href = getUrl(`/api/downloadWireguardConfigurationBackup?${new URLSearchParams(backupParams())}`)
 }
 
 const delaySeconds = computed(() => {
 	return props.delay + 's'
 })
 
-const showContent = ref(false);
+const showContent = ref(false)
+const content = ref(null)
+const previewError = ref("")
+
+const toggleContent = async () => {
+	showContent.value = !showContent.value
+	if (!showContent.value || content.value !== null) return
+	previewError.value = ""
+	try {
+		content.value = await fetchBackup("/api/getWireguardConfigurationBackupContent", backupParams())
+	} catch (err) {
+		previewError.value = err.message
+	}
+}
 </script>
  
 <template>
@@ -69,13 +80,13 @@ const showContent = ref(false);
 						</h5>
 						<div class="d-flex gap-2 align-items-center justify-content-center">
 							<button class="btn btn-danger rounded-3" 
-							        :disabled="loading"
+							        :disabled="loading || busy"
 							        @click='deleteBackup()'>
 								<LocaleText t="Yes"></LocaleText>
 							</button>
 							<button
 								@click="deleteConfirmation = false"
-								:disabled="loading"
+								:disabled="loading || busy"
 								class="btn bg-secondary-subtle text-secondary-emphasis border-secondary-subtle rounded-3">
 								<LocaleText t="No"></LocaleText>
 							</button>
@@ -93,14 +104,14 @@ const showContent = ref(false);
 						</h5>
 						<div class="d-flex gap-2 align-items-center justify-content-center">
 							<button
-								:disabled="loading"
+								:disabled="loading || busy"
 								@click="restoreBackup()"
 								class="btn btn-success rounded-3">
 								<LocaleText t="Yes"></LocaleText>
 							</button>
 							<button
 								@click="restoreConfirmation = false"
-								:disabled="loading"
+								:disabled="loading || busy"
 								class="btn bg-secondary-subtle text-secondary-emphasis border-secondary-subtle rounded-3">
 								<LocaleText t="No"></LocaleText>
 							</button>
@@ -122,18 +133,18 @@ const showContent = ref(false);
 					{{dayjs(b.backupDate, "YYYYMMDDHHmmss").format("YYYY-MM-DD HH:mm:ss")}}
 				</div>
 				<div class="d-flex gap-2 align-items-center ms-auto">
-					<button
-						@click="downloadBackup()"
+				<button
+						@click="downloadBackup()" :disabled="busy || loading"
 						class="btn bg-primary-subtle text-primary-emphasis border-primary-subtle rounded-3 btn-sm">
 						<i class="bi bi-download"></i>
 					</button>
 					<button 
-						@click="restoreConfirmation = true"
+						@click="restoreConfirmation = true" :disabled="busy || loading"
 						class="btn bg-warning-subtle text-warning-emphasis border-warning-subtle rounded-3 btn-sm">
 						<i class="bi bi-clock-history"></i>
 					</button>
 					<button 
-						@click="deleteConfirmation = true"
+						@click="deleteConfirmation = true" :disabled="busy || loading"
 						class="btn bg-danger-subtle text-danger-emphasis border-danger-subtle rounded-3 btn-sm">
 						<i class="bi bi-trash-fill"></i>
 					</button>
@@ -143,13 +154,15 @@ const showContent = ref(false);
 			<div class="card rounded-3">
 				<a role="button" class="card-header d-flex text-decoration-none align-items-center" 
 				   :class="{'border-bottom-0': !showContent}"
-				   style="cursor: pointer" @click="showContent = !showContent">
+				   style="cursor: pointer" @click="toggleContent()">
 					<small>.conf <LocaleText t="File"></LocaleText>
 						</small>
 					<i class="bi bi-chevron-down ms-auto"></i>
 				</a>
 				<div class="card-body" v-if="showContent">
-					<textarea class="form-control rounded-3" :value="b.content"
+					<div v-if="previewError" class="text-danger" role="alert">{{previewError}}</div>
+					<div v-else-if="content === null" class="spinner-border spinner-border-sm" role="status"></div>
+					<textarea v-else class="form-control rounded-3" :value="content"
 					          disabled
 					          style="height: 300px; font-family: var(--bs-font-monospace),sans-serif !important;"></textarea>
 				</div>
