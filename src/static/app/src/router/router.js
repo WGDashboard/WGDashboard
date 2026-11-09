@@ -223,6 +223,11 @@ router.beforeEach(async (to, from, next) => {
 		if (!dashboardConfigurationStore.getActiveCrossServer()){
 			if (await checkAuth()){
 				await dashboardConfigurationStore.getConfiguration()
+				if (!dashboardConfigurationStore.Configuration){
+					// The API is blocked (403 mfaSetupRequired): the account must enrol its MFA first
+					next('/2FASetup')
+					return
+				}
 				if (!wireguardConfigurationsStore.Configurations && to.name !== "Configuration List"){
 					await wireguardConfigurationsStore.getConfigurations();
 				}

@@ -359,9 +359,17 @@ def auth_req():
                             f'{appPrefix}/api/isTotpEnabled',
                             f'{appPrefix}/api/locale',
                         ]
+                        # The SPA shell and its static assets must always be served, otherwise the
+                        # browser would display the raw 403 JSON instead of the enrolment page.
+                        isSpaShell = request.path in (
+                            f'{appPrefix}/', f'{appPrefix}', f'{appPrefix}/index.html',
+                            f'{appPrefix}/favicon.ico', f'{appPrefix}/manifest.json')
                         if (request.path not in allowedDuringSetup
+                                and not isSpaShell
                                 and not request.path.startswith(f'{appPrefix}/assets')
-                                and not request.path.startswith(f'{appPrefix}/img')):
+                                and not request.path.startswith(f'{appPrefix}/img')
+                                and not request.path.startswith(f'{appPrefix}/json')
+                                and not request.path.startswith(f'{appPrefix}/client')):
                             response = Flask.make_response(app, {
                                 "status": False,
                                 "message": "Multi-factor authentication setup is required before using the dashboard.",
