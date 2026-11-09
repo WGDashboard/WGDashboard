@@ -9,7 +9,9 @@ table is empty (first start, or database restored/recreated), so the ini file
 always stays a usable safety fallback.
 """
 import datetime
+import hashlib
 import re
+import secrets
 import uuid
 
 import bcrypt
@@ -46,6 +48,15 @@ class DashboardAdmins:
             db.Column('CreatedBy', db.String(255)),
             extend_existing=True,
         )
+        self.recoveryCodesTable = db.Table(
+            'DashboardAdminsRecoveryCodes', self.metadata,
+            db.Column('CodeID', db.String(36), nullable=False, primary_key=True),
+            db.Column('AdminID', db.String(36), nullable=False, index=True),
+            db.Column('CodeHash', db.String(255), nullable=False),
+            db.Column('UsedDate', dateType),
+            db.Column('CreatedDate', dateType, server_default=db.func.now()),
+            extend_existing=True,
+        )
         self.metadata.create_all(self.engine)
         self.BootstrapFromConfig()
 
@@ -60,6 +71,7 @@ class DashboardAdmins:
             "Email": admin.get("Email") or "",
             "Enabled": int(admin.get("Enabled") or 0),
             "TotpEnabled": bool(admin.get("TotpKey")) and bool(int(admin.get("TotpVerified") or 0)),
+            "RecoveryCodesRemaining": self.CountRecoveryCodes(admin.get("AdminID")),
             "CreatedDate": (admin.get("CreatedDate").strftime("%Y-%m-%d %H:%M:%S")
                             if isinstance(admin.get("CreatedDate"), datetime.datetime) else admin.get("CreatedDate")),
             "LastLoginDate": (admin.get("LastLoginDate").strftime("%Y-%m-%d %H:%M:%S")
@@ -152,9 +164,14 @@ class DashboardAdmins:
             valid = False
         if not valid:
             return False, "Sorry, your username or password is incorrect.", None
+        usedRecoveryCode = False
         if admin.get("TotpKey") and int(admin.get("TotpVerified") or 0) == 1:
             code = str(totp or "").strip()
-            if len(code) == 0 or not pyotp.TOTP(admin["TotpKey"]).verify(code, valid_window=1):
+            totpValid = len(code) > 0 and pyotp.TOTP(admin["TotpKey"]).verify(code, valid_window=1)
+            if not totpValid and len(code) > 0:
+                # A recovery code can be used instead of the TOTP code (single use)
+                usedRecoveryCode = self.UseRecoveryCode(admin["AdminID"], code)
+            if not totpValid and not usedRecoveryCode:
                 return False, "Sorry, your username, password or OTP is incorrect.", None
         try:
             with self.engine.begin() as conn:
@@ -168,7 +185,10 @@ class DashboardAdmins:
                 admin = refreshed
         except Exception as e:
             current_app.logger.error(f"[DashboardAdmins] Cannot update last login date: {e}")
-        return True, None, self.Public(admin)
+        payload = self.Public(admin)
+        payload["UsedRecoveryCode"] = usedRecoveryCode
+        payload["MfaSetupRequired"] = not (admin.get("TotpKey") and int(admin.get("TotpVerified") or 0) == 1)
+        return True, None, payload
 
     # ------------------------------------------------------------------ CRUD
     def AddAdmin(self, username: str, Email: str, Password: str, ConfirmPassword: str,
@@ -386,5 +406,104 @@ class DashboardAdmins:
                 "TotpVerified": 0,
                 "UpdatedDate": datetime.datetime.now(),
             }).where(self.adminsTable.c.AdminID == AdminID))
+        self.RevokeRecoveryCodes(AdminID)
         return True, None
+
+    # ------------------------------------------------------------------ recovery codes
+    RecoveryAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    RecoveryCodeCount = 10
+
+    def __NormalizeRecoveryCode(self, code: str) -> str:
+        return re.sub(r"[^A-Za-z0-9]", "", str(code or "")).upper()
+
+    def __HashRecoveryCode(self, code: str) -> str:
+        return hashlib.sha256(self.__NormalizeRecoveryCode(code).encode("utf-8")).hexdigest()
+
+    def CountRecoveryCodes(self, AdminID: str) -> int:
+        if not AdminID:
+            return 0
+        with self.engine.connect() as conn:
+            return conn.execute(
+                db.select(db.func.count()).select_from(self.recoveryCodesTable).where(
+                    db.and_(
+                        self.recoveryCodesTable.c.AdminID == AdminID,
+                        self.recoveryCodesTable.c.UsedDate.is_(None),
+                    )
+                )
+            ).scalar() or 0
+
+    def HasAnyRecoveryCodes(self, AdminID: str) -> bool:
+        """True as soon as recovery codes have been generated once (used or not).
+
+        Used to decide whether the current password is required to generate again.
+        """
+        if not AdminID:
+            return False
+        with self.engine.connect() as conn:
+            return conn.execute(
+                db.select(db.func.count()).select_from(self.recoveryCodesTable).where(
+                    self.recoveryCodesTable.c.AdminID == AdminID
+                )
+            ).scalar() > 0
+
+    def GenerateRecoveryCodes(self, AdminID: str) -> tuple[bool, str | None, list[str]]:
+        """Replace all recovery codes of an administrator with 10 new single use codes.
+
+        Only the SHA-256 hash of each code is stored, so the plain codes are shown once.
+        """
+        admin = self.GetAdmin(AdminID)
+        if admin is None:
+            return False, "Administrator does not exist", []
+        if not (admin.get("TotpKey") and int(admin.get("TotpVerified") or 0) == 1):
+            return False, "MFA must be enabled before generating recovery codes", []
+        plainCodes = []
+        rows = []
+        now = datetime.datetime.now()
+        for _ in range(self.RecoveryCodeCount):
+            groups = ["".join(secrets.choice(self.RecoveryAlphabet) for _ in range(4)) for _ in range(4)]
+            code = "-".join(groups)
+            plainCodes.append(code)
+            rows.append({
+                "CodeID": str(uuid.uuid4()),
+                "AdminID": AdminID,
+                "CodeHash": self.__HashRecoveryCode(code),
+                "UsedDate": None,
+                "CreatedDate": now,
+            })
+        with self.engine.begin() as conn:
+            conn.execute(self.recoveryCodesTable.delete().where(
+                self.recoveryCodesTable.c.AdminID == AdminID))
+            conn.execute(self.recoveryCodesTable.insert(), rows)
+        return True, None, plainCodes
+
+    def RevokeRecoveryCodes(self, AdminID: str) -> tuple[bool, str | None]:
+        with self.engine.begin() as conn:
+            conn.execute(self.recoveryCodesTable.delete().where(
+                self.recoveryCodesTable.c.AdminID == AdminID))
+        return True, None
+
+    def UseRecoveryCode(self, AdminID: str, Code: str) -> bool:
+        """Consume a recovery code. Returns True when the code was valid and unused."""
+        normalized = self.__NormalizeRecoveryCode(Code)
+        if len(normalized) != 16:
+            return False
+        codeHash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+        with self.engine.begin() as conn:
+            row = conn.execute(
+                db.select(self.recoveryCodesTable).where(
+                    db.and_(
+                        self.recoveryCodesTable.c.AdminID == AdminID,
+                        self.recoveryCodesTable.c.CodeHash == codeHash,
+                        self.recoveryCodesTable.c.UsedDate.is_(None),
+                    )
+                )
+            ).mappings().fetchone()
+            if row is None:
+                return False
+            conn.execute(
+                self.recoveryCodesTable.update().values({"UsedDate": datetime.datetime.now()}).where(
+                    self.recoveryCodesTable.c.CodeID == row["CodeID"]
+                )
+            )
+        return True
 

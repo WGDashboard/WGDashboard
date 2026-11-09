@@ -7,54 +7,111 @@ import LocaleText from "@/components/text/localeText.vue";
 export default {
 	name: "totp",
 	components: {LocaleText},
-	async setup(){
+	setup(){
 		const store = DashboardConfigurationStore();
-		let l = ""
-		await fetchGet("/api/Welcome_GetTotpLink", {}, (res => {
-			if (res.status) l = res.data;
-		}));
-		return {l, store}
-	},
-	mounted() {
-		if (this.l) {
-			QRCode.toCanvas(document.getElementById('qrcode'), this.l, function (error) {})
-		}
+		return {store};
 	},
 	data(){
 		return {
+			mode: null,          // "admin" (mandatory enrolment) or "welcome" (legacy wizard)
+			adminID: null,
+			link: "",
 			totp: "",
-			totpInvalidMessage: "",
-			verified: false
+			verified: false,
+			codes: [],
+			busy: true,
+			message: ""
 		}
 	},
+	mounted() {
+		this.init();
+	},
 	methods: {
-		validateTotp(){
-			
-		}	
+		init(){
+			fetchGet("/api/admins/me", {}, (me) => {
+				if (me.status && me.data && me.data.AdminID){
+					this.mode = "admin";
+					this.adminID = me.data.AdminID;
+					fetchPost("/api/admins/totp/start", {AdminID: this.adminID}, (res) => {
+						this.busy = false;
+						if (res.status && res.data){
+							this.link = res.data.Link;
+							this.renderQr();
+						}else{
+							this.message = res.message || "";
+						}
+					});
+				}else{
+					this.mode = "welcome";
+					this.busy = false;
+					fetchGet("/api/Welcome_GetTotpLink", {}, (res) => {
+						if (res.status){
+							this.link = res.data;
+							this.renderQr();
+						}
+					});
+				}
+			});
+		},
+		renderQr(){
+			this.$nextTick(() => {
+				const canvas = document.getElementById("qrcode");
+				if (canvas && this.link){
+					QRCode.toCanvas(canvas, this.link, {width: 220, margin: 1}, () => {});
+				}
+			});
+		},
+		validate(){
+			const input = document.querySelector("#totp");
+			input.classList.remove("is-invalid", "is-valid");
+			if (!/^[0-9]{6}$/.test(this.totp)){
+				input.classList.add("is-invalid");
+				return;
+			}
+			if (this.mode === "admin"){
+				fetchPost("/api/admins/totp/verify", {AdminID: this.adminID, code: this.totp}, (res) => {
+					if (res.status){
+						this.verified = true;
+						input.classList.add("is-valid");
+						this.generateCodes();
+					}else{
+						input.classList.add("is-invalid");
+						this.message = res.message || "";
+					}
+				});
+			}else{
+				fetchPost("/api/Welcome_VerifyTotpLink", {totp: this.totp}, (res) => {
+					if (res.status){
+						this.verified = true;
+						input.classList.add("is-valid");
+					}else{
+						input.classList.add("is-invalid");
+					}
+				});
+			}
+		},
+		generateCodes(){
+			fetchPost("/api/admins/totp/recoveryCodes", {AdminID: this.adminID}, (res) => {
+				if (res.status && res.data){
+					this.codes = res.data.Codes || [];
+				}
+			});
+		},
+		finish(){
+			this.$router.push("/");
+		},
+		copyCodes(){
+			const text = this.codes.join("\n");
+			if (navigator.clipboard){
+				navigator.clipboard.writeText(text);
+				this.store.newMessage("Server", "Recovery codes copied", "success");
+			}
+		}
 	},
 	watch: {
-		totp(newVal){
-			const input = document.querySelector("#totp");
-			input.classList.remove("is-invalid", "is-valid")
-			if (newVal.length === 6){
-				console.log(newVal)
-				if (/[0-9]{6}/.test(newVal)){
-					fetchPost("/api/Welcome_VerifyTotpLink", {
-						totp: newVal
-					}, (res) => {
-						if (res.status){
-							this.verified = true;
-							input.classList.add("is-valid");
-							this.$emit("verified")
-						}else{
-							input.classList.add("is-invalid")
-							this.totpInvalidMessage = "TOTP does not match."
-						}
-					})
-				}else{
-					input.classList.add("is-invalid");
-					this.totpInvalidMessage = "TOTP can only contain numbers"
-				}
+		totp(newValue){
+			if (newValue.length === 6){
+				this.validate();
 			}
 		}
 	}
@@ -65,21 +122,31 @@ export default {
 	<div class="container-fluid login-container-fluid d-flex main pt-5 overflow-scroll"
 	     :data-bs-theme="this.store.Configuration.Server.dashboard_theme">
 		<div class="m-auto text-body" style="width: 500px">
-			<div  class="d-flex flex-column">
-				<div>
-					<h1 class="dashboardLogo display-4">
+			<div class="d-flex flex-column">
+				<div class="mb-2 d-flex align-items-center gap-2">
+					<h1 class="dashboardLogo display-4 mb-0">
 						<LocaleText t="Multi-Factor Authentication (MFA)"></LocaleText>
 					</h1>
+					<span class="badge text-bg-warning" v-if="this.mode === 'admin'">
+						<LocaleText t="Required"></LocaleText>
+					</span>
+				</div>
+				<div class="text-muted mb-3" v-if="this.busy">
+					<div class="spinner-border spinner-border-sm me-2"></div><LocaleText t="Loading..."></LocaleText>
+				</div>
+				<div class="alert alert-danger py-2" v-if="this.message">{{ this.message }}</div>
+
+				<template v-if="!this.verified">
 					<p class="mb-2"><small class="text-muted">
 						<LocaleText t="1. Please scan the following QR Code to generate TOTP with your choice of authenticator"></LocaleText>
 					</small></p>
 					<canvas id="qrcode" class="rounded-3 mb-2"></canvas>
-					<div class="p-3 bg-body-secondary rounded-3 border mb-3">
+					<div class="p-3 bg-body-secondary rounded-3 border mb-3" v-if="this.link">
 						<p class="text-muted mb-0">
 							<small>
 								<LocaleText t="Or you can click the link below:"></LocaleText>
 							</small>
-						</p><a :href="this.l"><code style="line-break: anywhere">{{this.l}}</code></a>
+						</p><a :href="this.link"><code style="line-break: anywhere">{{ this.link }}</code></a>
 					</div>
 					<label for="totp" class="mb-2">
 						<small class="text-muted">
@@ -89,42 +156,60 @@ export default {
 					<div class="form-group mb-2">
 						<input class="form-control text-center totp"
 						       id="totp" maxlength="6" type="text" inputmode="numeric" autocomplete="one-time-code"
-						       v-model="this.totp"
-						       :disabled="this.verified"
-						>
+						       v-model="this.totp">
 						<div class="invalid-feedback">
-							<LocaleText :t="this.totpInvalidMessage"></LocaleText>
+							<LocaleText t="TOTP does not match."></LocaleText>
 						</div>
 						<div class="valid-feedback">
 							<LocaleText t="TOTP verified!"></LocaleText>
 						</div>
 					</div>
-				</div>
-				<hr>
-				<div class="d-flex gap-3 mt-5 flex-column">
-					<RouterLink
-						to="/"
-						v-if="!this.verified"
-						class="btn bg-secondary-subtle text-secondary-emphasis 
-							rounded-3
-							flex-grow-1 btn-lg border-1 border-secondary-subtle shadow d-flex">
-						<LocaleText t="I don't need MFA"></LocaleText>
-						<i class="bi bi-chevron-right ms-auto"></i>
-					</RouterLink>
-					<RouterLink
-						to="/"
-						v-else class="btn btn-dark btn-lg d-flex btn-brand shadow align-items-center flex-grow-1 rounded-3">
-						<LocaleText t="Complete"></LocaleText>
-						<i class="bi bi-chevron-right ms-auto"></i>
-					</RouterLink>
-				</div>
+				</template>
+
+				<template v-else>
+					<div class="alert alert-success py-2">
+						<i class="bi bi-shield-check me-1"></i>
+						<LocaleText t="MFA is now enabled for your account"></LocaleText>
+					</div>
+					<div v-if="this.codes.length > 0">
+						<p class="mb-2">
+							<small class="text-muted">
+								<LocaleText t="Save these recovery codes now: each one can be used once to sign in if you lose your authenticator. They will not be shown again."></LocaleText>
+							</small>
+						</p>
+						<div class="p-3 bg-body-secondary rounded-3 border mb-2">
+							<div class="row row-cols-2 g-2">
+								<div class="col" v-for="code in this.codes" :key="code">
+									<code class="user-select-all">{{ code }}</code>
+								</div>
+							</div>
+						</div>
+						<button class="btn btn-sm bg-secondary-subtle text-secondary-emphasis rounded-3 px-3" @click="this.copyCodes()">
+							<i class="bi bi-clipboard-fill me-1"></i><LocaleText t="Copy"></LocaleText>
+						</button>
+					</div>
+				</template>
+			</div>
+			<hr>
+			<div class="d-flex gap-3 mt-5 flex-column">
+				<RouterLink
+					to="/"
+					v-if="!this.verified && this.mode === 'welcome'"
+					class="btn bg-secondary-subtle text-secondary-emphasis rounded-3 flex-grow-1 btn-lg border-1 border-secondary-subtle shadow d-flex">
+					<LocaleText t="I don't need MFA"></LocaleText>
+					<i class="bi bi-chevron-right ms-auto"></i>
+				</RouterLink>
+				<RouterLink
+					to="/"
+					v-if="this.verified"
+					class="btn btn-dark btn-lg d-flex btn-brand shadow align-items-center flex-grow-1 rounded-3">
+					<LocaleText t="Complete"></LocaleText>
+					<i class="bi bi-chevron-right ms-auto"></i>
+				</RouterLink>
 			</div>
 		</div>
 	</div>
-	
-	
 </template>
 
 <style scoped>
-	
 </style>

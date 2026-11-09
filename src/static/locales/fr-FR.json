@@ -389,5 +389,16 @@
 	"Please enter your current password": "Veuillez saisir votre mot de passe actuel",
 	"MFA enabled for this administrator": "MFA activée pour cet administrateur",
 	"MFA disabled for this administrator": "MFA desactivée pour cet administrateur",
-	"if MFA is enabled": "si la MFA est activée"
+	"if MFA is enabled": "si la MFA est activée",
+	"Required": "Obligatoire",
+	"Recovery codes": "Codes de secours",
+	"remaining": "restants",
+	"Regenerate": "Régénérer",
+	"Generate": "Générer",
+	"Revoke": "Révoquer",
+	"Copy": "Copier",
+	"TOTP does not match.": "Le code TOTP ne correspond pas.",
+	"MFA is now enabled for your account": "La MFA est maintenant activée pour votre compte",
+	"Save these codes now: they will not be shown again.": "Notez ces codes maintenant : ils ne seront plus affichés.",
+	"Save these recovery codes now: each one can be used once to sign in if you lose your authenticator. They will not be shown again.": "Notez ces codes de secours dès maintenant : chacun permet une connexion unique si vous perdez votre application d'authentification. Ils ne seront plus affichés."
 }

@@ -340,6 +340,40 @@ def auth_req():
                 response.status_code = 401
                 return response
 
+            # MFA is mandatory: a local administrator without a verified TOTP can only
+            # reach the endpoints needed to enrol (never the rest of the dashboard).
+            if session.get("admin_id") is not None:
+                try:
+                    currentAdmin = DashboardAdmins.GetAdmin(session.get("admin_id"))
+                    if currentAdmin is not None and not (currentAdmin.get("TotpKey") and
+                                                         int(currentAdmin.get("TotpVerified") or 0) == 1):
+                        allowedDuringSetup = [
+                            f'{appPrefix}/api/admins/me',
+                            f'{appPrefix}/api/admins/totp/start',
+                            f'{appPrefix}/api/admins/totp/verify',
+                            f'{appPrefix}/api/admins/totp/recoveryCodes',
+                            f'{appPrefix}/api/signout',
+                            f'{appPrefix}/api/validateAuthentication',
+                            f'{appPrefix}/api/getDashboardTheme',
+                            f'{appPrefix}/api/getDashboardVersion',
+                            f'{appPrefix}/api/isTotpEnabled',
+                            f'{appPrefix}/api/locale',
+                        ]
+                        if (request.path not in allowedDuringSetup
+                                and not request.path.startswith(f'{appPrefix}/assets')
+                                and not request.path.startswith(f'{appPrefix}/img')):
+                            response = Flask.make_response(app, {
+                                "status": False,
+                                "message": "Multi-factor authentication setup is required before using the dashboard.",
+                                "data": None,
+                                "mfaSetupRequired": True
+                            })
+                            response.content_type = "application/json"
+                            response.status_code = 403
+                            return response
+                except Exception as e:
+                    app.logger.error(f"[WGDashboard] Cannot check the MFA state of the current administrator: {e}")
+
 @app.route(f'{APP_PREFIX}/api/handshake', methods=["GET", "OPTIONS"])
 def API_Handshake():
     return ResponseObject(True)
@@ -426,9 +460,21 @@ def API_AuthenticateLogin():
         session['admin_id'] = admin.get('AdminID')
         session['admin_username'] = admin.get('Username')
         session['signInMethod'] = 'local'
-        resp = ResponseObject(True, DashboardConfig.GetConfig("Other", "welcome_session")[1])
+        body = {
+            "status": True,
+            "message": DashboardConfig.GetConfig("Other", "welcome_session")[1],
+            "data": None,
+            # The dashboard asks the user to enrol MFA when the account has none
+            "mfaSetupRequired": bool(admin.get("MfaSetupRequired")),
+            "usedRecoveryCode": bool(admin.get("UsedRecoveryCode")),
+        }
+        resp = Flask.make_response(app, body)
+        resp.content_type = "application/json"
         resp.set_cookie("authToken", authToken)
         session.permanent = True
+        if admin.get("UsedRecoveryCode"):
+            DashboardLogger.log(str(request.url), str(request.remote_addr),
+                                Message=f"Login with a recovery code: {username}")
         DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login success: {username}")
         return resp
 
@@ -586,6 +632,47 @@ def API_DisableAdminTotp():
     if status:
         DashboardLogger.log(str(request.url), str(request.remote_addr),
                             Message=f"MFA disabled for administrator: {admin.get('Username')}")
+    return ResponseObject(status, message)
+
+
+@app.post(f'{APP_PREFIX}/api/admins/totp/recoveryCodes')
+def API_GenerateAdminRecoveryCodes():
+    data = request.get_json() or {}
+    adminID = data.get('AdminID', '')
+    admin = DashboardAdmins.GetAdmin(adminID)
+    if admin is None:
+        return ResponseObject(False, "Administrator does not exist")
+    if adminID == session.get('admin_id'):
+        # First generation (right after the MFA setup) does not need the password,
+        # regenerating or revoking codes does.
+        if DashboardAdmins.HasAnyRecoveryCodes(adminID):
+            if not DashboardAdmins.CheckPassword(adminID, data.get('currentPassword', '')):
+                return ResponseObject(False, "Current password does not match")
+    status, message, codes = DashboardAdmins.GenerateRecoveryCodes(adminID)
+    if status:
+        DashboardLogger.log(str(request.url), str(request.remote_addr),
+                            Message=f"Recovery codes regenerated for administrator: {admin.get('Username')}")
+        return ResponseObject(True, None, data={
+            "Codes": codes,
+            "Remaining": len(codes),
+        })
+    return ResponseObject(False, message)
+
+
+@app.post(f'{APP_PREFIX}/api/admins/totp/recoveryCodes/revoke')
+def API_RevokeAdminRecoveryCodes():
+    data = request.get_json() or {}
+    adminID = data.get('AdminID', '')
+    admin = DashboardAdmins.GetAdmin(adminID)
+    if admin is None:
+        return ResponseObject(False, "Administrator does not exist")
+    if adminID == session.get('admin_id'):
+        if not DashboardAdmins.CheckPassword(adminID, data.get('currentPassword', '')):
+            return ResponseObject(False, "Current password does not match")
+    status, message = DashboardAdmins.RevokeRecoveryCodes(adminID)
+    if status:
+        DashboardLogger.log(str(request.url), str(request.remote_addr),
+                            Message=f"Recovery codes revoked for administrator: {admin.get('Username')}")
     return ResponseObject(status, message)
 
 

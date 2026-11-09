@@ -41,7 +41,8 @@ export default {
 			mfaSecret: "",
 			mfaCode: "",
 			mfaPassword: "",
-			mfaBusy: false
+			mfaBusy: false,
+			recoveryCodes: []
 		}
 	},
 	mounted() {
@@ -183,6 +184,7 @@ export default {
 			this.mfaSecret = "";
 			this.mfaCode = "";
 			this.mfaPassword = "";
+			this.recoveryCodes = [];
 			if (admin.TotpEnabled !== true) {
 				this.startMfa();
 			}
@@ -194,6 +196,7 @@ export default {
 			this.mfaCode = "";
 			this.mfaPassword = "";
 			this.mfaBusy = false;
+			this.recoveryCodes = [];
 		},
 		startMfa() {
 			this.mfaBusy = true;
@@ -245,6 +248,38 @@ export default {
 				if (res.status) {
 					this.store.newMessage("Server", "MFA disabled for this administrator", "success");
 					this.closeMfa();
+					this.loadAdmins();
+				} else {
+					this.store.newMessage("Server", res.message, "danger");
+				}
+			});
+		},
+		generateRecoveryCodes() {
+			this.mfaBusy = true;
+			fetchPost("/api/admins/totp/recoveryCodes", {
+				AdminID: this.mfaAdminID,
+				currentPassword: this.mfaPassword
+			}, (res) => {
+				this.mfaBusy = false;
+				if (res.status && res.data) {
+					this.recoveryCodes = res.data.Codes || [];
+					this.store.newMessage("Server", "New recovery codes generated: save them now", "success");
+					this.loadAdmins();
+				} else {
+					this.store.newMessage("Server", res.message, "danger");
+				}
+			});
+		},
+		revokeRecoveryCodes() {
+			this.mfaBusy = true;
+			fetchPost("/api/admins/totp/recoveryCodes/revoke", {
+				AdminID: this.mfaAdminID,
+				currentPassword: this.mfaPassword
+			}, (res) => {
+				this.mfaBusy = false;
+				if (res.status) {
+					this.recoveryCodes = [];
+					this.store.newMessage("Server", "Recovery codes revoked", "success");
 					this.loadAdmins();
 				} else {
 					this.store.newMessage("Server", res.message, "danger");
@@ -385,6 +420,37 @@ export default {
 						<button class="btn btn-danger btn-sm rounded-3 px-3" :disabled="this.mfaBusy" @click="this.disableMfa()">
 							<i class="bi bi-shield-slash-fill me-1"></i><LocaleText t="Disable MFA"></LocaleText>
 						</button>
+					</div>
+					<hr class="my-1">
+					<div class="d-flex align-items-center gap-2 flex-wrap">
+						<small class="text-muted">
+							<i class="bi bi-life-preserver me-1"></i>
+							<LocaleText t="Recovery codes"></LocaleText> :
+							<strong>{{ this.mfaTarget ? this.mfaTarget.RecoveryCodesRemaining : 0 }}</strong>
+							<LocaleText t="remaining"></LocaleText>
+						</small>
+						<div class="ms-auto d-flex gap-2">
+							<button class="btn btn-outline-secondary btn-sm rounded-3 px-3" :disabled="this.mfaBusy"
+							        @click="this.generateRecoveryCodes()">
+								<i class="bi bi-arrow-repeat me-1"></i>
+								<LocaleText :t="this.mfaTarget && this.mfaTarget.RecoveryCodesRemaining > 0 ? 'Regenerate' : 'Generate'"></LocaleText>
+							</button>
+							<button class="btn btn-outline-danger btn-sm rounded-3 px-3" :disabled="this.mfaBusy"
+							        v-if="this.mfaTarget && this.mfaTarget.RecoveryCodesRemaining > 0"
+							        @click="this.revokeRecoveryCodes()">
+								<i class="bi bi-x-circle me-1"></i><LocaleText t="Revoke"></LocaleText>
+							</button>
+						</div>
+					</div>
+					<div class="p-3 bg-body-secondary rounded-3 border" v-if="this.recoveryCodes.length > 0">
+						<small class="text-muted d-block mb-2">
+							<LocaleText t="Save these codes now: they will not be shown again."></LocaleText>
+						</small>
+						<div class="row row-cols-2 g-2">
+							<div class="col" v-for="code in this.recoveryCodes" :key="code">
+								<code class="user-select-all">{{ code }}</code>
+							</div>
+						</div>
 					</div>
 				</template>
 				<template v-else>

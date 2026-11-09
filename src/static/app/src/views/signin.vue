@@ -67,7 +67,14 @@ export default {
 					if (response.status){
 						this.loginError = false;
 						this.$refs["signInBtn"].classList.add("signedIn")
-						if (response.message){
+						if (response.usedRecoveryCode){
+							this.store.newMessage("Server",
+								"Signed in with a recovery code: it has been consumed and cannot be used again.", "warning")
+						}
+						if (response.mfaSetupRequired){
+							// MFA is mandatory: the account must enrol before using the dashboard
+							this.$router.push('/2FASetup')
+						}else if (response.message){
 							this.$router.push('/welcome')
 						}else{
 							if (this.store.Redirect !== undefined){
