@@ -388,5 +388,6 @@
 	"The code must contain 6 digits": "Le code doit contenir 6 chiffres",
 	"Please enter your current password": "Veuillez saisir votre mot de passe actuel",
 	"MFA enabled for this administrator": "MFA activée pour cet administrateur",
-	"MFA disabled for this administrator": "MFA desactivée pour cet administrateur"
+	"MFA disabled for this administrator": "MFA desactivée pour cet administrateur",
+	"if MFA is enabled": "si la MFA est activée"
 }

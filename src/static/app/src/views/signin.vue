@@ -53,7 +53,9 @@ export default {
 			return GetLocale(key)
 		},
 		formValid(){
-			return this.data.username && this.data.password && ((this.totpEnabled && this.data.totp) || !this.totpEnabled)
+			// The TOTP code is only required by the server when the account has MFA enabled,
+			// so the field is always visible but never blocking here.
+			return !!(this.data.username && this.data.password)
 		}
 	},
 	methods: {
@@ -141,10 +143,9 @@ export default {
 							<LocaleText t="Password"></LocaleText>	
 						</label>
 					</div>
-					<div class="form-floating mb-2" v-if="this.totpEnabled">
+					<div class="form-floating mb-2">
 						<input type="text"
 						       id="totp"
-						       required
 						       :disabled="loading"
 						       placeholder="totp"
 						       v-model="this.data.totp"
@@ -155,6 +156,7 @@ export default {
 						<label for="floatingInput" class="d-flex">
 							<i class="bi bi-lock-fill me-2"></i>
 							<LocaleText t="OTP from your authenticator"></LocaleText>
+							<small class="text-muted ms-1" v-if="!this.totpEnabled">(<LocaleText t="if MFA is enabled"></LocaleText>)</small>
 						</label>
 					</div>
 					<button class="btn btn-lg btn-dark ms-auto mt-5 w-100 d-flex btn-brand signInBtn rounded-3" 
