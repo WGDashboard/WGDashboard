@@ -325,3 +325,66 @@ class DashboardAdmins:
             }).where(self.adminsTable.c.AdminID == row["AdminID"]))
         return True
 
+
+    # ------------------------------------------------------------------ MFA (TOTP)
+    def CheckPassword(self, AdminID: str, PlainPassword: str) -> bool:
+        admin = self.GetAdmin(AdminID)
+        if admin is None or not PlainPassword:
+            return False
+        try:
+            return bcrypt.checkpw(PlainPassword.encode("utf-8"),
+                                  (admin.get("Password") or "").encode("utf-8"))
+        except Exception:
+            return False
+
+    def StartTotp(self, AdminID: str) -> tuple[bool, str | None, dict | None]:
+        """Generate a new TOTP secret for an administrator and return the provisioning link.
+
+        The secret stays "pending" (TotpVerified = 0) until VerifyTotp() succeeds, so a
+        half-configured MFA can never lock the account out.
+        """
+        admin = self.GetAdmin(AdminID)
+        if admin is None:
+            return False, "Administrator does not exist", None
+        if admin.get("TotpKey") and int(admin.get("TotpVerified") or 0) == 1:
+            return False, "MFA is already enabled for this administrator", None
+        secret = pyotp.random_base32()
+        with self.engine.begin() as conn:
+            conn.execute(self.adminsTable.update().values({
+                "TotpKey": secret,
+                "TotpVerified": 0,
+                "UpdatedDate": datetime.datetime.now(),
+            }).where(self.adminsTable.c.AdminID == AdminID))
+        link = pyotp.TOTP(secret).provisioning_uri(
+            name=admin.get("Username"), issuer_name="WGDashboard")
+        return True, None, {"Secret": secret, "Link": link}
+
+    def VerifyTotp(self, AdminID: str, Code: str) -> tuple[bool, str | None]:
+        admin = self.GetAdmin(AdminID)
+        if admin is None:
+            return False, "Administrator does not exist"
+        if not admin.get("TotpKey"):
+            return False, "No MFA setup in progress, please start again"
+        if int(admin.get("TotpVerified") or 0) == 1:
+            return False, "MFA is already enabled for this administrator"
+        if not pyotp.TOTP(admin["TotpKey"]).verify(str(Code or "").strip(), valid_window=1):
+            return False, "This code is not valid, please try again"
+        with self.engine.begin() as conn:
+            conn.execute(self.adminsTable.update().values({
+                "TotpVerified": 1,
+                "UpdatedDate": datetime.datetime.now(),
+            }).where(self.adminsTable.c.AdminID == AdminID))
+        return True, None
+
+    def DisableTotp(self, AdminID: str) -> tuple[bool, str | None]:
+        admin = self.GetAdmin(AdminID)
+        if admin is None:
+            return False, "Administrator does not exist"
+        with self.engine.begin() as conn:
+            conn.execute(self.adminsTable.update().values({
+                "TotpKey": None,
+                "TotpVerified": 0,
+                "UpdatedDate": datetime.datetime.now(),
+            }).where(self.adminsTable.c.AdminID == AdminID))
+        return True, None
+

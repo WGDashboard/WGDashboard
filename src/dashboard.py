@@ -550,6 +550,45 @@ def API_DeleteAdmin():
     return ResponseObject(status, message)
 
 
+'''
+Administrators - multi-factor authentication (TOTP)
+'''
+@app.post(f'{APP_PREFIX}/api/admins/totp/start')
+def API_StartAdminTotp():
+    data = request.get_json() or {}
+    status, message, payload = DashboardAdmins.StartTotp(data.get('AdminID', ''))
+    return ResponseObject(status, message, data=payload)
+
+
+@app.post(f'{APP_PREFIX}/api/admins/totp/verify')
+def API_VerifyAdminTotp():
+    data = request.get_json() or {}
+    admin = DashboardAdmins.GetAdmin(data.get('AdminID', ''))
+    status, message = DashboardAdmins.VerifyTotp(data.get('AdminID', ''), data.get('code', ''))
+    if status and admin is not None:
+        DashboardLogger.log(str(request.url), str(request.remote_addr),
+                            Message=f"MFA enabled for administrator: {admin.get('Username')}")
+    return ResponseObject(status, message)
+
+
+@app.post(f'{APP_PREFIX}/api/admins/totp/disable')
+def API_DisableAdminTotp():
+    data = request.get_json() or {}
+    adminID = data.get('AdminID', '')
+    admin = DashboardAdmins.GetAdmin(adminID)
+    if admin is None:
+        return ResponseObject(False, "Administrator does not exist")
+    # Disabling the MFA of your own account requires your current password
+    if adminID == session.get('admin_id'):
+        if not DashboardAdmins.CheckPassword(adminID, data.get('currentPassword', '')):
+            return ResponseObject(False, "Current password does not match")
+    status, message = DashboardAdmins.DisableTotp(adminID)
+    if status:
+        DashboardLogger.log(str(request.url), str(request.remote_addr),
+                            Message=f"MFA disabled for administrator: {admin.get('Username')}")
+    return ResponseObject(status, message)
+
+
 @app.get(f'{APP_PREFIX}/api/getWireguardConfigurations')
 def API_getWireguardConfigurations():
     InitWireguardConfigurationsList()

@@ -2,6 +2,7 @@
 import {fetchGet, fetchPost} from "@/utilities/fetch.js";
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
 import LocaleText from "@/components/text/localeText.vue";
+import QRCode from "qrcode";
 
 export default {
 	name: "dashboardAdmins",
@@ -34,7 +35,13 @@ export default {
 				newPassword: "",
 				confirmPassword: ""
 			},
-			pendingDelete: null
+			pendingDelete: null,
+			mfaAdminID: null,
+			mfaLink: "",
+			mfaSecret: "",
+			mfaCode: "",
+			mfaPassword: "",
+			mfaBusy: false
 		}
 	},
 	mounted() {
@@ -48,6 +55,12 @@ export default {
 	computed: {
 		enabledCount() {
 			return this.admins.filter(x => x.Enabled === 1).length;
+		},
+		mfaTarget() {
+			return this.admins.find(x => x.AdminID === this.mfaAdminID) || null;
+		},
+		mfaIsOwnAccount() {
+			return this.mfaAdminID !== null && this.mfaAdminID === this.currentAdminID;
 		}
 	},
 	methods: {
@@ -160,6 +173,83 @@ export default {
 					this.store.newMessage("Server", res.message, "danger");
 				}
 			});
+		},
+		openMfa(admin) {
+			this.resetMessages();
+			this.editAdmin = null;
+			this.passwordAdmin = null;
+			this.mfaAdminID = admin.AdminID;
+			this.mfaLink = "";
+			this.mfaSecret = "";
+			this.mfaCode = "";
+			this.mfaPassword = "";
+			if (admin.TotpEnabled !== true) {
+				this.startMfa();
+			}
+		},
+		closeMfa() {
+			this.mfaAdminID = null;
+			this.mfaLink = "";
+			this.mfaSecret = "";
+			this.mfaCode = "";
+			this.mfaPassword = "";
+			this.mfaBusy = false;
+		},
+		startMfa() {
+			this.mfaBusy = true;
+			fetchPost("/api/admins/totp/start", {AdminID: this.mfaAdminID}, (res) => {
+				this.mfaBusy = false;
+				if (res.status && res.data) {
+					this.mfaLink = res.data.Link;
+					this.mfaSecret = res.data.Secret;
+					this.$nextTick(() => {
+						const canvas = document.getElementById("mfa_qrcode");
+						if (canvas) {
+							QRCode.toCanvas(canvas, this.mfaLink, {width: 220, margin: 1}, () => {
+							});
+						}
+					});
+				} else {
+					this.store.newMessage("Server", res.message, "danger");
+				}
+			});
+		},
+		verifyMfa() {
+			if (!/^[0-9]{6}$/.test(this.mfaCode)) {
+				this.store.newMessage("Server", "The code must contain 6 digits", "danger");
+				return;
+			}
+			this.mfaBusy = true;
+			fetchPost("/api/admins/totp/verify", {AdminID: this.mfaAdminID, code: this.mfaCode}, (res) => {
+				this.mfaBusy = false;
+				if (res.status) {
+					this.store.newMessage("Server", "MFA enabled for this administrator", "success");
+					this.closeMfa();
+					this.loadAdmins();
+				} else {
+					this.store.newMessage("Server", res.message, "danger");
+				}
+			});
+		},
+		disableMfa() {
+			if (this.mfaIsOwnAccount && this.mfaPassword.length === 0) {
+				this.store.newMessage("Server", "Please enter your current password", "danger");
+				return;
+			}
+			this.mfaBusy = true;
+			fetchPost("/api/admins/totp/disable", {
+				AdminID: this.mfaAdminID,
+				currentPassword: this.mfaPassword
+			}, (res) => {
+				this.mfaBusy = false;
+				if (res.status) {
+					this.store.newMessage("Server", "MFA disabled for this administrator", "success");
+					this.closeMfa();
+					this.loadAdmins();
+				} else {
+					this.store.newMessage("Server", res.message, "danger");
+				}
+			});
 		}
 	}
 }
@@ -264,6 +354,74 @@ export default {
 		</div>
 
 
+		<div class="card rounded-3 shadow-sm" v-if="this.mfaAdminID !== null">
+			<div class="card-header d-flex align-items-center">
+				<h6 class="my-2">
+					<i class="bi bi-shield-lock-fill me-2"></i>
+					<LocaleText t="Multi-Factor Authentication (MFA)"></LocaleText>
+					<code class="ms-2" v-if="this.mfaTarget">{{ this.mfaTarget.Username }}</code>
+				</h6>
+				<button type="button" class="btn-close ms-auto" @click="this.closeMfa()"></button>
+			</div>
+			<div class="card-body d-flex flex-column gap-3">
+				<template v-if="this.mfaTarget && this.mfaTarget.TotpEnabled">
+					<div class="alert alert-success py-2 mb-0">
+						<small>
+							<i class="bi bi-shield-check me-1"></i>
+							<LocaleText t="MFA is enabled for this administrator"></LocaleText>
+						</small>
+					</div>
+					<div v-if="this.mfaIsOwnAccount">
+						<label class="form-label mb-1">
+							<small class="text-muted"><LocaleText t="Current Password"></LocaleText></small>
+						</label>
+						<input type="password" class="form-control form-control-sm rounded-3"
+						       autocomplete="current-password" v-model="this.mfaPassword">
+					</div>
+					<div class="d-flex gap-2 justify-content-end">
+						<button class="btn btn-secondary btn-sm rounded-3 px-3" @click="this.closeMfa()">
+							<LocaleText t="Cancel"></LocaleText>
+						</button>
+						<button class="btn btn-danger btn-sm rounded-3 px-3" :disabled="this.mfaBusy" @click="this.disableMfa()">
+							<i class="bi bi-shield-slash-fill me-1"></i><LocaleText t="Disable MFA"></LocaleText>
+						</button>
+					</div>
+				</template>
+				<template v-else>
+					<div class="text-muted text-center py-3" v-if="this.mfaBusy && !this.mfaLink">
+						<div class="spinner-border spinner-border-sm me-2"></div><LocaleText t="Loading..."></LocaleText>
+					</div>
+					<div class="row gy-3 align-items-center" v-if="this.mfaLink">
+						<div class="col-md-5 text-center">
+							<canvas id="mfa_qrcode" class="rounded-3 border"></canvas>
+						</div>
+						<div class="col-md-7 d-flex flex-column gap-2">
+							<small class="text-muted">
+								<LocaleText t="1. Scan this QR code with your authenticator application"></LocaleText>
+							</small>
+							<div class="p-2 bg-body-secondary rounded-3 border">
+								<small class="text-muted d-block">
+									<LocaleText t="Or enter this secret manually:"></LocaleText>
+								</small>
+								<code class="user-select-all">{{ this.mfaSecret }}</code>
+							</div>
+							<small class="text-muted">
+								<LocaleText t="2. Enter the 6 digit code generated by your application"></LocaleText>
+							</small>
+							<div class="input-group">
+								<input class="form-control form-control-sm rounded-start-3 text-center" maxlength="6"
+								       inputmode="numeric" autocomplete="one-time-code" v-model="this.mfaCode">
+								<button class="btn btn-primary btn-sm rounded-end-3 px-3" :disabled="this.mfaBusy"
+								        @click="this.verifyMfa()">
+									<i class="bi bi-check-lg me-1"></i><LocaleText t="Verify and enable"></LocaleText>
+								</button>
+							</div>
+						</div>
+					</div>
+				</template>
+			</div>
+		</div>
+
 		<div class="card rounded-3">
 			<div class="card-header d-flex align-items-center">
 				<h6 class="my-2">
@@ -309,7 +467,11 @@ export default {
 							<td><small class="text-muted">{{ admin.LastLoginDate || "-" }}</small></td>
 							<td class="text-end">
 								<div class="btn-group btn-group-sm">
-									<button class="btn btn-outline-secondary rounded-start-3" title="Edit" @click="this.startEdit(admin)">
+									<button class="btn" :class="admin.TotpEnabled ? 'btn-outline-success' : 'btn-outline-secondary'"
+									        title="MFA" @click="this.openMfa(admin)">
+										<i class="bi" :class="admin.TotpEnabled ? 'bi-shield-lock-fill' : 'bi-shield-slash'"></i>
+									</button>
+									<button class="btn btn-outline-secondary" title="Edit" @click="this.startEdit(admin)">
 										<i class="bi bi-pencil-square"></i>
 									</button>
 									<button class="btn btn-outline-secondary" title="Change password" @click="this.startPassword(admin)">
