@@ -365,5 +365,17 @@
 	"or": "ou",
 	"or click the button below to download the ": "ou cliquez sur le boutton ci-dessous pour télécharger le ",
 	"then": "alors",
-	"to add your server": "pour ajouter votre serveur"
+	"to add your server": "pour ajouter votre serveur",
+	"Administrators": "Administrateurs",
+	"Add administrator": "Ajouter un administrateur",
+	"Edit administrator": "Modifier l'administrateur",
+	"Email": "Adresse e-mail",
+	"Last login": "Dernière connexion",
+	"Actions": "Actions",
+	"Confirm": "Confirmer",
+	"Change password": "Changer le mot de passe",
+	"Current session": "Session actuelle",
+	"No administrator": "Aucun administrateur",
+	"Loading...": "Chargement...",
+	"At least 8 characters, with 1 lowercase, 1 uppercase, 1 number and 1 special character": "Au moins 8 caractères, avec 1 minuscule, 1 majuscule, 1 chiffre et 1 caractère spécial"
 }

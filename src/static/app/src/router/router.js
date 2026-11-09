@@ -59,6 +59,14 @@ const router = createRouter({
                             }
                         },
                         {
+                            name: "Administrators",
+                            path: "administrators",
+                            component: () => import("@/components/settingsComponent/dashboardAdmins.vue"),
+                            meta: {
+                                title: "Administrators"
+                            }
+                        },
+                        {
                             name: "WireGuard Configuration Settings",
                             path: "wireguard_settings",
                             component: () => import("@/components/settingsComponent/wireguardConfigurationSettings.vue"),

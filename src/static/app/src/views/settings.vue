@@ -48,6 +48,10 @@ export default {
 					title: "Peers Settings"
 				},
 				{
+					id: "administrators",
+					title: "Administrators"
+				},
+				{
 					id: "wireguard_settings",
 					title: "WireGuard Configuration Settings"
 				}

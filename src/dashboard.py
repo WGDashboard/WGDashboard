@@ -39,6 +39,7 @@ from client import createClientBlueprint
 from logging.config import dictConfig
 
 from modules.DashboardClients import DashboardClients
+from modules.DashboardAdmins import DashboardAdmins
 from modules.DashboardPlugins import DashboardPlugins
 from modules.DashboardWebHooks import DashboardWebHooks
 from modules.NewConfigurationTemplates import NewConfigurationTemplates
@@ -212,11 +213,46 @@ WireguardConfigurations: dict[str, WireguardConfiguration] = {}
 CONFIGURATION_PATH = os.getenv('CONFIGURATION_PATH', '.')
 
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 5206928
-app.secret_key = secrets.token_urlsafe(32)
+
+
+def GetApplicationSecretKey() -> str:
+    """Return a stable secret key so that sessions survive a restart of the dashboard.
+
+    Order: WGD_SECRET_KEY environment variable, then a 0600 file stored next to
+    wg-dashboard.ini (the persistent /data directory in Docker), then a random key
+    as a last resort (read-only file system).
+    """
+    fromEnv = os.getenv('WGD_SECRET_KEY')
+    if fromEnv is not None and len(fromEnv.strip()) >= 32:
+        return fromEnv.strip()
+    keyPath = os.path.join(os.path.dirname(os.path.realpath(DashboardConfig.ConfigurationFilePath)), '.secret_key')
+    try:
+        if os.path.exists(keyPath):
+            existing = open(keyPath, 'r').read().strip()
+            if len(existing) >= 32:
+                return existing
+        newKey = secrets.token_urlsafe(48)
+        fd = os.open(keyPath, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w') as f:
+            f.write(newKey)
+        app.logger.info(f"[WGDashboard] Session secret key stored in {keyPath}")
+        return newKey
+    except Exception as e:
+        app.logger.warning(f"[WGDashboard] Cannot persist the session secret key ({e}): sessions will not survive a restart")
+        return secrets.token_urlsafe(32)
+
+
+app.secret_key = GetApplicationSecretKey()
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+if os.getenv('WGD_COOKIE_SECURE', '0').strip().lower() in ('1', 'true', 'yes'):
+    app.config['SESSION_COOKIE_SECURE'] = True
+app.permanent_session_lifetime = timedelta(days=7)
 app.json = CustomJsonEncoder(app)
 with app.app_context():
     SystemStatus = SystemStatus()
     DashboardConfig = DashboardConfig()
+    DashboardAdmins: DashboardAdmins = DashboardAdmins(DashboardConfig)
     EmailSender = EmailSender(DashboardConfig)
     AllPeerShareLinks: PeerShareLinks = PeerShareLinks(DashboardConfig, WireguardConfigurations)
     AllPeerJobs: PeerJobs = PeerJobs(DashboardConfig, WireguardConfigurations, AllPeerShareLinks)
@@ -352,6 +388,10 @@ def API_OIDC_Authenticate():
     return resp
     
 
+# In-memory brute force protection for the sign in form: {attemptKey: (failures, lockedUntil)}
+LOGIN_ATTEMPTS: dict = {}
+
+
 @app.post(f'{APP_PREFIX}/api/authenticate')
 def API_AuthenticateLogin():
     data = request.get_json()
@@ -366,34 +406,40 @@ def API_AuthenticateLogin():
         resp.set_cookie("authToken", authToken)
         session.permanent = True
         return resp
-    valid = bcrypt.checkpw(data['password'].encode("utf-8"),
-                           DashboardConfig.GetConfig("Account", "password")[1].encode("utf-8"))
-    totpEnabled = DashboardConfig.GetConfig("Account", "enable_totp")[1]
-    totpValid = False
-    if totpEnabled:
-        totp_code = str(data.get("totp", "")).strip()
-        totpValid = pyotp.TOTP(
-	    DashboardConfig.GetConfig("Account", "totp_key")[1]
-        ).verify(totp_code, valid_window=1)
+    username = str(data.get('username', '')).strip()
+    password = str(data.get('password', ''))
+    totpCode = data.get('totp', '')
 
-    if (valid
-            and data['username'] == DashboardConfig.GetConfig("Account", "username")[1]
-            and ((totpEnabled and totpValid) or not totpEnabled)
-    ):
-        authToken = hashlib.sha256(f"{data['username']}{datetime.now()}".encode()).hexdigest()
+    # Basic brute force protection: 5 failures per (username, IP address) => 60 seconds lock
+    attemptKey = f"{username.lower()}|{request.remote_addr}"
+    failures, lockedUntil = LOGIN_ATTEMPTS.get(attemptKey, (0, None))
+    if lockedUntil is not None and datetime.now() < lockedUntil:
+        remaining = max(1, int((lockedUntil - datetime.now()).total_seconds()))
+        return ResponseObject(False, f"Too many failed attempts. Please try again in {remaining} second(s).")
+
+    valid, message, admin = DashboardAdmins.SignIn(username, password, totpCode)
+    if valid:
+        LOGIN_ATTEMPTS.pop(attemptKey, None)
+        authToken = hashlib.sha256(f"{username}{datetime.now()}{app.secret_key}".encode()).hexdigest()
         session['role'] = 'admin'
         session['username'] = authToken
+        session['admin_id'] = admin.get('AdminID')
+        session['admin_username'] = admin.get('Username')
         session['signInMethod'] = 'local'
         resp = ResponseObject(True, DashboardConfig.GetConfig("Other", "welcome_session")[1])
         resp.set_cookie("authToken", authToken)
         session.permanent = True
-        DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login success: {data['username']}")
+        DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login success: {username}")
         return resp
-    DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login failed: {data['username']}")
-    if totpEnabled:
-        return ResponseObject(False, "Sorry, your username, password or OTP is incorrect.")
+
+    if failures + 1 >= 5:
+        LOGIN_ATTEMPTS[attemptKey] = (0, datetime.now() + timedelta(seconds=60))
+        DashboardLogger.log(str(request.url), str(request.remote_addr),
+                            Message=f"Login temporarily locked after {failures + 1} failures: {username}")
     else:
-        return ResponseObject(False, "Sorry, your username or password is incorrect.")
+        LOGIN_ATTEMPTS[attemptKey] = (failures + 1, None)
+    DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login failed: {username}")
+    return ResponseObject(False, message or "Sorry, your username or password is incorrect.")
 
 @app.get(f'{APP_PREFIX}/api/signout')
 def API_SignOut():
@@ -409,6 +455,100 @@ def API_SignOut():
         )
     session.clear()
     return resp
+
+'''
+Administrators (multi-admin management)
+'''
+@app.get(f'{APP_PREFIX}/api/admins')
+def API_GetAdmins():
+    return ResponseObject(data=DashboardAdmins.GetAllAdmins())
+
+
+@app.get(f'{APP_PREFIX}/api/admins/me')
+def API_GetCurrentAdmin():
+    admin = DashboardAdmins.GetAdmin(session.get('admin_id'))
+    if admin is None:
+        if session.get('role') != 'admin':
+            return ResponseObject(False, "Administrator does not exist")
+        # API key or OIDC session: there is no local administrator row behind it
+        return ResponseObject(data={
+            "AdminID": None,
+            "Username": "api-key" if DashboardConfig.APIAccessed else "OIDC",
+            "Email": "",
+            "Enabled": 1,
+            "TotpEnabled": False,
+            "CreatedDate": None,
+            "LastLoginDate": None,
+            "CreatedBy": session.get('signInMethod', 'oidc'),
+        })
+    return ResponseObject(data=DashboardAdmins.Public(admin))
+
+
+@app.post(f'{APP_PREFIX}/api/admins/add')
+def API_AddAdmin():
+    data = request.get_json() or {}
+    status, message = DashboardAdmins.AddAdmin(
+        data.get('username', ''), data.get('email', ''),
+        data.get('password', ''), data.get('confirmPassword', ''),
+        session.get('admin_username') or 'administrator')
+    if status:
+        DashboardLogger.log(str(request.url), str(request.remote_addr),
+                            Message=f"Administrator created: {data.get('username', '')}")
+    return ResponseObject(status, message)
+
+
+@app.post(f'{APP_PREFIX}/api/admins/update')
+def API_UpdateAdmin():
+    data = request.get_json() or {}
+    status, message = DashboardAdmins.UpdateAdmin(
+        data.get('AdminID', ''), data.get('username', ''), data.get('email', ''))
+    return ResponseObject(status, message)
+
+
+@app.post(f'{APP_PREFIX}/api/admins/setPassword')
+def API_SetAdminPassword():
+    data = request.get_json() or {}
+    status, message = DashboardAdmins.SetPassword(
+        data.get('AdminID', ''), data.get('newPassword', ''), data.get('confirmPassword', ''))
+    if status:
+        DashboardLogger.log(str(request.url), str(request.remote_addr),
+                            Message="Administrator password reset from the dashboard")
+    return ResponseObject(status, message)
+
+
+@app.post(f'{APP_PREFIX}/api/admins/me/password')
+def API_SetOwnAdminPassword():
+    adminID = session.get('admin_id')
+    if adminID is None:
+        return ResponseObject(False, "This session is not linked to a local administrator")
+    data = request.get_json() or {}
+    status, message = DashboardAdmins.SetPassword(
+        adminID, data.get('newPassword', ''), data.get('confirmPassword', ''),
+        data.get('currentPassword', ''))
+    return ResponseObject(status, message)
+
+
+@app.post(f'{APP_PREFIX}/api/admins/toggle')
+def API_ToggleAdmin():
+    data = request.get_json() or {}
+    status, message = DashboardAdmins.SetEnabled(
+        data.get('AdminID', ''), bool(data.get('Enabled', False)), session.get('admin_id'))
+    if status:
+        DashboardLogger.log(str(request.url), str(request.remote_addr),
+                            Message=f"Administrator {'enabled' if data.get('Enabled') else 'disabled'}: {data.get('AdminID', '')}")
+    return ResponseObject(status, message)
+
+
+@app.post(f'{APP_PREFIX}/api/admins/delete')
+def API_DeleteAdmin():
+    data = request.get_json() or {}
+    admin = DashboardAdmins.GetAdmin(data.get('AdminID', ''))
+    status, message = DashboardAdmins.DeleteAdmin(data.get('AdminID', ''), session.get('admin_id'))
+    if status and admin is not None:
+        DashboardLogger.log(str(request.url), str(request.remote_addr),
+                            Message=f"Administrator deleted: {admin.get('Username')}")
+    return ResponseObject(status, message)
+
 
 @app.get(f'{APP_PREFIX}/api/getWireguardConfigurations')
 def API_getWireguardConfigurations():
@@ -726,6 +866,8 @@ def API_updateDashboardConfigurationItem():
         data["section"], data["key"], data['value'])
     if not valid:
         return ResponseObject(False, msg)
+    if data['section'] == "Account" and data['key'] == "password":
+        DashboardAdmins.SyncPasswordFromConfig(data['value'].get('newPassword', ''))
     if data['section'] == "Server":
         if data['key'] == 'wg_conf_path':
             WireguardConfigurations.clear()
@@ -1559,6 +1701,8 @@ def API_Welcome_Finish():
         if not updateUsername or not updatePassword:
             return ResponseObject(False, f"{updateUsernameErr},{updatePasswordErr}".strip(","))
 
+        DashboardAdmins.RenameFromConfig()
+        DashboardAdmins.SyncPasswordFromConfig(data["newPassword"])
         DashboardConfig.SetConfig("Other", "welcome_session", False)
     return ResponseObject()
 
