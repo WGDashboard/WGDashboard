@@ -344,9 +344,9 @@ def auth_req():
                 response.status_code = 401
                 return response
 
-            # MFA is mandatory: a local administrator without a verified TOTP can only
-            # reach the endpoints needed to enrol (never the rest of the dashboard).
-            if session.get("admin_id") is not None:
+            # MFA is mandatory only when the setting is enabled: a local administrator without a
+            # verified TOTP can then reach nothing but the endpoints needed to enrol.
+            if DashboardConfig.GetConfig("Server", "require_mfa")[1] and session.get("admin_id") is not None:
                 try:
                     currentAdmin = DashboardAdmins.GetAdmin(session.get("admin_id"))
                     if currentAdmin is not None and not (currentAdmin.get("TotpKey") and
@@ -480,8 +480,9 @@ def API_AuthenticateLogin():
             "status": True,
             "message": DashboardConfig.GetConfig("Other", "welcome_session")[1],
             "data": None,
-            # The dashboard asks the user to enrol MFA when the account has none
-            "mfaSetupRequired": bool(admin.get("MfaSetupRequired")),
+            # The dashboard asks the user to enrol MFA when the account has none and it is required
+            "mfaSetupRequired": bool(admin.get("MfaSetupRequired"))
+            and DashboardConfig.GetConfig("Server", "require_mfa")[1],
             "usedRecoveryCode": bool(admin.get("UsedRecoveryCode")),
             "recoveryCodesRemaining": int(admin.get("RecoveryCodesRemaining") or 0),
         }
@@ -548,11 +549,15 @@ def API_GetCurrentAdmin():
             "Email": "",
             "Enabled": 1,
             "TotpEnabled": False,
+            "MfaSetupRequired": False,
             "CreatedDate": None,
             "LastLoginDate": None,
             "CreatedBy": session.get('signInMethod', 'oidc'),
         })
-    return ResponseObject(data=DashboardAdmins.Public(admin))
+    payload = DashboardAdmins.Public(admin)
+    payload["MfaSetupRequired"] = (not payload.get("TotpEnabled")) and \
+        DashboardConfig.GetConfig("Server", "require_mfa")[1]
+    return ResponseObject(data=payload)
 
 
 @app.post(f'{APP_PREFIX}/api/admins/add')
@@ -2166,8 +2171,10 @@ def index():
                     DashboardConfig.GetConfig("Account", "username")[1])
                 if currentAdmin is not None:
                     session["admin_id"] = currentAdmin.get("AdminID")
-            if currentAdmin is not None and not (currentAdmin.get("TotpKey") and
-                                                 int(currentAdmin.get("TotpVerified") or 0) == 1):
+            if (currentAdmin is not None
+                    and DashboardConfig.GetConfig("Server", "require_mfa")[1]
+                    and not (currentAdmin.get("TotpKey") and
+                             int(currentAdmin.get("TotpVerified") or 0) == 1)):
                 mfaSetupRequired = True
     except Exception as e:
         app.logger.error(f"[WGDashboard] Cannot resolve the MFA state for the index page: {e}")

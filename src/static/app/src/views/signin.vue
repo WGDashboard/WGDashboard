@@ -88,7 +88,7 @@ export default {
 			fetchGet("/api/validateAuthentication", {}, (auth) => {
 				if (!auth.status) return;
 				fetchGet("/api/admins/me", {}, (res) => {
-					if (res.status && res.data && res.data.AdminID && res.data.TotpEnabled === false){
+					if (res.status && res.data && res.data.MfaSetupRequired === true){
 						this.$router.push("/2FASetup");
 					}
 				});
