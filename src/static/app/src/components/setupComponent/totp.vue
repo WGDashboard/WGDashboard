@@ -16,6 +16,7 @@ export default {
 			mode: null,          // "admin" (mandatory enrolment) or "welcome" (legacy wizard)
 			adminID: null,
 			username: "",
+			postponeAllowed: false,
 			link: "",
 			totp: "",
 			verified: false,
@@ -34,6 +35,7 @@ export default {
 					this.mode = "admin";
 					this.adminID = me.data.AdminID;
 					this.username = me.data.Username || "";
+					this.postponeAllowed = me.data.MfaPostponeAllowed === true;
 					fetchPost("/api/admins/totp/start", {AdminID: this.adminID}, (res) => {
 						this.busy = false;
 						if (res.status && res.data){
@@ -106,6 +108,18 @@ export default {
 			fetchGet("/api/signout", {}, () => {
 				this.store.Redirect = undefined;
 				this.$router.push("/signin");
+			});
+		},
+		postpone(){
+			fetchPost("/api/admins/totp/postpone", {}, (res) => {
+				if (res.status){
+					this.store.newMessage("WGDashboard",
+						"MFA setup postponed for this session only: you will be asked again at your next sign in.",
+						"warning");
+					this.$router.push("/");
+				}else{
+					this.store.newMessage("Server", res.message, "danger");
+				}
 			});
 		},
 		copyCodes(){
@@ -246,11 +260,19 @@ export default {
 					<LocaleText t="Complete"></LocaleText>
 					<i class="bi bi-chevron-right ms-auto"></i>
 				</RouterLink>
-				<button class="btn btn-link text-muted text-decoration-none" @click="this.signOut()">
-					<i class="bi bi-box-arrow-right me-1"></i>
-					<LocaleText t="Sign out"></LocaleText>
-					<small v-if="this.username">({{ this.username }})</small>
-				</button>
+				<div class="d-flex gap-2 align-items-center justify-content-center flex-wrap">
+					<button class="btn btn-outline-secondary btn-sm rounded-3 d-flex align-items-center px-3"
+					        v-if="!this.verified && this.mode === 'admin' && this.postponeAllowed"
+					        @click="this.postpone()">
+						<i class="bi bi-skip-forward-fill me-2"></i>
+						<LocaleText t="Continue without MFA"></LocaleText>
+					</button>
+					<button class="btn btn-link text-muted text-decoration-none" @click="this.signOut()">
+						<i class="bi bi-box-arrow-right me-1"></i>
+						<LocaleText t="Sign out"></LocaleText>
+						<small v-if="this.username">({{ this.username }})</small>
+					</button>
+				</div>
 			</div>
 		</div>
 	</div>

@@ -350,7 +350,9 @@ def auth_req():
 
             # MFA is mandatory only when the setting is enabled: a local administrator without a
             # verified TOTP can then reach nothing but the endpoints needed to enrol.
-            if DashboardConfig.GetConfig("Server", "require_mfa")[1] and session.get("admin_id") is not None:
+            if (DashboardConfig.GetConfig("Server", "require_mfa")[1]
+                    and not session.get("mfa_postponed")
+                    and session.get("admin_id") is not None):
                 try:
                     currentAdmin = DashboardAdmins.GetAdmin(session.get("admin_id"))
                     if currentAdmin is not None and not (currentAdmin.get("TotpKey") and
@@ -360,6 +362,7 @@ def auth_req():
                             f'{appPrefix}/api/admins/totp/start',
                             f'{appPrefix}/api/admins/totp/verify',
                             f'{appPrefix}/api/admins/totp/recoveryCodes',
+                            f'{appPrefix}/api/admins/totp/postpone',
                             f'{appPrefix}/api/signout',
                             f'{appPrefix}/api/validateAuthentication',
                             f'{appPrefix}/api/requireAuthentication',
@@ -561,8 +564,13 @@ def API_GetCurrentAdmin():
             "CreatedBy": session.get('signInMethod', 'oidc'),
         })
     payload = DashboardAdmins.Public(admin)
-    payload["MfaSetupRequired"] = (not payload.get("TotpEnabled")) and \
-        DashboardConfig.GetConfig("Server", "require_mfa")[1]
+    payload["MfaSetupRequired"] = (not payload.get("TotpEnabled")) \
+        and DashboardConfig.GetConfig("Server", "require_mfa")[1] \
+        and not session.get("mfa_postponed")
+    payload["MfaPostponeAllowed"] = (not payload.get("TotpEnabled")) \
+        and DashboardConfig.GetConfig("Server", "require_mfa")[1] \
+        and DashboardConfig.GetConfig("Server", "allow_mfa_postpone")[1] \
+        and not session.get("mfa_postponed")
     return ResponseObject(data=payload)
 
 
@@ -676,6 +684,25 @@ def API_DisableAdminTotp():
             signedOut = True
         return ResponseObject(True, None, data={"SignedOut": signedOut})
     return ResponseObject(False, message)
+
+
+@app.post(f'{APP_PREFIX}/api/admins/totp/postpone')
+def API_PostponeAdminMfa():
+    """Skip the mandatory MFA enrolment for the current session only."""
+    if not DashboardConfig.GetConfig("Server", "require_mfa")[1]:
+        return ResponseObject(False, "MFA is not required")
+    if not DashboardConfig.GetConfig("Server", "allow_mfa_postpone")[1]:
+        return ResponseObject(False, "Postponing the MFA setup is not allowed")
+    adminID = session.get('admin_id')
+    admin = DashboardAdmins.GetAdmin(adminID)
+    if admin is None:
+        return ResponseObject(False, "This session is not linked to a local administrator")
+    if admin.get("TotpKey") and int(admin.get("TotpVerified") or 0) == 1:
+        return ResponseObject(False, "MFA is already enabled for this administrator")
+    session['mfa_postponed'] = True
+    DashboardLogger.log(str(request.url), str(request.remote_addr),
+                        Message=f"MFA setup postponed for administrator: {admin.get('Username')}")
+    return ResponseObject(True)
 
 
 @app.post(f'{APP_PREFIX}/api/admins/totp/recoveryCodes')
@@ -2186,6 +2213,7 @@ def index():
                     session["admin_id"] = currentAdmin.get("AdminID")
             if (currentAdmin is not None
                     and DashboardConfig.GetConfig("Server", "require_mfa")[1]
+                    and not session.get("mfa_postponed")
                     and not (currentAdmin.get("TotpKey") and
                              int(currentAdmin.get("TotpVerified") or 0) == 1)):
                 mfaSetupRequired = True
