@@ -718,18 +718,15 @@ def API_DisableAdminTotp():
 def API_IsAdminMfaRequired():
     """Tell the sign in page whether the OTP field must be displayed for this username.
 
-    A non existing account is answered like an account WITH MFA, so the endpoint does not
-    disclose whether an administrator account exists.
+    The answer must not depend on the account: a per-account answer would let an
+    unauthenticated caller enumerate the administrators, and single out the ones without
+    MFA (any answer different from "account with MFA" identifies an existing password-only
+    account). The field is therefore offered for any non-empty username; the server only
+    *requires* the code when the account has a verified TOTP (see DashboardAdmins.SignIn),
+    so leaving it empty stays valid for the accounts that do not use MFA.
     """
     username = (request.args.get('username') or '').strip()
-    if len(username) == 0:
-        return ResponseObject(True, data={"MfaRequired": False})
-    admin = DashboardAdmins.GetAdminByUsername(username)
-    if admin is None:
-        return ResponseObject(True, data={"MfaRequired": True})
-    return ResponseObject(True, data={
-        "MfaRequired": bool(admin.get("TotpKey")) and int(admin.get("TotpVerified") or 0) == 1
-    })
+    return ResponseObject(True, data={"MfaRequired": len(username) > 0})
 
 
 @app.post(f'{APP_PREFIX}/api/admins/totp/postpone')

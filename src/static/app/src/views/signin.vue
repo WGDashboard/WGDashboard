@@ -43,8 +43,6 @@ export default {
 			loginError: false,
 			loginErrorMessage: "",
 			loading: false,
-			totpRequired: false,
-			totpTimer: null,
 			build: (typeof window !== "undefined" && window.__BUILD__) ? window.__BUILD__ : ""
 		}
 	},
@@ -59,6 +57,12 @@ export default {
 			// The TOTP code is only required by the server when the account has MFA enabled,
 			// so the field is always visible but never blocking here.
 			return !!(this.data.username && this.data.password)
+		},
+		totpRequired(){
+			// Offered as soon as a username is typed, and never required here. Asking the
+			// server would disclose whether the account exists and whether it uses MFA
+			// (see /api/admins/totp/required, answered uniformly for that reason).
+			return String(this.data.username || "").trim().length > 0
 		}
 	},
 	mounted() {
@@ -66,7 +70,11 @@ export default {
 	},
 	watch: {
 		'data.username'(value){
-			this.checkTotpRequired(value);
+			// The OTP field is offered for any non-empty username; drop a code that was
+			// typed for a previous account. No server lookup: it would disclose the account.
+			if (String(value || "").trim().length === 0){
+				this.data.totp = "";
+			}
 		},
 		'data.totp'(value){
 			const formatted = this.formatOtp(value);
@@ -77,32 +85,6 @@ export default {
 	},
 	methods: {
 		GetLocale,
-		checkTotpRequired(value){
-			// The OTP field is only displayed when the account exists and has MFA enabled
-			clearTimeout(this.totpTimer);
-			this.totpTimer = setTimeout(() => {
-				const username = String(value || "").trim();
-				// Every non-empty username is queried: imported accounts may be shorter than
-				// three characters, and they can have MFA enabled too.
-				if (username.length === 0){
-					this.totpRequired = false;
-					this.data.totp = "";
-					return;
-				}
-				fetchGet("/api/admins/totp/required", {username: username}, (res) => {
-					// Debouncing does not cancel requests already in flight: ignore a response
-					// that belongs to a username no longer typed in the field.
-					if (String(this.data.username || "").trim() !== username){
-						return;
-					}
-					const required = !!(res.status && res.data && res.data.MfaRequired === true);
-					this.totpRequired = required;
-					if (!required){
-						this.data.totp = "";
-					}
-				});
-			}, 350);
-		},
 		formatOtp(value){
 			// The field accepts either a 6 digit TOTP or a recovery code (16 characters,
 			// displayed as XXXX-XXXX-XXXX-XXXX). Recovery codes contain letters.
