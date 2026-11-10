@@ -662,7 +662,14 @@ def API_DisableAdminTotp():
     if status:
         DashboardLogger.log(str(request.url), str(request.remote_addr),
                             Message=f"MFA disabled for administrator: {admin.get('Username')}")
-    return ResponseObject(status, message)
+        # With a mandatory MFA, an administrator who removes his own MFA can no longer use the
+        # dashboard: sign the session out instead of bouncing him back to the enrolment page.
+        signedOut = False
+        if adminID == session.get('admin_id') and DashboardConfig.GetConfig("Server", "require_mfa")[1]:
+            session.clear()
+            signedOut = True
+        return ResponseObject(True, None, data={"SignedOut": signedOut})
+    return ResponseObject(False, message)
 
 
 @app.post(f'{APP_PREFIX}/api/admins/totp/recoveryCodes')

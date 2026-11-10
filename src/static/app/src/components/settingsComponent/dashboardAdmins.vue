@@ -246,9 +246,17 @@ export default {
 			}, (res) => {
 				this.mfaBusy = false;
 				if (res.status) {
-					this.store.newMessage("Server", "MFA disabled for this administrator", "success");
+					const signedOut = res.data && res.data.SignedOut === true;
 					this.closeMfa();
-					this.loadAdmins();
+					if (signedOut) {
+						// The account has no MFA any more and MFA is mandatory: back to the sign in page
+						this.store.newMessage("WGDashboard",
+							"MFA disabled: MFA is required, please sign in again to enrol a new one.", "warning");
+						this.$router.push("/signin");
+					} else {
+						this.store.newMessage("Server", "MFA disabled for this administrator", "success");
+						this.loadAdmins();
+					}
 				} else {
 					this.store.newMessage("Server", res.message, "danger");
 				}
