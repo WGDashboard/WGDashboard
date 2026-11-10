@@ -306,6 +306,8 @@ def auth_req():
                 })
                 response.content_type = "application/json"
                 response.status_code = 401
+                response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+                response.headers["Pragma"] = "no-cache"
                 return response
             DashboardConfig.APIAccessed = True
         else:
@@ -342,6 +344,8 @@ def auth_req():
                 })
                 response.content_type = "application/json"
                 response.status_code = 401
+                response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+                response.headers["Pragma"] = "no-cache"
                 return response
 
             # MFA is mandatory only when the setting is enabled: a local administrator without a
@@ -386,6 +390,8 @@ def auth_req():
                             })
                             response.content_type = "application/json"
                             response.status_code = 403
+                            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+                            response.headers["Pragma"] = "no-cache"
                             return response
                 except Exception as e:
                     app.logger.error(f"[WGDashboard] Cannot check the MFA state of the current administrator: {e}")
