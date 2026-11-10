@@ -285,6 +285,40 @@ export default {
 					this.store.newMessage("Server", res.message, "danger");
 				}
 			});
+		},
+		copyRecoveryCodes() {
+			if (this.recoveryCodes.length === 0) return;
+			if (navigator.clipboard) {
+				navigator.clipboard.writeText(this.recoveryCodes.join("\n"));
+				this.store.newMessage("Server", "Recovery codes copied", "success");
+			}
+		},
+		downloadRecoveryCodes() {
+			if (this.recoveryCodes.length === 0) return;
+			const username = this.mfaTarget ? this.mfaTarget.Username : "administrateur";
+			const safeName = username.replace(/[^A-Za-z0-9._@-]/g, "_");
+			const now = new Date();
+			const content = [
+				"WGDashboard - codes de secours MFA",
+				"Compte      : " + username,
+				"Generes le  : " + now.toLocaleString(),
+				"",
+				"Chaque code ne peut etre utilise qu'une seule fois.",
+				"Conservez ce fichier en lieu sur, hors du serveur.",
+				"",
+				...this.recoveryCodes.map((c, i) => (i + 1) + ". " + c),
+				""
+			].join("\n");
+			const blob = new Blob([content], {type: "text/plain;charset=utf-8"});
+			const url = URL.createObjectURL(blob);
+			const link = document.createElement("a");
+			link.href = url;
+			link.download = "codes-secours-" + safeName + "-" + now.toISOString().slice(0, 10) + ".txt";
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+			URL.revokeObjectURL(url);
+			this.store.newMessage("Server", "Recovery codes downloaded", "success");
 		}
 	}
 }
@@ -450,6 +484,16 @@ export default {
 							<div class="col" v-for="code in this.recoveryCodes" :key="code">
 								<code class="user-select-all">{{ code }}</code>
 							</div>
+						</div>
+						<div class="d-flex gap-2 mt-3">
+							<button class="btn btn-sm bg-secondary-subtle text-secondary-emphasis rounded-3 px-3"
+							        @click="this.copyRecoveryCodes()">
+								<i class="bi bi-clipboard-fill me-1"></i><LocaleText t="Copy"></LocaleText>
+							</button>
+							<button class="btn btn-sm btn-primary rounded-3 px-3"
+							        @click="this.downloadRecoveryCodes()">
+								<i class="bi bi-download me-1"></i><LocaleText t="Download"></LocaleText>
+							</button>
 						</div>
 					</div>
 				</template>

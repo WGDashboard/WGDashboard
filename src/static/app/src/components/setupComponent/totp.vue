@@ -15,6 +15,7 @@ export default {
 		return {
 			mode: null,          // "admin" (mandatory enrolment) or "welcome" (legacy wizard)
 			adminID: null,
+			username: "",
 			link: "",
 			totp: "",
 			verified: false,
@@ -32,6 +33,7 @@ export default {
 				if (me.status && me.data && me.data.AdminID){
 					this.mode = "admin";
 					this.adminID = me.data.AdminID;
+					this.username = me.data.Username || "";
 					fetchPost("/api/admins/totp/start", {AdminID: this.adminID}, (res) => {
 						this.busy = false;
 						if (res.status && res.data){
@@ -106,6 +108,33 @@ export default {
 				navigator.clipboard.writeText(text);
 				this.store.newMessage("Server", "Recovery codes copied", "success");
 			}
+		},
+		downloadCodes(){
+			if (this.codes.length === 0) return;
+			const username = this.username || "administrateur";
+			const safeName = username.replace(/[^A-Za-z0-9._@-]/g, "_");
+			const now = new Date();
+			const content = [
+				"WGDashboard - codes de secours MFA",
+				"Compte      : " + username,
+				"Generes le  : " + now.toLocaleString(),
+				"",
+				"Chaque code ne peut etre utilise qu'une seule fois.",
+				"Conservez ce fichier en lieu sur, hors du serveur.",
+				"",
+				...this.codes.map((c, i) => (i + 1) + ". " + c),
+				""
+			].join("\n");
+			const blob = new Blob([content], {type: "text/plain;charset=utf-8"});
+			const url = URL.createObjectURL(blob);
+			const link = document.createElement("a");
+			link.href = url;
+			link.download = "codes-secours-" + safeName + "-" + now.toISOString().slice(0, 10) + ".txt";
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+			URL.revokeObjectURL(url);
+			this.store.newMessage("Server", "Recovery codes downloaded", "success");
 		}
 	},
 	watch: {
@@ -184,9 +213,14 @@ export default {
 								</div>
 							</div>
 						</div>
-						<button class="btn btn-sm bg-secondary-subtle text-secondary-emphasis rounded-3 px-3" @click="this.copyCodes()">
-							<i class="bi bi-clipboard-fill me-1"></i><LocaleText t="Copy"></LocaleText>
-						</button>
+						<div class="d-flex gap-2">
+							<button class="btn btn-sm bg-secondary-subtle text-secondary-emphasis rounded-3 px-3" @click="this.copyCodes()">
+								<i class="bi bi-clipboard-fill me-1"></i><LocaleText t="Copy"></LocaleText>
+							</button>
+							<button class="btn btn-sm btn-primary rounded-3 px-3" @click="this.downloadCodes()">
+								<i class="bi bi-download me-1"></i><LocaleText t="Download"></LocaleText>
+							</button>
+						</div>
 					</div>
 				</template>
 			</div>
