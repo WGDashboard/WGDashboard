@@ -82,12 +82,19 @@ export default {
 			clearTimeout(this.totpTimer);
 			this.totpTimer = setTimeout(() => {
 				const username = String(value || "").trim();
-				if (username.length < 3){
+				// Every non-empty username is queried: imported accounts may be shorter than
+				// three characters, and they can have MFA enabled too.
+				if (username.length === 0){
 					this.totpRequired = false;
 					this.data.totp = "";
 					return;
 				}
 				fetchGet("/api/admins/totp/required", {username: username}, (res) => {
+					// Debouncing does not cancel requests already in flight: ignore a response
+					// that belongs to a username no longer typed in the field.
+					if (String(this.data.username || "").trim() !== username){
+						return;
+					}
 					const required = !!(res.status && res.data && res.data.MfaRequired === true);
 					this.totpRequired = required;
 					if (!required){

@@ -272,21 +272,39 @@ class DashboardAdmins:
             self.DashboardConfig.SetConfig("Account", "password", NewPassword, init=True)
         return True, None
 
+    def __OtherEnabledAdmins(self, AdminID: str):
+        """SQL condition: at least one *other* administrator is enabled.
+
+        The rule "one enabled administrator must remain" is evaluated inside the UPDATE/DELETE
+        statement itself, so two concurrent requests cannot both pass a separate count check and
+        leave the installation without a usable account.
+        """
+        return (db.select(db.func.count())
+                .select_from(self.adminsTable)
+                .where(db.and_(self.adminsTable.c.Enabled == 1,
+                               self.adminsTable.c.AdminID != AdminID))
+                .scalar_subquery()) >= 1
+
     def SetEnabled(self, AdminID: str, Enabled: bool, CurrentAdminID: str | None = None) -> tuple[bool, str | None]:
         admin = self.GetAdmin(AdminID)
         if admin is None:
             return False, "Administrator does not exist"
-        if not Enabled:
-            if CurrentAdminID and AdminID == CurrentAdminID:
-                return False, "You cannot disable your own account"
-            if int(admin.get("Enabled") or 0) == 1 and self.CountEnabled() <= 1:
-                return False, "At least one enabled administrator is required"
+        if not Enabled and CurrentAdminID and AdminID == CurrentAdminID:
+            return False, "You cannot disable your own account"
         with self.engine.begin() as conn:
-            conn.execute(self.adminsTable.update().values({
+            query = self.adminsTable.update().values({
                 "Enabled": 1 if Enabled else 0,
                 "UpdatedDate": datetime.datetime.now(),
-            }).where(self.adminsTable.c.AdminID == AdminID))
-        return True, None
+            }).where(self.adminsTable.c.AdminID == AdminID)
+            if not Enabled:
+                query = query.where(db.or_(self.adminsTable.c.Enabled != 1,
+                                           self.__OtherEnabledAdmins(AdminID)))
+            result = conn.execute(query)
+            if result.rowcount == 1:
+                return True, None
+        if not Enabled and int(admin.get("Enabled") or 0) == 1:
+            return False, "At least one enabled administrator is required"
+        return False, "Administrator does not exist"
 
     def DeleteAdmin(self, AdminID: str, CurrentAdminID: str | None = None) -> tuple[bool, str | None]:
         admin = self.GetAdmin(AdminID)
@@ -294,13 +312,21 @@ class DashboardAdmins:
             return False, "Administrator does not exist"
         if CurrentAdminID and AdminID == CurrentAdminID:
             return False, "You cannot delete your own account"
-        if self.Count() <= 1:
-            return False, "At least one administrator is required"
-        if int(admin.get("Enabled") or 0) == 1 and self.CountEnabled() <= 1:
-            return False, "At least one enabled administrator is required"
         with self.engine.begin() as conn:
-            conn.execute(self.adminsTable.delete().where(self.adminsTable.c.AdminID == AdminID))
-        return True, None
+            result = conn.execute(
+                self.adminsTable.delete().where(db.and_(
+                    self.adminsTable.c.AdminID == AdminID,
+                    (db.select(db.func.count()).select_from(self.adminsTable)
+                     .scalar_subquery()) > 1,
+                    db.or_(self.adminsTable.c.Enabled != 1,
+                           self.__OtherEnabledAdmins(AdminID)),
+                ))
+            )
+            if result.rowcount == 1:
+                return True, None
+        if int(admin.get("Enabled") or 0) == 1:
+            return False, "At least one enabled administrator is required"
+        return False, "At least one administrator is required"
 
     def SyncPasswordFromConfig(self, NewPlainPassword: str) -> bool:
         """Keep the wg-dashboard.ini account and its administrator row in sync.
@@ -509,27 +535,24 @@ class DashboardAdmins:
         return True, None
 
     def UseRecoveryCode(self, AdminID: str, Code: str) -> bool:
-        """Consume a recovery code. Returns True when the code was valid and unused."""
+        """Consume a recovery code. Returns True when the code was valid and unused.
+
+        The "still unused" test and the write happen in a single UPDATE, so two sign-ins running
+        concurrently can never both consume the same code.
+        """
         normalized = self.__NormalizeRecoveryCode(Code)
         if len(normalized) != 16:
             return False
         codeHash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
         with self.engine.begin() as conn:
-            row = conn.execute(
-                db.select(self.recoveryCodesTable).where(
-                    db.and_(
-                        self.recoveryCodesTable.c.AdminID == AdminID,
-                        self.recoveryCodesTable.c.CodeHash == codeHash,
-                        self.recoveryCodesTable.c.UsedDate.is_(None),
-                    )
-                )
-            ).mappings().fetchone()
-            if row is None:
-                return False
-            conn.execute(
-                self.recoveryCodesTable.update().values({"UsedDate": datetime.datetime.now()}).where(
-                    self.recoveryCodesTable.c.CodeID == row["CodeID"]
-                )
+            result = conn.execute(
+                self.recoveryCodesTable.update()
+                .values({"UsedDate": datetime.datetime.now()})
+                .where(db.and_(
+                    self.recoveryCodesTable.c.AdminID == AdminID,
+                    self.recoveryCodesTable.c.CodeHash == codeHash,
+                    self.recoveryCodesTable.c.UsedDate.is_(None),
+                ))
             )
-        return True
+            return result.rowcount == 1
 

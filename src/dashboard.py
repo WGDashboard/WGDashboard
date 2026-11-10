@@ -349,6 +349,28 @@ def auth_req():
                 response.headers["Pragma"] = "no-cache"
                 return response
 
+            # The administrator row is the source of truth for an open session: an account that
+            # has been deleted or disabled must lose its access at once, whether MFA is required
+            # or not. Without this check a revoked user could keep calling the APIs (and even
+            # re-enable the account) until the session cookie expires.
+            if session.get("role") == "admin" and session.get("admin_id") is not None:
+                try:
+                    currentAdmin = DashboardAdmins.GetAdmin(session.get("admin_id"))
+                except Exception:
+                    currentAdmin = None
+                if currentAdmin is None or int(currentAdmin.get("Enabled") or 0) != 1:
+                    session.clear()
+                    response = Flask.make_response(app, {
+                        "status": False,
+                        "message": "Unauthorized access.",
+                        "data": None
+                    })
+                    response.content_type = "application/json"
+                    response.status_code = 401
+                    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+                    response.headers["Pragma"] = "no-cache"
+                    return response
+
             # MFA is mandatory only when the setting is enabled: a local administrator without a
             # verified TOTP can then reach nothing but the endpoints needed to enrol.
             if (DashboardConfig.GetConfig("Server", "require_mfa")[1]
@@ -481,6 +503,10 @@ def API_AuthenticateLogin():
     valid, message, admin = DashboardAdmins.SignIn(username, password, totpCode)
     if valid:
         LOGIN_ATTEMPTS.pop(attemptKey, None)
+        # A new sign-in must never inherit state from a previous session (in particular the
+        # "postpone MFA" flag): the browser could otherwise sign in as another administrator
+        # and keep the exemption granted earlier.
+        session.clear()
         authToken = hashlib.sha256(f"{username}{datetime.now()}{app.secret_key}".encode()).hexdigest()
         session['role'] = 'admin'
         session['username'] = authToken

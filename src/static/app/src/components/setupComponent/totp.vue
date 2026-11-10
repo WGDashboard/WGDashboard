@@ -17,6 +17,7 @@ export default {
 			adminID: null,
 			username: "",
 			postponeAllowed: false,
+			setupRequired: false,
 			link: "",
 			totp: "",
 			verified: false,
@@ -36,6 +37,9 @@ export default {
 					this.adminID = me.data.AdminID;
 					this.username = me.data.Username || "";
 					this.postponeAllowed = me.data.MfaPostponeAllowed === true;
+					// MFA is only compulsory when the server asks for it: with the default
+					// require_mfa=false the page must stay skippable.
+					this.setupRequired = me.data.MfaSetupRequired === true;
 					fetchPost("/api/admins/totp/start", {AdminID: this.adminID}, (res) => {
 						this.busy = false;
 						if (res.status && res.data){
@@ -248,7 +252,7 @@ export default {
 			<div class="d-flex gap-3 mt-5 flex-column">
 				<RouterLink
 					to="/"
-					v-if="!this.verified && this.mode === 'welcome'"
+					v-if="!this.verified && (!this.setupRequired || this.postponeAllowed)"
 					class="btn bg-secondary-subtle text-secondary-emphasis rounded-3 flex-grow-1 btn-lg border-1 border-secondary-subtle shadow d-flex">
 					<LocaleText t="I don't need MFA"></LocaleText>
 					<i class="bi bi-chevron-right ms-auto"></i>
