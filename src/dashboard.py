@@ -322,6 +322,7 @@ def auth_req():
                 f'{appPrefix}/api/getDashboardVersion', 
                 f'{appPrefix}/api/sharePeer/get', 
                 f'{appPrefix}/api/isTotpEnabled', 
+                f'{appPrefix}/api/admins/totp/required',
                 f'{appPrefix}/api/locale',
                 f'{appPrefix}/api/oidc/providers',
                 f'{appPrefix}/api/oidc/authenticate',
@@ -363,6 +364,7 @@ def auth_req():
                             f'{appPrefix}/api/admins/totp/verify',
                             f'{appPrefix}/api/admins/totp/recoveryCodes',
                             f'{appPrefix}/api/admins/totp/postpone',
+                            f'{appPrefix}/api/admins/totp/required',
                             f'{appPrefix}/api/signout',
                             f'{appPrefix}/api/validateAuthentication',
                             f'{appPrefix}/api/requireAuthentication',
@@ -684,6 +686,24 @@ def API_DisableAdminTotp():
             signedOut = True
         return ResponseObject(True, None, data={"SignedOut": signedOut})
     return ResponseObject(False, message)
+
+
+@app.get(f'{APP_PREFIX}/api/admins/totp/required')
+def API_IsAdminMfaRequired():
+    """Tell the sign in page whether the OTP field must be displayed for this username.
+
+    A non existing account is answered like an account WITH MFA, so the endpoint does not
+    disclose whether an administrator account exists.
+    """
+    username = (request.args.get('username') or '').strip()
+    if len(username) == 0:
+        return ResponseObject(True, data={"MfaRequired": False})
+    admin = DashboardAdmins.GetAdminByUsername(username)
+    if admin is None:
+        return ResponseObject(True, data={"MfaRequired": True})
+    return ResponseObject(True, data={
+        "MfaRequired": bool(admin.get("TotpKey")) and int(admin.get("TotpVerified") or 0) == 1
+    })
 
 
 @app.post(f'{APP_PREFIX}/api/admins/totp/postpone')

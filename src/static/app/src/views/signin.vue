@@ -43,6 +43,8 @@ export default {
 			loginError: false,
 			loginErrorMessage: "",
 			loading: false,
+			totpRequired: false,
+			totpTimer: null,
 			build: (typeof window !== "undefined" && window.__BUILD__) ? window.__BUILD__ : ""
 		}
 	},
@@ -63,6 +65,9 @@ export default {
 		this.checkMfaRedirect();
 	},
 	watch: {
+		'data.username'(value){
+			this.checkTotpRequired(value);
+		},
 		'data.totp'(value){
 			const formatted = this.formatOtp(value);
 			if (formatted !== value){
@@ -72,6 +77,25 @@ export default {
 	},
 	methods: {
 		GetLocale,
+		checkTotpRequired(value){
+			// The OTP field is only displayed when the account exists and has MFA enabled
+			clearTimeout(this.totpTimer);
+			this.totpTimer = setTimeout(() => {
+				const username = String(value || "").trim();
+				if (username.length < 3){
+					this.totpRequired = false;
+					this.data.totp = "";
+					return;
+				}
+				fetchGet("/api/admins/totp/required", {username: username}, (res) => {
+					const required = !!(res.status && res.data && res.data.MfaRequired === true);
+					this.totpRequired = required;
+					if (!required){
+						this.data.totp = "";
+					}
+				});
+			}, 350);
+		},
 		formatOtp(value){
 			// The field accepts either a 6 digit TOTP or a recovery code (16 characters,
 			// displayed as XXXX-XXXX-XXXX-XXXX). Recovery codes contain letters.
@@ -186,7 +210,7 @@ export default {
 							<LocaleText t="Password"></LocaleText>	
 						</label>
 					</div>
-					<div class="form-floating mb-2">
+					<div class="form-floating mb-2" v-if="this.totpRequired">
 						<input type="text"
 						       id="totp"
 						       :disabled="loading"
@@ -199,10 +223,9 @@ export default {
 						<label for="floatingInput" class="d-flex">
 							<i class="bi bi-lock-fill me-2"></i>
 							<LocaleText t="OTP from your authenticator"></LocaleText>
-							<small class="text-muted ms-1" v-if="!this.totpEnabled">(<LocaleText t="if MFA is enabled"></LocaleText>)</small>
 						</label>
 					</div>
-					<small class="text-muted d-block mb-1" style="font-size: 0.75rem">
+					<small class="text-muted d-block mb-1" style="font-size: 0.75rem" v-if="this.totpRequired">
 						<i class="bi bi-life-preserver me-1"></i>
 						<LocaleText t="6 digits from your application, or one of your recovery codes"></LocaleText>
 					</small>
