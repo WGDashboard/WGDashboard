@@ -212,7 +212,7 @@ dictConfig({
 WireguardConfigurations: dict[str, WireguardConfiguration] = {}
 CONFIGURATION_PATH = os.getenv('CONFIGURATION_PATH', '.')
 # Local patch version, displayed on the sign in page (used to verify what the browser runs)
-DASHBOARD_BUILD = os.getenv('WGD_BUILD_TAG', '2026-11-10-a')
+DASHBOARD_BUILD = os.getenv('WGD_BUILD_TAG', '2026-11-10-b')
 
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 5206928
 
@@ -481,6 +481,7 @@ def API_AuthenticateLogin():
             # The dashboard asks the user to enrol MFA when the account has none
             "mfaSetupRequired": bool(admin.get("MfaSetupRequired")),
             "usedRecoveryCode": bool(admin.get("UsedRecoveryCode")),
+            "recoveryCodesRemaining": int(admin.get("RecoveryCodesRemaining") or 0),
         }
         resp = Flask.make_response(app, body)
         resp.content_type = "application/json"

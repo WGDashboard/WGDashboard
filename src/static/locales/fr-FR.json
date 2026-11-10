@@ -401,5 +401,6 @@
 	"MFA is now enabled for your account": "La MFA est maintenant activée pour votre compte",
 	"Save these codes now: they will not be shown again.": "Notez ces codes maintenant : ils ne seront plus affichés.",
 	"Save these recovery codes now: each one can be used once to sign in if you lose your authenticator. They will not be shown again.": "Notez ces codes de secours dès maintenant : chacun permet une connexion unique si vous perdez votre application d'authentification. Ils ne seront plus affichés.",
-	"Sign out": "Se déconnecter"
+	"Sign out": "Se déconnecter",
+	"6 digits from your application, or one of your recovery codes": "6 chiffres de votre application, ou l'un de vos codes de secours"
 }

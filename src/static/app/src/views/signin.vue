@@ -62,8 +62,25 @@ export default {
 	mounted() {
 		this.checkMfaRedirect();
 	},
+	watch: {
+		'data.totp'(value){
+			const formatted = this.formatOtp(value);
+			if (formatted !== value){
+				this.data.totp = formatted;
+			}
+		}
+	},
 	methods: {
 		GetLocale,
+		formatOtp(value){
+			// The field accepts either a 6 digit TOTP or a recovery code (16 characters,
+			// displayed as XXXX-XXXX-XXXX-XXXX). Recovery codes contain letters.
+			const clean = String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+			if (/[A-Z]/.test(clean) || clean.length > 6){
+				return clean.slice(0, 16).replace(/(.{4})/g, "$1-").replace(/-$/, "");
+			}
+			return clean.slice(0, 6);
+		},
 		checkMfaRedirect(){
 			// If a session is already open on an account without MFA, go straight to the enrolment.
 			// validateAuthentication is called first: it avoids a 401 (and a "session ended" toast)
@@ -85,8 +102,10 @@ export default {
 						this.loginError = false;
 						this.$refs["signInBtn"].classList.add("signedIn")
 						if (response.usedRecoveryCode){
+							const remaining = response.recoveryCodesRemaining;
 							this.store.newMessage("Server",
-								"Signed in with a recovery code: it has been consumed and cannot be used again.", "warning")
+								"Signed in with a recovery code: it has been consumed and cannot be used again." +
+								(typeof remaining === "number" ? " " + remaining + " code(s) left." : ""), "warning")
 						}
 						if (response.mfaSetupRequired){
 							// MFA is mandatory: the account must enrol before using the dashboard
@@ -173,9 +192,9 @@ export default {
 						       :disabled="loading"
 						       placeholder="totp"
 						       v-model="this.data.totp"
-						       class="form-control rounded-3" 
-						       maxlength="6" 
-						       inputmode="numeric" 
+						       class="form-control rounded-3"
+						       maxlength="19"
+						       inputmode="text"
 						       autocomplete="one-time-code">
 						<label for="floatingInput" class="d-flex">
 							<i class="bi bi-lock-fill me-2"></i>
@@ -183,6 +202,10 @@ export default {
 							<small class="text-muted ms-1" v-if="!this.totpEnabled">(<LocaleText t="if MFA is enabled"></LocaleText>)</small>
 						</label>
 					</div>
+					<small class="text-muted d-block mb-1" style="font-size: 0.75rem">
+						<i class="bi bi-life-preserver me-1"></i>
+						<LocaleText t="6 digits from your application, or one of your recovery codes"></LocaleText>
+					</small>
 					<button class="btn btn-lg btn-dark ms-auto mt-5 w-100 d-flex btn-brand signInBtn rounded-3" 
 					        :disabled="this.loading || !this.formValid"
 					        ref="signInBtn">
