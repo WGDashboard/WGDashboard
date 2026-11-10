@@ -211,6 +211,8 @@ dictConfig({
 
 WireguardConfigurations: dict[str, WireguardConfiguration] = {}
 CONFIGURATION_PATH = os.getenv('CONFIGURATION_PATH', '.')
+# Local patch version, displayed on the sign in page (used to verify what the browser runs)
+DASHBOARD_BUILD = os.getenv('WGD_BUILD_TAG', '2026-11-10-a')
 
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 5206928
 
@@ -2167,7 +2169,8 @@ def index():
     except Exception as e:
         app.logger.error(f"[WGDashboard] Cannot resolve the MFA state for the index page: {e}")
     response = current_app.make_response(render_template(
-        'index.html', APP_PREFIX=APP_PREFIX, MFA_SETUP_REQUIRED=mfaSetupRequired))
+        'index.html', APP_PREFIX=APP_PREFIX, MFA_SETUP_REQUIRED=mfaSetupRequired,
+        BUILD_TAG=DASHBOARD_BUILD))
     response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     response.headers['Pragma'] = 'no-cache'
     return response

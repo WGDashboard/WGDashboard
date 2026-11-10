@@ -42,7 +42,8 @@ export default {
 			},
 			loginError: false,
 			loginErrorMessage: "",
-			loading: false
+			loading: false,
+			build: (typeof window !== "undefined" && window.__BUILD__) ? window.__BUILD__ : ""
 		}
 	},
 	computed: {
@@ -58,8 +59,24 @@ export default {
 			return !!(this.data.username && this.data.password)
 		}
 	},
+	mounted() {
+		this.checkMfaRedirect();
+	},
 	methods: {
 		GetLocale,
+		checkMfaRedirect(){
+			// If a session is already open on an account without MFA, go straight to the enrolment.
+			// validateAuthentication is called first: it avoids a 401 (and a "session ended" toast)
+			// when nobody is signed in yet.
+			fetchGet("/api/validateAuthentication", {}, (auth) => {
+				if (!auth.status) return;
+				fetchGet("/api/admins/me", {}, (res) => {
+					if (res.status && res.data && res.data.AdminID && res.data.TotpEnabled === false){
+						this.$router.push("/2FASetup");
+					}
+				});
+			});
+		},
 		async auth(){
 			if (this.formValid){
 				this.loading = true
@@ -201,7 +218,9 @@ export default {
 		</div>
 		<div class="d-flex container-fluid align-items-center my-1 w-100">
 			<small class="text-muted">
-				WGDashboard <strong>{{ this.version }}</strong> | Made with ❤️ by
+				WGDashboard <strong>{{ this.version }}</strong>
+				<span v-if="this.build">· build <code>{{ this.build }}</code></span>
+				| Made with ❤️ by
 				<a href="https://github.com/WGDashboard"
 				   class="text-decoration-none text-body"
 				   target="_blank"><strong>WGDashboard</strong></a>
