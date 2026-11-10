@@ -346,6 +346,32 @@ class DashboardAdmins:
         return True
 
 
+    def SyncTotpFromConfig(self) -> bool:
+        """Copy the TOTP state of the wg-dashboard.ini account to its administrator row.
+
+        Used by the legacy enrolment wizard (sessions without admin_id): the wizard writes
+        enable_totp / totp_key in the ini file, the multi-administrator gate reads the table.
+        """
+        username = self.DashboardConfig.GetConfig("Account", "username")[1]
+        admin = self.GetAdminByUsername(username)
+        if admin is None:
+            return False
+        enabled = self.DashboardConfig.GetConfig("Account", "enable_totp")[1] and \
+            self.DashboardConfig.GetConfig("Account", "totp_verified")[1]
+        if not enabled:
+            return False
+        totpKey = self.DashboardConfig.GetConfig("Account", "totp_key")[1]
+        if not totpKey:
+            return False
+        with self.engine.begin() as conn:
+            conn.execute(self.adminsTable.update().values({
+                "TotpKey": totpKey,
+                "TotpVerified": 1,
+                "UpdatedDate": datetime.datetime.now(),
+            }).where(self.adminsTable.c.AdminID == admin["AdminID"]))
+        current_app.logger.info(f"[DashboardAdmins] MFA state imported from wg-dashboard.ini for '{username}'")
+        return True
+
     # ------------------------------------------------------------------ MFA (TOTP)
     def CheckPassword(self, AdminID: str, PlainPassword: str) -> bool:
         admin = self.GetAdmin(AdminID)

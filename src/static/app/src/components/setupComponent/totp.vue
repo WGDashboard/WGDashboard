@@ -102,6 +102,12 @@ export default {
 		finish(){
 			this.$router.push("/");
 		},
+		signOut(){
+			fetchGet("/api/signout", {}, () => {
+				this.store.Redirect = undefined;
+				this.$router.push("/signin");
+			});
+		},
 		copyCodes(){
 			const text = this.codes.join("\n");
 			if (navigator.clipboard){
@@ -240,6 +246,11 @@ export default {
 					<LocaleText t="Complete"></LocaleText>
 					<i class="bi bi-chevron-right ms-auto"></i>
 				</RouterLink>
+				<button class="btn btn-link text-muted text-decoration-none" @click="this.signOut()">
+					<i class="bi bi-box-arrow-right me-1"></i>
+					<LocaleText t="Sign out"></LocaleText>
+					<small v-if="this.username">({{ this.username }})</small>
+				</button>
 			</div>
 		</div>
 	</div>

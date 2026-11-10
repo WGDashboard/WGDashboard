@@ -354,10 +354,14 @@ def auth_req():
                             f'{appPrefix}/api/admins/totp/recoveryCodes',
                             f'{appPrefix}/api/signout',
                             f'{appPrefix}/api/validateAuthentication',
+                            f'{appPrefix}/api/requireAuthentication',
                             f'{appPrefix}/api/getDashboardTheme',
                             f'{appPrefix}/api/getDashboardVersion',
                             f'{appPrefix}/api/isTotpEnabled',
                             f'{appPrefix}/api/locale',
+                            # Legacy enrolment wizard, still used by sessions without admin_id
+                            f'{appPrefix}/api/Welcome_GetTotpLink',
+                            f'{appPrefix}/api/Welcome_VerifyTotpLink',
                         ]
                         # The SPA shell and its static assets must always be served, otherwise the
                         # browser would display the raw 403 JSON instead of the enrolment page.
@@ -521,6 +525,14 @@ def API_GetAdmins():
 @app.get(f'{APP_PREFIX}/api/admins/me')
 def API_GetCurrentAdmin():
     admin = DashboardAdmins.GetAdmin(session.get('admin_id'))
+    if admin is None and session.get('role') == 'admin' and session.get('signInMethod') == 'local':
+        # Sessions created before the multi-administrator update have no admin_id:
+        # rebind them on the account of wg-dashboard.ini so the MFA screen can work.
+        candidate = DashboardAdmins.GetAdminByUsername(DashboardConfig.GetConfig("Account", "username")[1])
+        if candidate is not None:
+            session['admin_id'] = candidate.get("AdminID")
+            session['admin_username'] = candidate.get("Username")
+            admin = candidate
     if admin is None:
         if session.get('role') != 'admin':
             return ResponseObject(False, "Administrator does not exist")
@@ -1813,6 +1825,8 @@ def API_Welcome_VerifyTotpLink():
     if totpValid:
         DashboardConfig.SetConfig("Account", "totp_verified", "true")
         DashboardConfig.SetConfig("Account", "enable_totp", "true")
+        # Keep the multi-administrator table in sync, so the MFA gate is satisfied
+        DashboardAdmins.SyncTotpFromConfig()
     return ResponseObject(totpValid)
 
 @app.post(f'{APP_PREFIX}/api/Welcome_Finish')
@@ -2138,7 +2152,22 @@ Index Page
 def index():
     # The SPA shell must never be cached: it references the hashed bundles, and a stale
     # shell would keep loading an old frontend after an update.
-    response = current_app.make_response(render_template('index.html', APP_PREFIX=APP_PREFIX))
+    mfaSetupRequired = False
+    try:
+        if session.get("role") == "admin":
+            currentAdmin = DashboardAdmins.GetAdmin(session.get("admin_id"))
+            if currentAdmin is None and session.get("signInMethod") == "local":
+                currentAdmin = DashboardAdmins.GetAdminByUsername(
+                    DashboardConfig.GetConfig("Account", "username")[1])
+                if currentAdmin is not None:
+                    session["admin_id"] = currentAdmin.get("AdminID")
+            if currentAdmin is not None and not (currentAdmin.get("TotpKey") and
+                                                 int(currentAdmin.get("TotpVerified") or 0) == 1):
+                mfaSetupRequired = True
+    except Exception as e:
+        app.logger.error(f"[WGDashboard] Cannot resolve the MFA state for the index page: {e}")
+    response = current_app.make_response(render_template(
+        'index.html', APP_PREFIX=APP_PREFIX, MFA_SETUP_REQUIRED=mfaSetupRequired))
     response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     response.headers['Pragma'] = 'no-cache'
     return response
