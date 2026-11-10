@@ -1104,12 +1104,34 @@ def API_updateDashboardConfigurationItem():
     data = request.get_json()
     if "section" not in data.keys() or "key" not in data.keys() or "value" not in data.keys():
         return ResponseObject(False, "Invalid request.")
+    if data['section'] == "Account" and data['key'] == "username":
+        # Validate the conflict *before* the ini is written: a rejected rename would otherwise
+        # leave the ini and the administrator table out of sync.
+        newUsername = data['value'].get('username') if isinstance(data['value'], dict) else data['value']
+        newUsername = str(newUsername or "").strip()
+        existing = DashboardAdmins.GetAdminByUsername(newUsername) if newUsername else None
+        if existing is not None and existing.get("CreatedBy") != "wg-dashboard.ini":
+            return ResponseObject(False, "This username is already used by another administrator.")
     valid, msg = DashboardConfig.SetConfig(
         data["section"], data["key"], data['value'])
     if not valid:
         return ResponseObject(False, msg)
     if data['section'] == "Account" and data['key'] == "password":
         DashboardAdmins.SyncPasswordFromConfig(data['value'].get('newPassword', ''))
+    if data['section'] == "Account" and data['key'] == "username":
+        # Sign in reads the administrator table: renaming the ini account must rename the
+        # mirrored administrator too, otherwise the old login stays valid and the new one
+        # is unusable (and later password synchronisations look up the wrong account).
+        DashboardAdmins.RenameFromConfig()
+    if data['section'] == "Account" and data['key'] in ("enable_totp", "totp_verified"):
+        if str(data['value']).strip().lower() in ("false", "0", ""):
+            # The legacy "reset MFA" actions only clear the ini flags. The administrator row
+            # must be cleared too, otherwise the enrolment page fails with
+            # "MFA is already enabled for this administrator" and the account is stuck.
+            mirrored = DashboardAdmins.GetAdminByUsername(
+                DashboardConfig.GetConfig("Account", "username")[1])
+            if mirrored is not None:
+                DashboardAdmins.DisableTotp(mirrored.get("AdminID"))
     if data['section'] == "Server":
         if data['key'] == 'wg_conf_path':
             WireguardConfigurations.clear()
