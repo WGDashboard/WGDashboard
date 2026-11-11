@@ -22,6 +22,20 @@ from flask import current_app
 from .DatabaseConnection import ConnectionString
 from .Utilities import ValidatePasswordStrength
 
+# bcrypt.checkpw is deliberately slow. Skipping it when the account does not exist would leak,
+# through the response time, which usernames are registered: an unknown account is therefore
+# compared against this dummy hash instead of returning immediately.
+_DUMMY_PASSWORD_HASH = bcrypt.hashpw(b"wgd-dashboard-dummy", bcrypt.gensalt()).decode("utf-8")
+
+
+def PasswordMatches(password: str, passwordHash: str | None) -> bool:
+    """bcrypt comparison that always runs, even when there is no stored hash."""
+    try:
+        return bcrypt.checkpw((password or "").encode("utf-8"),
+                              (passwordHash or _DUMMY_PASSWORD_HASH).encode("utf-8"))
+    except Exception:
+        return False
+
 
 class DashboardAdmins:
     UsernamePattern = re.compile(r"^[A-Za-z0-9._@-]{3,64}$")
@@ -249,13 +263,11 @@ class DashboardAdmins:
         admin = self.GetAdminByUsername(username)
         genericFailure = "Sorry, your username or password is incorrect."
         if admin is None:
+            # Same bcrypt cost as a real check, so the response time does not reveal that the
+            # account does not exist.
+            PasswordMatches(password, None)
             return False, genericFailure, None
-        try:
-            valid = bcrypt.checkpw((password or "").encode("utf-8"),
-                                   (admin.get("Password") or "").encode("utf-8"))
-        except Exception:
-            valid = False
-        if not valid:
+        if not PasswordMatches(password, admin.get("Password")):
             return False, genericFailure, None
         # Disclosing that the account is disabled is only done once the password has been
         # checked: otherwise an unauthenticated caller could enumerate disabled accounts.

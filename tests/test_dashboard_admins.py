@@ -541,6 +541,28 @@ class TestCredentialSynchronisation:
         assert admins.CheckPassword(second_admin["AdminID"], "Second1!x") is True
 
 
+class TestSignInTiming:
+    """The sign-in must not reveal, through its duration, which accounts exist."""
+
+    def test_an_unknown_account_still_runs_a_bcrypt_check(self, admins, monkeypatch):
+        import modules.DashboardAdmins as module
+
+        calls = []
+        monkeypatch.setattr(module.bcrypt, "checkpw",
+                            lambda password, hashed: calls.append(hashed) or False)
+        status, message, payload = admins.SignIn("does-not-exist", "whatever")
+        assert status is False and payload is None
+        assert message == "Sorry, your username or password is incorrect."
+        assert len(calls) == 1, "bcrypt must run even when the account does not exist"
+
+    def test_the_password_helper_never_raises(self):
+        from modules.DashboardAdmins import PasswordMatches
+
+        assert PasswordMatches("anything", None) is False
+        assert PasswordMatches("anything", "not-a-bcrypt-hash") is False
+        assert PasswordMatches("", None) is False
+
+
 class TestMfaSynchronisation:
     """Docker also writes the MFA flags: the table must follow them as well."""
 

@@ -525,6 +525,9 @@ LOGIN_ATTEMPTS_MAX = 2000        # distinct (username, IP) keys kept in memory
 LOGIN_ATTEMPTS_WINDOW = 60       # seconds after which a failure counter is forgotten
 LOGIN_ATTEMPTS_LOCK = 60         # seconds a locked key stays locked
 LOGIN_ATTEMPTS_THRESHOLD = 5     # failures allowed before the lock
+# gunicorn serves the sign-in with worker threads: the map is read-modify-written, so the
+# counter updates must be serialised (the lock is re-entrant for PruneLoginAttempts()).
+LOGIN_ATTEMPTS_MUTEX = threading.RLock()
 
 
 def PruneLoginAttempts(now: datetime | None = None) -> None:
@@ -532,19 +535,20 @@ def PruneLoginAttempts(now: datetime | None = None) -> None:
 
     Called on every sign-in attempt, but it costs nothing until the map reaches its cap.
     """
-    if len(LOGIN_ATTEMPTS) <= LOGIN_ATTEMPTS_MAX:
-        return
-    current = now or datetime.now()
-    for key, (failures, lastAttempt, lockedUntil) in list(LOGIN_ATTEMPTS.items()):
-        lockExpired = lockedUntil is None or lockedUntil <= current
-        if lockExpired and (current - lastAttempt).total_seconds() >= LOGIN_ATTEMPTS_WINDOW:
-            LOGIN_ATTEMPTS.pop(key, None)
-    overflow = len(LOGIN_ATTEMPTS) - LOGIN_ATTEMPTS_MAX
-    if overflow > 0:
-        # Still flooded: drop the least recently used keys, the lock is a defence in depth
-        # and the rate-limited keys are re-created on the next attempt anyway.
-        for key, _ in sorted(LOGIN_ATTEMPTS.items(), key=lambda item: item[1][1])[:overflow]:
-            LOGIN_ATTEMPTS.pop(key, None)
+    with LOGIN_ATTEMPTS_MUTEX:
+        if len(LOGIN_ATTEMPTS) <= LOGIN_ATTEMPTS_MAX:
+            return
+        current = now or datetime.now()
+        for key, (failures, lastAttempt, lockedUntil) in list(LOGIN_ATTEMPTS.items()):
+            lockExpired = lockedUntil is None or lockedUntil <= current
+            if lockExpired and (current - lastAttempt).total_seconds() >= LOGIN_ATTEMPTS_WINDOW:
+                LOGIN_ATTEMPTS.pop(key, None)
+        overflow = len(LOGIN_ATTEMPTS) - LOGIN_ATTEMPTS_MAX
+        if overflow > 0:
+            # Still flooded: drop the least recently used keys, the lock is a defence in depth
+            # and the rate-limited keys are re-created on the next attempt anyway.
+            for key, _ in sorted(LOGIN_ATTEMPTS.items(), key=lambda item: item[1][1])[:overflow]:
+                LOGIN_ATTEMPTS.pop(key, None)
 
 
 @app.post(f'{APP_PREFIX}/api/authenticate')
@@ -571,19 +575,23 @@ def API_AuthenticateLogin():
     attemptKey = f"{username[:255].lower()}|{request.remote_addr}"
     PruneLoginAttempts()
     attempts = datetime.now()
-    failures, lastAttempt, lockedUntil = LOGIN_ATTEMPTS.get(attemptKey, (0, None, None))
-    if lockedUntil is not None and attempts < lockedUntil:
-        remaining = max(1, int((lockedUntil - attempts).total_seconds()))
+    with LOGIN_ATTEMPTS_MUTEX:
+        failures, lastAttempt, lockedUntil = LOGIN_ATTEMPTS.get(attemptKey, (0, None, None))
+        remaining = 0
+        if lockedUntil is not None and attempts < lockedUntil:
+            remaining = max(1, int((lockedUntil - attempts).total_seconds()))
+        elif lastAttempt is not None and (attempts - lastAttempt).total_seconds() >= LOGIN_ATTEMPTS_WINDOW:
+            # A counter whose last attempt falls outside the window no longer counts: five
+            # failures spread over hours must not lock the account (it is a window, not a total).
+            failures, lockedUntil = 0, None
+            LOGIN_ATTEMPTS.pop(attemptKey, None)
+    if remaining:
         return ResponseObject(False, f"Too many failed attempts. Please try again in {remaining} second(s).")
-    # A counter whose last attempt falls outside the window no longer counts: five failures
-    # spread over hours must not lock the account (the window is a window, not a total).
-    if lastAttempt is not None and (attempts - lastAttempt).total_seconds() >= LOGIN_ATTEMPTS_WINDOW:
-        failures, lockedUntil = 0, None
-        LOGIN_ATTEMPTS.pop(attemptKey, None)
 
     valid, message, admin = DashboardAdmins.SignIn(username, password, totpCode)
     if valid:
-        LOGIN_ATTEMPTS.pop(attemptKey, None)
+        with LOGIN_ATTEMPTS_MUTEX:
+            LOGIN_ATTEMPTS.pop(attemptKey, None)
         # A new sign-in must never inherit state from a previous session (in particular the
         # "postpone MFA" flag): the browser could otherwise sign in as another administrator
         # and keep the exemption granted earlier.
@@ -618,13 +626,17 @@ def API_AuthenticateLogin():
         DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login success: {username}")
         return resp
 
-    now = datetime.now()
-    if failures + 1 >= LOGIN_ATTEMPTS_THRESHOLD:
-        LOGIN_ATTEMPTS[attemptKey] = (0, now, now + timedelta(seconds=LOGIN_ATTEMPTS_LOCK))
+    with LOGIN_ATTEMPTS_MUTEX:
+        now = datetime.now()
+        failures = LOGIN_ATTEMPTS.get(attemptKey, (0, None, None))[0]
+        locked = failures + 1 >= LOGIN_ATTEMPTS_THRESHOLD
+        if locked:
+            LOGIN_ATTEMPTS[attemptKey] = (0, now, now + timedelta(seconds=LOGIN_ATTEMPTS_LOCK))
+        else:
+            LOGIN_ATTEMPTS[attemptKey] = (failures + 1, now, None)
+    if locked:
         DashboardLogger.log(str(request.url), str(request.remote_addr),
                             Message=f"Login temporarily locked after {failures + 1} failures: {username}")
-    else:
-        LOGIN_ATTEMPTS[attemptKey] = (failures + 1, now, None)
     DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login failed: {username}")
     return ResponseObject(False, message or "Sorry, your username or password is incorrect.")
 
