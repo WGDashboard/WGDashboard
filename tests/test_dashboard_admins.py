@@ -153,6 +153,13 @@ class TestSignIn:
         assert status is False
         assert message == "This administrator account is disabled."
 
+    def test_a_wrong_password_does_not_reveal_a_disabled_account(self, admins, second_admin):
+        """The 'disabled' message is only sent once the password has been checked."""
+        admins.SetEnabled(second_admin["AdminID"], False)
+        status, message, _ = admins.SignIn("second", "not-the-password")
+        assert status is False
+        assert message == "Sorry, your username or password is incorrect."
+
     def test_last_login_is_recorded(self, admins):
         before = admins.GetAdminByUsername("root")["LastLoginDate"]
         admins.SignIn("root", INI_PASSWORD)

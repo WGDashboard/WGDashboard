@@ -494,8 +494,35 @@ def API_OIDC_Authenticate():
     return resp
     
 
-# In-memory brute force protection for the sign in form: {attemptKey: (failures, lockedUntil)}
+# In-memory brute force protection for the sign in form:
+# {attemptKey: (failures, lastAttempt, lockedUntil)}
+# The map is bounded on purpose: an unauthenticated caller must not be able to grow it by
+# submitting a different (nonexistent) username on every request.
 LOGIN_ATTEMPTS: dict = {}
+LOGIN_ATTEMPTS_MAX = 2000        # distinct (username, IP) keys kept in memory
+LOGIN_ATTEMPTS_WINDOW = 60       # seconds after which a failure counter is forgotten
+LOGIN_ATTEMPTS_LOCK = 60         # seconds a locked key stays locked
+LOGIN_ATTEMPTS_THRESHOLD = 5     # failures allowed before the lock
+
+
+def PruneLoginAttempts(now: datetime | None = None) -> None:
+    """Keep the brute-force map bounded: expired entries first, then the oldest ones.
+
+    Called on every sign-in attempt, but it costs nothing until the map reaches its cap.
+    """
+    if len(LOGIN_ATTEMPTS) <= LOGIN_ATTEMPTS_MAX:
+        return
+    current = now or datetime.now()
+    for key, (failures, lastAttempt, lockedUntil) in list(LOGIN_ATTEMPTS.items()):
+        lockExpired = lockedUntil is None or lockedUntil <= current
+        if lockExpired and (current - lastAttempt).total_seconds() >= LOGIN_ATTEMPTS_WINDOW:
+            LOGIN_ATTEMPTS.pop(key, None)
+    overflow = len(LOGIN_ATTEMPTS) - LOGIN_ATTEMPTS_MAX
+    if overflow > 0:
+        # Still flooded: drop the least recently used keys, the lock is a defence in depth
+        # and the rate-limited keys are re-created on the next attempt anyway.
+        for key, _ in sorted(LOGIN_ATTEMPTS.items(), key=lambda item: item[1][1])[:overflow]:
+            LOGIN_ATTEMPTS.pop(key, None)
 
 
 @app.post(f'{APP_PREFIX}/api/authenticate')
@@ -517,8 +544,11 @@ def API_AuthenticateLogin():
     totpCode = data.get('totp', '')
 
     # Basic brute force protection: 5 failures per (username, IP address) => 60 seconds lock
-    attemptKey = f"{username.lower()}|{request.remote_addr}"
-    failures, lockedUntil = LOGIN_ATTEMPTS.get(attemptKey, (0, None))
+    # The username is bounded before being used as a key, so a huge request body cannot
+    # inflate the map, and PruneLoginAttempts() keeps it size-bounded.
+    attemptKey = f"{username[:255].lower()}|{request.remote_addr}"
+    PruneLoginAttempts()
+    failures, lastAttempt, lockedUntil = LOGIN_ATTEMPTS.get(attemptKey, (0, None, None))
     if lockedUntil is not None and datetime.now() < lockedUntil:
         remaining = max(1, int((lockedUntil - datetime.now()).total_seconds()))
         return ResponseObject(False, f"Too many failed attempts. Please try again in {remaining} second(s).")
@@ -556,12 +586,13 @@ def API_AuthenticateLogin():
         DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login success: {username}")
         return resp
 
-    if failures + 1 >= 5:
-        LOGIN_ATTEMPTS[attemptKey] = (0, datetime.now() + timedelta(seconds=60))
+    now = datetime.now()
+    if failures + 1 >= LOGIN_ATTEMPTS_THRESHOLD:
+        LOGIN_ATTEMPTS[attemptKey] = (0, now, now + timedelta(seconds=LOGIN_ATTEMPTS_LOCK))
         DashboardLogger.log(str(request.url), str(request.remote_addr),
                             Message=f"Login temporarily locked after {failures + 1} failures: {username}")
     else:
-        LOGIN_ATTEMPTS[attemptKey] = (failures + 1, None)
+        LOGIN_ATTEMPTS[attemptKey] = (failures + 1, now, None)
     DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login failed: {username}")
     return ResponseObject(False, message or "Sorry, your username or password is incorrect.")
 
@@ -1174,17 +1205,12 @@ def API_updateDashboardConfigurationItem():
             return ResponseObject(False, "This username is already used by another administrator.")
     if (data['section'] == "Account" and data['key'] in ("enable_totp", "totp_verified")
             and str(data['value']).strip().lower() in ("false", "0", "")):
-        # The legacy "reset MFA" control only ever targets the wg-dashboard.ini account, while
-        # /2FASetup enrols the signed-in administrator. When the two differ, applying the reset
-        # would wipe the INI account's MFA and then fail to enrol the other account, so refuse it
-        # before the ini is modified and let the Administrators page handle per-account MFA.
-        mirrored = DashboardAdmins.GetAdminByUsername(
-            DashboardConfig.GetConfig("Account", "username")[1])
-        if (mirrored is not None and session.get('admin_id') is not None
-                and mirrored.get("AdminID") != session.get('admin_id')):
-            return ResponseObject(
-                False, "This reset only applies to the account of wg-dashboard.ini. "
-                       "Use Settings -> Administrators to change the MFA of another account.")
+        # The legacy MFA controls were removed from the interface, and this write would clear the
+        # TOTP secret *and* the recovery codes without asking for the current password (unlike
+        # /api/admins/totp/disable). Per-account MFA is now the only supported path.
+        return ResponseObject(
+            False, "The legacy MFA reset has been removed. Use Settings -> Administrators, "
+                   "which requires your current password.")
     valid, msg = DashboardConfig.SetConfig(
         data["section"], data["key"], data['value'])
     if not valid:
@@ -1196,15 +1222,6 @@ def API_updateDashboardConfigurationItem():
         # mirrored administrator too, otherwise the old login stays valid and the new one
         # is unusable (and later password synchronisations look up the wrong account).
         DashboardAdmins.RenameFromConfig()
-    if data['section'] == "Account" and data['key'] in ("enable_totp", "totp_verified"):
-        if str(data['value']).strip().lower() in ("false", "0", ""):
-            # The legacy "reset MFA" actions only clear the ini flags. The administrator row
-            # must be cleared too, otherwise the enrolment page fails with
-            # "MFA is already enabled for this administrator" and the account is stuck.
-            mirrored = DashboardAdmins.GetAdminByUsername(
-                DashboardConfig.GetConfig("Account", "username")[1])
-            if mirrored is not None:
-                DashboardAdmins.DisableTotp(mirrored.get("AdminID"))
     if data['section'] == "Server":
         if data['key'] == 'wg_conf_path':
             WireguardConfigurations.clear()

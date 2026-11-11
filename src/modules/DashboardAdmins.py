@@ -153,17 +153,20 @@ class DashboardAdmins:
     # ------------------------------------------------------------------ sign in
     def SignIn(self, username: str, password: str, totp: str | None = None) -> tuple[bool, str | None, dict | None]:
         admin = self.GetAdminByUsername(username)
+        genericFailure = "Sorry, your username or password is incorrect."
         if admin is None:
-            return False, "Sorry, your username or password is incorrect.", None
-        if int(admin.get("Enabled") or 0) != 1:
-            return False, "This administrator account is disabled.", None
+            return False, genericFailure, None
         try:
             valid = bcrypt.checkpw((password or "").encode("utf-8"),
                                    (admin.get("Password") or "").encode("utf-8"))
         except Exception:
             valid = False
         if not valid:
-            return False, "Sorry, your username or password is incorrect.", None
+            return False, genericFailure, None
+        # Disclosing that the account is disabled is only done once the password has been
+        # checked: otherwise an unauthenticated caller could enumerate disabled accounts.
+        if int(admin.get("Enabled") or 0) != 1:
+            return False, "This administrator account is disabled.", None
         usedRecoveryCode = False
         if admin.get("TotpKey") and int(admin.get("TotpVerified") or 0) == 1:
             code = str(totp or "").strip()
