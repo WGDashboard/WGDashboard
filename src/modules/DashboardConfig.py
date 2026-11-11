@@ -43,7 +43,12 @@ class DashboardConfig:
                 "dashboard_sort": "status",
                 "dashboard_theme": "dark",
                 "dashboard_api_key": "false",
-                "dashboard_language": "en-US"
+                "dashboard_language": "en-US",
+                # When true, an administrator without a verified MFA is forced to enrol one
+                "require_mfa": "false",
+                # When true, the enrolment page offers a "continue without MFA" button that
+                # postpones the enrolment for the current session only
+                "allow_mfa_postpone": "false"
             },
             "Peers": {
                 "peer_global_DNS": "1.1.1.1",

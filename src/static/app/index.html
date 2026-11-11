@@ -38,6 +38,14 @@
                 base.href = '/';
             }
 		</script>
+		<script>
+            // Server side flag: the account is signed in but has no verified MFA yet.
+            window.__MFA_SETUP_REQUIRED__ = {{ 'true' if MFA_SETUP_REQUIRED else 'false' }};
+            window.__BUILD__ = {{ BUILD_TAG|tojson }};
+            if (window.__MFA_SETUP_REQUIRED__ && window.location.hash.indexOf('/2FASetup') === -1) {
+                window.location.replace(window.location.pathname + '#/2FASetup');
+            }
+		</script>
 	</head>
 	<body>
         <div id="app">

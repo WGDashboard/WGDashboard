@@ -39,6 +39,7 @@ from client import createClientBlueprint
 from logging.config import dictConfig
 
 from modules.DashboardClients import DashboardClients
+from modules.DashboardAdmins import DashboardAdmins
 from modules.DashboardPlugins import DashboardPlugins
 from modules.DashboardWebHooks import DashboardWebHooks
 from modules.NewConfigurationTemplates import NewConfigurationTemplates
@@ -210,13 +211,50 @@ dictConfig({
 
 WireguardConfigurations: dict[str, WireguardConfiguration] = {}
 CONFIGURATION_PATH = os.getenv('CONFIGURATION_PATH', '.')
+# Local patch version, displayed on the sign in page (used to verify what the browser runs)
+DASHBOARD_BUILD = os.getenv('WGD_BUILD_TAG', '2026-11-10-b')
 
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 5206928
-app.secret_key = secrets.token_urlsafe(32)
+
+
+def GetApplicationSecretKey() -> str:
+    """Return a stable secret key so that sessions survive a restart of the dashboard.
+
+    Order: WGD_SECRET_KEY environment variable, then a 0600 file stored next to
+    wg-dashboard.ini (the persistent /data directory in Docker), then a random key
+    as a last resort (read-only file system).
+    """
+    fromEnv = os.getenv('WGD_SECRET_KEY')
+    if fromEnv is not None and len(fromEnv.strip()) >= 32:
+        return fromEnv.strip()
+    keyPath = os.path.join(os.path.dirname(os.path.realpath(DashboardConfig.ConfigurationFilePath)), '.secret_key')
+    try:
+        if os.path.exists(keyPath):
+            existing = open(keyPath, 'r').read().strip()
+            if len(existing) >= 32:
+                return existing
+        newKey = secrets.token_urlsafe(48)
+        fd = os.open(keyPath, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w') as f:
+            f.write(newKey)
+        app.logger.info(f"[WGDashboard] Session secret key stored in {keyPath}")
+        return newKey
+    except Exception as e:
+        app.logger.warning(f"[WGDashboard] Cannot persist the session secret key ({e}): sessions will not survive a restart")
+        return secrets.token_urlsafe(32)
+
+
+app.secret_key = GetApplicationSecretKey()
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+if os.getenv('WGD_COOKIE_SECURE', '0').strip().lower() in ('1', 'true', 'yes'):
+    app.config['SESSION_COOKIE_SECURE'] = True
+app.permanent_session_lifetime = timedelta(days=7)
 app.json = CustomJsonEncoder(app)
 with app.app_context():
     SystemStatus = SystemStatus()
     DashboardConfig = DashboardConfig()
+    DashboardAdmins: DashboardAdmins = DashboardAdmins(DashboardConfig)
     EmailSender = EmailSender(DashboardConfig)
     AllPeerShareLinks: PeerShareLinks = PeerShareLinks(DashboardConfig, WireguardConfigurations)
     AllPeerJobs: PeerJobs = PeerJobs(DashboardConfig, WireguardConfigurations, AllPeerShareLinks)
@@ -256,7 +294,9 @@ def auth_req():
         apiKeyEnabled = DashboardConfig.GetConfig("Server", "dashboard_api_key")[1]
         if apiKey is not None and len(apiKey) > 0 and apiKeyEnabled:
             apiKeyExist = len(list(filter(lambda x : x.Key == apiKey, DashboardConfig.DashboardAPIKeys))) == 1
-            DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"API Key Access: {('true' if apiKeyExist else 'false')} - Key: {apiKey}")
+            # Never write the key itself to the access log
+            DashboardLogger.log(str(request.url), str(request.remote_addr),
+                                Message=f"API Key Access: {('true' if apiKeyExist else 'false')}")
             if not apiKeyExist:
                 DashboardConfig.APIAccessed = False
                 response = Flask.make_response(app, {
@@ -266,6 +306,8 @@ def auth_req():
                 })
                 response.content_type = "application/json"
                 response.status_code = 401
+                response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+                response.headers["Pragma"] = "no-cache"
                 return response
             DashboardConfig.APIAccessed = True
         else:
@@ -280,6 +322,7 @@ def auth_req():
                 f'{appPrefix}/api/getDashboardVersion', 
                 f'{appPrefix}/api/sharePeer/get', 
                 f'{appPrefix}/api/isTotpEnabled', 
+                f'{appPrefix}/api/admins/totp/required',
                 f'{appPrefix}/api/locale',
                 f'{appPrefix}/api/oidc/providers',
                 f'{appPrefix}/api/oidc/authenticate',
@@ -302,7 +345,122 @@ def auth_req():
                 })
                 response.content_type = "application/json"
                 response.status_code = 401
+                response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+                response.headers["Pragma"] = "no-cache"
                 return response
+
+            # The administrator row is the source of truth for an open session: an account that
+            # has been deleted or disabled must lose its access at once, whether MFA is required
+            # or not. Without this check a revoked user could keep calling the APIs (and even
+            # re-enable the account) until the session cookie expires. Only local sign-ins have
+            # an administrator row behind them (API key and OIDC sessions do not).
+            if (session.get("role") == "admin" and session.get("admin_id") is not None
+                    and session.get("signInMethod") == "local"):
+                try:
+                    currentAdmin = DashboardAdmins.GetAdmin(session.get("admin_id"))
+                except Exception:
+                    currentAdmin = None
+                if currentAdmin is None or int(currentAdmin.get("Enabled") or 0) != 1:
+                    session.clear()
+                    response = Flask.make_response(app, {
+                        "status": False,
+                        "message": "Unauthorized access.",
+                        "data": None
+                    })
+                    response.content_type = "application/json"
+                    response.status_code = 401
+                    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+                    response.headers["Pragma"] = "no-cache"
+                    return response
+
+            # MFA is mandatory only when the setting is enabled: a local administrator without a
+            # verified TOTP can then reach nothing but the endpoints needed to enrol, and an
+            # enrolled account must have proven the second factor *in this session*.
+            if (DashboardConfig.GetConfig("Server", "require_mfa")[1]
+                    and session.get("admin_id") is not None
+                    and session.get("signInMethod") == "local"):
+                try:
+                    currentAdmin = DashboardAdmins.GetAdmin(session.get("admin_id"))
+                    enrolled = currentAdmin is not None and bool(currentAdmin.get("TotpKey")) and \
+                        int(currentAdmin.get("TotpVerified") or 0) == 1
+                    if enrolled and not session.get("mfa_verified"):
+                        # The account has MFA but this session never presented it: it was opened
+                        # with the password alone, before the enrolment completed (possibly in
+                        # another browser). Force a fresh sign-in, which requires the code.
+                        session.clear()
+                        response = Flask.make_response(app, {
+                            "status": False,
+                            "message": "This session must confirm multi-factor authentication again.",
+                            "data": None,
+                            "mfaReauthenticationRequired": True
+                        })
+                        response.content_type = "application/json"
+                        response.status_code = 401
+                        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+                        response.headers["Pragma"] = "no-cache"
+                        return response
+                    if (currentAdmin is not None and not enrolled
+                            and not session.get("mfa_postponed")):
+                        # The legacy Welcome_* routes are deliberately absent: this block only runs
+                        # for sessions that already have an admin_id, and those routes write the
+                        # wg-dashboard.ini account (SyncTotpFromConfig) — a pending administrator
+                        # could otherwise overwrite the INI account's MFA. Sessions without an
+                        # admin_id never reach this block, so they keep working.
+                        allowedDuringSetup = [
+                            f'{appPrefix}/api/admins/me',
+                            f'{appPrefix}/api/admins/totp/start',
+                            f'{appPrefix}/api/admins/totp/verify',
+                            f'{appPrefix}/api/admins/totp/recoveryCodes',
+                            f'{appPrefix}/api/admins/totp/postpone',
+                            f'{appPrefix}/api/admins/totp/required',
+                            # Signing in again must stay possible during the enrolment: if the
+                            # authToken cookie is lost, the SPA is sent to the sign-in page and
+                            # this gate would otherwise answer 403 to the login itself (loop).
+                            f'{appPrefix}/api/authenticate',
+                            f'{appPrefix}/api/signout',
+                            f'{appPrefix}/api/validateAuthentication',
+                            f'{appPrefix}/api/requireAuthentication',
+                            f'{appPrefix}/api/getDashboardTheme',
+                            f'{appPrefix}/api/getDashboardVersion',
+                            f'{appPrefix}/api/isTotpEnabled',
+                            f'{appPrefix}/api/locale',
+                        ]
+                        # The SPA shell and its static assets must always be served, otherwise the
+                        # browser would display the raw 403 JSON instead of the enrolment page.
+                        isSpaShell = request.path in (
+                            f'{appPrefix}/', f'{appPrefix}', f'{appPrefix}/index.html',
+                            f'{appPrefix}/favicon.ico', f'{appPrefix}/manifest.json')
+                        if (request.path not in allowedDuringSetup
+                                and not isSpaShell
+                                and not request.path.startswith(f'{appPrefix}/assets')
+                                and not request.path.startswith(f'{appPrefix}/img')
+                                and not request.path.startswith(f'{appPrefix}/json')
+                                and not request.path.startswith(f'{appPrefix}/client')):
+                            response = Flask.make_response(app, {
+                                "status": False,
+                                "message": "Multi-factor authentication setup is required before using the dashboard.",
+                                "data": None,
+                                "mfaSetupRequired": True
+                            })
+                            response.content_type = "application/json"
+                            response.status_code = 403
+                            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+                            response.headers["Pragma"] = "no-cache"
+                            return response
+                except Exception as e:
+                    # Fail closed: the gate exists to block accounts that have not enrolled, so a
+                    # lookup failure must not let the request through.
+                    app.logger.error(f"[WGDashboard] Cannot check the MFA state of the current administrator: {e}")
+                    response = Flask.make_response(app, {
+                        "status": False,
+                        "message": "The MFA state of this administrator cannot be verified.",
+                        "data": None
+                    })
+                    response.content_type = "application/json"
+                    response.status_code = 503
+                    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+                    response.headers["Pragma"] = "no-cache"
+                    return response
 
 @app.route(f'{APP_PREFIX}/api/handshake', methods=["GET", "OPTIONS"])
 def API_Handshake():
@@ -340,6 +498,12 @@ def API_OIDC_Authenticate():
     if not status:
         return ResponseObject(False, "OIDC Authentication Failed. Reason: " + data)
     session['role'] = 'admin'
+    # An OIDC session is not a local account: drop any administrator identity left behind by a
+    # previous local sign-in in the same browser. Otherwise /api/admins/me reports that account
+    # (with its MFA state) and deleting or disabling it would revoke this unrelated OIDC session.
+    session.pop('admin_id', None)
+    session.pop('admin_username', None)
+    session.pop('mfa_postponed', None)
     authToken = hashlib.sha256(f'${data['sid']}{datetime.now()}{app.secret_key}'.encode()).hexdigest()
     session['username'] = authToken
     session['signInMethod'] = 'OIDC'
@@ -351,6 +515,41 @@ def API_OIDC_Authenticate():
     resp.set_cookie('authToken', authToken)
     return resp
     
+
+# In-memory brute force protection for the sign in form:
+# {attemptKey: (failures, lastAttempt, lockedUntil)}
+# The map is bounded on purpose: an unauthenticated caller must not be able to grow it by
+# submitting a different (nonexistent) username on every request.
+LOGIN_ATTEMPTS: dict = {}
+LOGIN_ATTEMPTS_MAX = 2000        # distinct (username, IP) keys kept in memory
+LOGIN_ATTEMPTS_WINDOW = 60       # seconds after which a failure counter is forgotten
+LOGIN_ATTEMPTS_LOCK = 60         # seconds a locked key stays locked
+LOGIN_ATTEMPTS_THRESHOLD = 5     # failures allowed before the lock
+# gunicorn serves the sign-in with worker threads: the map is read-modify-written, so the
+# counter updates must be serialised (the lock is re-entrant for PruneLoginAttempts()).
+LOGIN_ATTEMPTS_MUTEX = threading.RLock()
+
+
+def PruneLoginAttempts(now: datetime | None = None) -> None:
+    """Keep the brute-force map bounded: expired entries first, then the oldest ones.
+
+    Called on every sign-in attempt, but it costs nothing until the map reaches its cap.
+    """
+    with LOGIN_ATTEMPTS_MUTEX:
+        if len(LOGIN_ATTEMPTS) <= LOGIN_ATTEMPTS_MAX:
+            return
+        current = now or datetime.now()
+        for key, (failures, lastAttempt, lockedUntil) in list(LOGIN_ATTEMPTS.items()):
+            lockExpired = lockedUntil is None or lockedUntil <= current
+            if lockExpired and (current - lastAttempt).total_seconds() >= LOGIN_ATTEMPTS_WINDOW:
+                LOGIN_ATTEMPTS.pop(key, None)
+        overflow = len(LOGIN_ATTEMPTS) - LOGIN_ATTEMPTS_MAX
+        if overflow > 0:
+            # Still flooded: drop the least recently used keys, the lock is a defence in depth
+            # and the rate-limited keys are re-created on the next attempt anyway.
+            for key, _ in sorted(LOGIN_ATTEMPTS.items(), key=lambda item: item[1][1])[:overflow]:
+                LOGIN_ATTEMPTS.pop(key, None)
+
 
 @app.post(f'{APP_PREFIX}/api/authenticate')
 def API_AuthenticateLogin():
@@ -366,34 +565,80 @@ def API_AuthenticateLogin():
         resp.set_cookie("authToken", authToken)
         session.permanent = True
         return resp
-    valid = bcrypt.checkpw(data['password'].encode("utf-8"),
-                           DashboardConfig.GetConfig("Account", "password")[1].encode("utf-8"))
-    totpEnabled = DashboardConfig.GetConfig("Account", "enable_totp")[1]
-    totpValid = False
-    if totpEnabled:
-        totp_code = str(data.get("totp", "")).strip()
-        totpValid = pyotp.TOTP(
-	    DashboardConfig.GetConfig("Account", "totp_key")[1]
-        ).verify(totp_code, valid_window=1)
+    username = str(data.get('username', '')).strip()
+    password = str(data.get('password', ''))
+    totpCode = data.get('totp', '')
 
-    if (valid
-            and data['username'] == DashboardConfig.GetConfig("Account", "username")[1]
-            and ((totpEnabled and totpValid) or not totpEnabled)
-    ):
-        authToken = hashlib.sha256(f"{data['username']}{datetime.now()}".encode()).hexdigest()
+    # Basic brute force protection: 5 failures per (username, IP address) => 60 seconds lock
+    # The username is bounded before being used as a key, so a huge request body cannot
+    # inflate the map, and PruneLoginAttempts() keeps it size-bounded.
+    attemptKey = f"{username[:255].lower()}|{request.remote_addr}"
+    PruneLoginAttempts()
+    attempts = datetime.now()
+    with LOGIN_ATTEMPTS_MUTEX:
+        failures, lastAttempt, lockedUntil = LOGIN_ATTEMPTS.get(attemptKey, (0, None, None))
+        remaining = 0
+        if lockedUntil is not None and attempts < lockedUntil:
+            remaining = max(1, int((lockedUntil - attempts).total_seconds()))
+        elif lastAttempt is not None and (attempts - lastAttempt).total_seconds() >= LOGIN_ATTEMPTS_WINDOW:
+            # A counter whose last attempt falls outside the window no longer counts: five
+            # failures spread over hours must not lock the account (it is a window, not a total).
+            failures, lockedUntil = 0, None
+            LOGIN_ATTEMPTS.pop(attemptKey, None)
+    if remaining:
+        return ResponseObject(False, f"Too many failed attempts. Please try again in {remaining} second(s).")
+
+    valid, message, admin = DashboardAdmins.SignIn(username, password, totpCode)
+    if valid:
+        with LOGIN_ATTEMPTS_MUTEX:
+            LOGIN_ATTEMPTS.pop(attemptKey, None)
+        # A new sign-in must never inherit state from a previous session (in particular the
+        # "postpone MFA" flag): the browser could otherwise sign in as another administrator
+        # and keep the exemption granted earlier.
+        session.clear()
+        authToken = hashlib.sha256(f"{username}{datetime.now()}{app.secret_key}".encode()).hexdigest()
         session['role'] = 'admin'
         session['username'] = authToken
+        session['admin_id'] = admin.get('AdminID')
+        session['admin_username'] = admin.get('Username')
         session['signInMethod'] = 'local'
-        resp = ResponseObject(True, DashboardConfig.GetConfig("Other", "welcome_session")[1])
+        # The MFA gate is verified per session: an account that already has a verified TOTP
+        # could only sign in by presenting it (or a recovery code), so this session has
+        # proven the second factor. Accounts still enrolling keep False until they finish.
+        session['mfa_verified'] = not bool(admin.get("MfaSetupRequired"))
+        body = {
+            "status": True,
+            "message": DashboardConfig.GetConfig("Other", "welcome_session")[1],
+            "data": None,
+            # The dashboard asks the user to enrol MFA when the account has none and it is required
+            "mfaSetupRequired": bool(admin.get("MfaSetupRequired"))
+            and DashboardConfig.GetConfig("Server", "require_mfa")[1],
+            "usedRecoveryCode": bool(admin.get("UsedRecoveryCode")),
+            "recoveryCodesRemaining": int(admin.get("RecoveryCodesRemaining") or 0),
+        }
+        resp = Flask.make_response(app, body)
+        resp.content_type = "application/json"
         resp.set_cookie("authToken", authToken)
         session.permanent = True
-        DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login success: {data['username']}")
+        if admin.get("UsedRecoveryCode"):
+            DashboardLogger.log(str(request.url), str(request.remote_addr),
+                                Message=f"Login with a recovery code: {username}")
+        DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login success: {username}")
         return resp
-    DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login failed: {data['username']}")
-    if totpEnabled:
-        return ResponseObject(False, "Sorry, your username, password or OTP is incorrect.")
-    else:
-        return ResponseObject(False, "Sorry, your username or password is incorrect.")
+
+    with LOGIN_ATTEMPTS_MUTEX:
+        now = datetime.now()
+        failures = LOGIN_ATTEMPTS.get(attemptKey, (0, None, None))[0]
+        locked = failures + 1 >= LOGIN_ATTEMPTS_THRESHOLD
+        if locked:
+            LOGIN_ATTEMPTS[attemptKey] = (0, now, now + timedelta(seconds=LOGIN_ATTEMPTS_LOCK))
+        else:
+            LOGIN_ATTEMPTS[attemptKey] = (failures + 1, now, None)
+    if locked:
+        DashboardLogger.log(str(request.url), str(request.remote_addr),
+                            Message=f"Login temporarily locked after {failures + 1} failures: {username}")
+    DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login failed: {username}")
+    return ResponseObject(False, message or "Sorry, your username or password is incorrect.")
 
 @app.get(f'{APP_PREFIX}/api/signout')
 def API_SignOut():
@@ -409,6 +654,288 @@ def API_SignOut():
         )
     session.clear()
     return resp
+
+'''
+Administrators (multi-admin management)
+'''
+@app.get(f'{APP_PREFIX}/api/admins')
+def API_GetAdmins():
+    return ResponseObject(data=DashboardAdmins.GetAllAdmins())
+
+
+@app.get(f'{APP_PREFIX}/api/admins/me')
+def API_GetCurrentAdmin():
+    admin = DashboardAdmins.GetAdmin(session.get('admin_id'))
+    if admin is None and session.get('role') == 'admin' and session.get('signInMethod') == 'local':
+        # Sessions created before the multi-administrator update have no admin_id:
+        # rebind them on the account of wg-dashboard.ini so the MFA screen can work.
+        candidate = DashboardAdmins.GetAdminByUsername(DashboardConfig.GetConfig("Account", "username")[1])
+        if candidate is not None:
+            session['admin_id'] = candidate.get("AdminID")
+            session['admin_username'] = candidate.get("Username")
+            admin = candidate
+    if admin is None:
+        if session.get('role') != 'admin':
+            return ResponseObject(False, "Administrator does not exist")
+        # API key or OIDC session: there is no local administrator row behind it
+        return ResponseObject(data={
+            "AdminID": None,
+            "Username": "api-key" if DashboardConfig.APIAccessed else "OIDC",
+            "Email": "",
+            "Enabled": 1,
+            "TotpEnabled": False,
+            "MfaSetupRequired": False,
+            "CreatedDate": None,
+            "LastLoginDate": None,
+            "CreatedBy": session.get('signInMethod', 'oidc'),
+        })
+    payload = DashboardAdmins.Public(admin)
+    payload["MfaSetupRequired"] = (not payload.get("TotpEnabled")) \
+        and DashboardConfig.GetConfig("Server", "require_mfa")[1] \
+        and not session.get("mfa_postponed")
+    payload["MfaPostponeAllowed"] = (not payload.get("TotpEnabled")) \
+        and DashboardConfig.GetConfig("Server", "require_mfa")[1] \
+        and DashboardConfig.GetConfig("Server", "allow_mfa_postpone")[1] \
+        and not session.get("mfa_postponed")
+    # The enrolment page resumes from several places (redirect at start-up, sign-in redirect):
+    # only the server knows whether the first-run password change is still pending.
+    payload["WelcomeSession"] = bool(DashboardConfig.GetConfig("Other", "welcome_session")[1])
+    return ResponseObject(data=payload)
+
+
+def IsPendingMfaSession() -> bool:
+    """True when the signed-in local administrator still owes its mandatory MFA enrolment.
+
+    Used to keep a half-authenticated session (signed in, MFA not enrolled yet) on its own
+    account: the setup routes are reachable during enrolment, so they must not become a way
+    to touch another administrator's MFA or recovery codes.
+    """
+    if session.get('signInMethod') != 'local' or session.get('admin_id') is None:
+        return False
+    if not DashboardConfig.GetConfig("Server", "require_mfa")[1] or session.get('mfa_postponed'):
+        return False
+    try:
+        admin = DashboardAdmins.GetAdmin(session.get('admin_id'))
+    except Exception:
+        return True  # fail closed
+    if admin is None:
+        return True
+    return not (admin.get("TotpKey") and int(admin.get("TotpVerified") or 0) == 1)
+
+
+def DenyAdminChangeWhileMfaPending(adminID: str):
+    """Reject a mutation of another administrator while this session still owes its enrolment."""
+    if IsPendingMfaSession() and adminID != session.get('admin_id'):
+        return ResponseObject(
+            False, "Multi-factor authentication setup is required before managing another administrator.")
+    return None
+
+
+@app.post(f'{APP_PREFIX}/api/admins/add')
+def API_AddAdmin():
+    data = request.get_json() or {}
+    status, message = DashboardAdmins.AddAdmin(
+        data.get('username', ''), data.get('email', ''),
+        data.get('password', ''), data.get('confirmPassword', ''),
+        session.get('admin_username') or 'administrator')
+    if status:
+        DashboardLogger.log(str(request.url), str(request.remote_addr),
+                            Message=f"Administrator created: {data.get('username', '')}")
+    return ResponseObject(status, message)
+
+
+@app.post(f'{APP_PREFIX}/api/admins/update')
+def API_UpdateAdmin():
+    data = request.get_json() or {}
+    status, message = DashboardAdmins.UpdateAdmin(
+        data.get('AdminID', ''), data.get('username', ''), data.get('email', ''))
+    return ResponseObject(status, message)
+
+
+@app.post(f'{APP_PREFIX}/api/admins/setPassword')
+def API_SetAdminPassword():
+    data = request.get_json() or {}
+    if data.get('AdminID', '') == session.get('admin_id'):
+        # Changing your own password must go through the verified flow: otherwise a session
+        # could pick a new password and then use it to pass the MFA / recovery-code checks.
+        return API_SetOwnAdminPassword()
+    status, message = DashboardAdmins.SetPassword(
+        data.get('AdminID', ''), data.get('newPassword', ''), data.get('confirmPassword', ''))
+    if status:
+        DashboardLogger.log(str(request.url), str(request.remote_addr),
+                            Message="Administrator password reset from the dashboard")
+    return ResponseObject(status, message)
+
+
+@app.post(f'{APP_PREFIX}/api/admins/me/password')
+def API_SetOwnAdminPassword():
+    adminID = session.get('admin_id')
+    if adminID is None:
+        return ResponseObject(False, "This session is not linked to a local administrator")
+    data = request.get_json() or {}
+    status, message = DashboardAdmins.SetPassword(
+        adminID, data.get('newPassword', ''), data.get('confirmPassword', ''),
+        data.get('currentPassword', ''))
+    return ResponseObject(status, message)
+
+
+@app.post(f'{APP_PREFIX}/api/admins/toggle')
+def API_ToggleAdmin():
+    data = request.get_json() or {}
+    status, message = DashboardAdmins.SetEnabled(
+        data.get('AdminID', ''), bool(data.get('Enabled', False)), session.get('admin_id'))
+    if status:
+        DashboardLogger.log(str(request.url), str(request.remote_addr),
+                            Message=f"Administrator {'enabled' if data.get('Enabled') else 'disabled'}: {data.get('AdminID', '')}")
+    return ResponseObject(status, message)
+
+
+@app.post(f'{APP_PREFIX}/api/admins/delete')
+def API_DeleteAdmin():
+    data = request.get_json() or {}
+    admin = DashboardAdmins.GetAdmin(data.get('AdminID', ''))
+    status, message = DashboardAdmins.DeleteAdmin(data.get('AdminID', ''), session.get('admin_id'))
+    if status and admin is not None:
+        DashboardLogger.log(str(request.url), str(request.remote_addr),
+                            Message=f"Administrator deleted: {admin.get('Username')}")
+    return ResponseObject(status, message)
+
+
+'''
+Administrators - multi-factor authentication (TOTP)
+'''
+@app.post(f'{APP_PREFIX}/api/admins/totp/start')
+def API_StartAdminTotp():
+    data = request.get_json() or {}
+    denied = DenyAdminChangeWhileMfaPending(data.get('AdminID', ''))
+    if denied is not None:
+        return denied
+    status, message, payload = DashboardAdmins.StartTotp(data.get('AdminID', ''))
+    return ResponseObject(status, message, data=payload)
+
+
+@app.post(f'{APP_PREFIX}/api/admins/totp/verify')
+def API_VerifyAdminTotp():
+    data = request.get_json() or {}
+    denied = DenyAdminChangeWhileMfaPending(data.get('AdminID', ''))
+    if denied is not None:
+        return denied
+    admin = DashboardAdmins.GetAdmin(data.get('AdminID', ''))
+    status, message = DashboardAdmins.VerifyTotp(data.get('AdminID', ''), data.get('code', ''))
+    if status and admin is not None:
+        if admin.get("AdminID") == session.get('admin_id'):
+            # The enrolment of this very session is complete: its second factor is proven
+            session['mfa_verified'] = True
+        DashboardLogger.log(str(request.url), str(request.remote_addr),
+                            Message=f"MFA enabled for administrator: {admin.get('Username')}")
+    return ResponseObject(status, message)
+
+
+@app.post(f'{APP_PREFIX}/api/admins/totp/disable')
+def API_DisableAdminTotp():
+    data = request.get_json() or {}
+    adminID = data.get('AdminID', '')
+    admin = DashboardAdmins.GetAdmin(adminID)
+    if admin is None:
+        return ResponseObject(False, "Administrator does not exist")
+    # Disabling the MFA of your own account requires your current password
+    if adminID == session.get('admin_id'):
+        if not DashboardAdmins.CheckPassword(adminID, data.get('currentPassword', '')):
+            return ResponseObject(False, "Current password does not match")
+    status, message = DashboardAdmins.DisableTotp(adminID)
+    if status:
+        DashboardLogger.log(str(request.url), str(request.remote_addr),
+                            Message=f"MFA disabled for administrator: {admin.get('Username')}")
+        # With a mandatory MFA, an administrator who removes his own MFA can no longer use the
+        # dashboard: sign the session out instead of bouncing him back to the enrolment page.
+        signedOut = False
+        if adminID == session.get('admin_id') and DashboardConfig.GetConfig("Server", "require_mfa")[1]:
+            session.clear()
+            signedOut = True
+        return ResponseObject(True, None, data={"SignedOut": signedOut})
+    return ResponseObject(False, message)
+
+
+@app.get(f'{APP_PREFIX}/api/admins/totp/required')
+def API_IsAdminMfaRequired():
+    """Tell the sign in page whether the OTP field must be displayed for this username.
+
+    The answer must not depend on the account: a per-account answer would let an
+    unauthenticated caller enumerate the administrators, and single out the ones without
+    MFA (any answer different from "account with MFA" identifies an existing password-only
+    account). The field is therefore offered for any non-empty username; the server only
+    *requires* the code when the account has a verified TOTP (see DashboardAdmins.SignIn),
+    so leaving it empty stays valid for the accounts that do not use MFA.
+    """
+    username = (request.args.get('username') or '').strip()
+    return ResponseObject(True, data={"MfaRequired": len(username) > 0})
+
+
+@app.post(f'{APP_PREFIX}/api/admins/totp/postpone')
+def API_PostponeAdminMfa():
+    """Skip the mandatory MFA enrolment for the current session only."""
+    if not DashboardConfig.GetConfig("Server", "require_mfa")[1]:
+        return ResponseObject(False, "MFA is not required")
+    if not DashboardConfig.GetConfig("Server", "allow_mfa_postpone")[1]:
+        return ResponseObject(False, "Postponing the MFA setup is not allowed")
+    adminID = session.get('admin_id')
+    admin = DashboardAdmins.GetAdmin(adminID)
+    if admin is None:
+        return ResponseObject(False, "This session is not linked to a local administrator")
+    if admin.get("TotpKey") and int(admin.get("TotpVerified") or 0) == 1:
+        return ResponseObject(False, "MFA is already enabled for this administrator")
+    session['mfa_postponed'] = True
+    DashboardLogger.log(str(request.url), str(request.remote_addr),
+                        Message=f"MFA setup postponed for administrator: {admin.get('Username')}")
+    return ResponseObject(True)
+
+
+@app.post(f'{APP_PREFIX}/api/admins/totp/recoveryCodes')
+def API_GenerateAdminRecoveryCodes():
+    data = request.get_json() or {}
+    adminID = data.get('AdminID', '')
+    denied = DenyAdminChangeWhileMfaPending(adminID)
+    if denied is not None:
+        return denied
+    admin = DashboardAdmins.GetAdmin(adminID)
+    if admin is None:
+        return ResponseObject(False, "Administrator does not exist")
+    if adminID == session.get('admin_id'):
+        # First generation (right after the MFA setup) does not need the password,
+        # regenerating or revoking codes does.
+        if DashboardAdmins.HasAnyRecoveryCodes(adminID):
+            if not DashboardAdmins.CheckPassword(adminID, data.get('currentPassword', '')):
+                return ResponseObject(False, "Current password does not match")
+    status, message, codes = DashboardAdmins.GenerateRecoveryCodes(adminID)
+    if status:
+        DashboardLogger.log(str(request.url), str(request.remote_addr),
+                            Message=f"Recovery codes regenerated for administrator: {admin.get('Username')}")
+        return ResponseObject(True, None, data={
+            "Codes": codes,
+            "Remaining": len(codes),
+        })
+    return ResponseObject(False, message)
+
+
+@app.post(f'{APP_PREFIX}/api/admins/totp/recoveryCodes/revoke')
+def API_RevokeAdminRecoveryCodes():
+    data = request.get_json() or {}
+    adminID = data.get('AdminID', '')
+    denied = DenyAdminChangeWhileMfaPending(adminID)
+    if denied is not None:
+        return denied
+    admin = DashboardAdmins.GetAdmin(adminID)
+    if admin is None:
+        return ResponseObject(False, "Administrator does not exist")
+    if adminID == session.get('admin_id'):
+        if not DashboardAdmins.CheckPassword(adminID, data.get('currentPassword', '')):
+            return ResponseObject(False, "Current password does not match")
+    status, message = DashboardAdmins.RevokeRecoveryCodes(adminID)
+    if status:
+        DashboardLogger.log(str(request.url), str(request.remote_addr),
+                            Message=f"Recovery codes revoked for administrator: {admin.get('Username')}")
+    return ResponseObject(status, message)
+
 
 @app.get(f'{APP_PREFIX}/api/getWireguardConfigurations')
 def API_getWireguardConfigurations():
@@ -722,10 +1249,33 @@ def API_updateDashboardConfigurationItem():
     data = request.get_json()
     if "section" not in data.keys() or "key" not in data.keys() or "value" not in data.keys():
         return ResponseObject(False, "Invalid request.")
+    if data['section'] == "Account" and data['key'] == "username":
+        # Validate the conflict *before* the ini is written: a rejected rename would otherwise
+        # leave the ini and the administrator table out of sync.
+        newUsername = data['value'].get('username') if isinstance(data['value'], dict) else data['value']
+        newUsername = str(newUsername or "").strip()
+        existing = DashboardAdmins.GetAdminByUsername(newUsername) if newUsername else None
+        if existing is not None and existing.get("CreatedBy") != "wg-dashboard.ini":
+            return ResponseObject(False, "This username is already used by another administrator.")
+    if (data['section'] == "Account" and data['key'] in ("enable_totp", "totp_verified")
+            and str(data['value']).strip().lower() in ("false", "0", "")):
+        # The legacy MFA controls were removed from the interface, and this write would clear the
+        # TOTP secret *and* the recovery codes without asking for the current password (unlike
+        # /api/admins/totp/disable). Per-account MFA is now the only supported path.
+        return ResponseObject(
+            False, "The legacy MFA reset has been removed. Use Settings -> Administrators, "
+                   "which requires your current password.")
     valid, msg = DashboardConfig.SetConfig(
         data["section"], data["key"], data['value'])
     if not valid:
         return ResponseObject(False, msg)
+    if data['section'] == "Account" and data['key'] == "password":
+        DashboardAdmins.SyncPasswordFromConfig(data['value'].get('newPassword', ''))
+    if data['section'] == "Account" and data['key'] == "username":
+        # Sign in reads the administrator table: renaming the ini account must rename the
+        # mirrored administrator too, otherwise the old login stays valid and the new one
+        # is unusable (and later password synchronisations look up the wrong account).
+        DashboardAdmins.RenameFromConfig()
     if data['section'] == "Server":
         if data['key'] == 'wg_conf_path':
             WireguardConfigurations.clear()
@@ -1537,6 +2087,8 @@ def API_Welcome_VerifyTotpLink():
     if totpValid:
         DashboardConfig.SetConfig("Account", "totp_verified", "true")
         DashboardConfig.SetConfig("Account", "enable_totp", "true")
+        # Keep the multi-administrator table in sync, so the MFA gate is satisfied
+        DashboardAdmins.SyncTotpFromConfig()
     return ResponseObject(totpValid)
 
 @app.post(f'{APP_PREFIX}/api/Welcome_Finish')
@@ -1549,6 +2101,15 @@ def API_Welcome_Finish():
         if data["newPassword"] == "" or len(data["newPassword"]) < 8:
             return ResponseObject(False, "Password must be at least 8 characters")
 
+        # Refuse a collision *before* writing the ini: on a taken username, RenameFromConfig()
+        # fails while SyncPasswordFromConfig() would still change that other account's password,
+        # and the wizard would report success with the imported account left on admin/admin.
+        requestedUsername = str(data["username"]).strip()
+        iniUsername = DashboardConfig.GetConfig("Account", "username")[1]
+        existing = DashboardAdmins.GetAdminByUsername(requestedUsername)
+        if existing is not None and existing.get("Username") != iniUsername:
+            return ResponseObject(False, "This username is already used by another administrator.")
+
         updateUsername, updateUsernameErr = DashboardConfig.SetConfig("Account", "username", data["username"])
         updatePassword, updatePasswordErr = DashboardConfig.SetConfig("Account", "password",
                                                                       {
@@ -1559,6 +2120,8 @@ def API_Welcome_Finish():
         if not updateUsername or not updatePassword:
             return ResponseObject(False, f"{updateUsernameErr},{updatePasswordErr}".strip(","))
 
+        DashboardAdmins.RenameFromConfig()
+        DashboardAdmins.SyncPasswordFromConfig(data["newPassword"])
         DashboardConfig.SetConfig("Other", "welcome_session", False)
     return ResponseObject()
 
@@ -1858,7 +2421,31 @@ Index Page
 
 @app.get(f'{APP_PREFIX}/')
 def index():
-    return render_template('index.html', APP_PREFIX=APP_PREFIX)
+    # The SPA shell must never be cached: it references the hashed bundles, and a stale
+    # shell would keep loading an old frontend after an update.
+    mfaSetupRequired = False
+    try:
+        if session.get("role") == "admin":
+            currentAdmin = DashboardAdmins.GetAdmin(session.get("admin_id"))
+            if currentAdmin is None and session.get("signInMethod") == "local":
+                currentAdmin = DashboardAdmins.GetAdminByUsername(
+                    DashboardConfig.GetConfig("Account", "username")[1])
+                if currentAdmin is not None:
+                    session["admin_id"] = currentAdmin.get("AdminID")
+            if (currentAdmin is not None
+                    and DashboardConfig.GetConfig("Server", "require_mfa")[1]
+                    and not session.get("mfa_postponed")
+                    and not (currentAdmin.get("TotpKey") and
+                             int(currentAdmin.get("TotpVerified") or 0) == 1)):
+                mfaSetupRequired = True
+    except Exception as e:
+        app.logger.error(f"[WGDashboard] Cannot resolve the MFA state for the index page: {e}")
+    response = current_app.make_response(render_template(
+        'index.html', APP_PREFIX=APP_PREFIX, MFA_SETUP_REQUIRED=mfaSetupRequired,
+        BUILD_TAG=DASHBOARD_BUILD))
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    return response
 
 if __name__ == "__main__":
     startThreads()

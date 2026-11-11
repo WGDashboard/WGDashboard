@@ -52,6 +52,19 @@ export const fetchGet = async (url, params=undefined, callback=undefined) => {
 					if (x.status === 401){
 						store.newMessage("WGDashboard", "Sign in session ended, please sign in again", "warning")
 					}
+					if (x.status === 403){
+						// MFA is mandatory: send the user to the enrolment page, and keep the response
+						// contract intact (callers expect an object with `status`/`data`, never undefined).
+						return x.json().then((body) => {
+							if (body && body.mfaSetupRequired){
+								if (router.currentRoute.value.path !== '/2FASetup'){
+									router.push('/2FASetup')
+								}
+								return {status: false, message: body.message || "MFA setup required.", data: null, mfaSetupRequired: true}
+							}
+							throw new Error(x.statusText)
+						})
+					}
 					throw new Error(x.statusText)
 				}
 			}else{
@@ -75,6 +88,17 @@ export const fetchPost = async (url, body, callback) => {
 			if (x.status !== 200){
 				if (x.status === 401){
 					store.newMessage("WGDashboard", "Sign in session ended, please sign in again", "warning")
+				}
+				if (x.status === 403){
+					return x.json().then((body) => {
+						if (body && body.mfaSetupRequired){
+							if (router.currentRoute.value.path !== '/2FASetup'){
+								router.push('/2FASetup')
+							}
+							return {status: false, message: body.message || "MFA setup required.", data: null, mfaSetupRequired: true}
+						}
+						throw new Error(x.statusText)
+					})
 				}
 				throw new Error(x.statusText)
 			}
