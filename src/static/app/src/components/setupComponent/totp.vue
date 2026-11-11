@@ -252,7 +252,7 @@ export default {
 			<div class="d-flex gap-3 mt-5 flex-column">
 				<RouterLink
 					to="/"
-					v-if="!this.verified && (!this.setupRequired || this.postponeAllowed)"
+					v-if="!this.verified && !this.setupRequired"
 					class="btn bg-secondary-subtle text-secondary-emphasis rounded-3 flex-grow-1 btn-lg border-1 border-secondary-subtle shadow d-flex">
 					<LocaleText t="I don't need MFA"></LocaleText>
 					<i class="bi bi-chevron-right ms-auto"></i>

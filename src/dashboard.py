@@ -352,8 +352,10 @@ def auth_req():
             # The administrator row is the source of truth for an open session: an account that
             # has been deleted or disabled must lose its access at once, whether MFA is required
             # or not. Without this check a revoked user could keep calling the APIs (and even
-            # re-enable the account) until the session cookie expires.
-            if session.get("role") == "admin" and session.get("admin_id") is not None:
+            # re-enable the account) until the session cookie expires. Only local sign-ins have
+            # an administrator row behind them (API key and OIDC sessions do not).
+            if (session.get("role") == "admin" and session.get("admin_id") is not None
+                    and session.get("signInMethod") == "local"):
                 try:
                     currentAdmin = DashboardAdmins.GetAdmin(session.get("admin_id"))
                 except Exception:
@@ -375,11 +377,17 @@ def auth_req():
             # verified TOTP can then reach nothing but the endpoints needed to enrol.
             if (DashboardConfig.GetConfig("Server", "require_mfa")[1]
                     and not session.get("mfa_postponed")
-                    and session.get("admin_id") is not None):
+                    and session.get("admin_id") is not None
+                    and session.get("signInMethod") == "local"):
                 try:
                     currentAdmin = DashboardAdmins.GetAdmin(session.get("admin_id"))
                     if currentAdmin is not None and not (currentAdmin.get("TotpKey") and
                                                          int(currentAdmin.get("TotpVerified") or 0) == 1):
+                        # The legacy Welcome_* routes are deliberately absent: this block only runs
+                        # for sessions that already have an admin_id, and those routes write the
+                        # wg-dashboard.ini account (SyncTotpFromConfig) — a pending administrator
+                        # could otherwise overwrite the INI account's MFA. Sessions without an
+                        # admin_id never reach this block, so they keep working.
                         allowedDuringSetup = [
                             f'{appPrefix}/api/admins/me',
                             f'{appPrefix}/api/admins/totp/start',
@@ -394,9 +402,6 @@ def auth_req():
                             f'{appPrefix}/api/getDashboardVersion',
                             f'{appPrefix}/api/isTotpEnabled',
                             f'{appPrefix}/api/locale',
-                            # Legacy enrolment wizard, still used by sessions without admin_id
-                            f'{appPrefix}/api/Welcome_GetTotpLink',
-                            f'{appPrefix}/api/Welcome_VerifyTotpLink',
                         ]
                         # The SPA shell and its static assets must always be served, otherwise the
                         # browser would display the raw 403 JSON instead of the enrolment page.
@@ -421,7 +426,19 @@ def auth_req():
                             response.headers["Pragma"] = "no-cache"
                             return response
                 except Exception as e:
+                    # Fail closed: the gate exists to block accounts that have not enrolled, so a
+                    # lookup failure must not let the request through.
                     app.logger.error(f"[WGDashboard] Cannot check the MFA state of the current administrator: {e}")
+                    response = Flask.make_response(app, {
+                        "status": False,
+                        "message": "The MFA state of this administrator cannot be verified.",
+                        "data": None
+                    })
+                    response.content_type = "application/json"
+                    response.status_code = 503
+                    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+                    response.headers["Pragma"] = "no-cache"
+                    return response
 
 @app.route(f'{APP_PREFIX}/api/handshake', methods=["GET", "OPTIONS"])
 def API_Handshake():
@@ -459,6 +476,12 @@ def API_OIDC_Authenticate():
     if not status:
         return ResponseObject(False, "OIDC Authentication Failed. Reason: " + data)
     session['role'] = 'admin'
+    # An OIDC session is not a local account: drop any administrator identity left behind by a
+    # previous local sign-in in the same browser. Otherwise /api/admins/me reports that account
+    # (with its MFA state) and deleting or disabling it would revoke this unrelated OIDC session.
+    session.pop('admin_id', None)
+    session.pop('admin_username', None)
+    session.pop('mfa_postponed', None)
     authToken = hashlib.sha256(f'${data['sid']}{datetime.now()}{app.secret_key}'.encode()).hexdigest()
     session['username'] = authToken
     session['signInMethod'] = 'OIDC'
@@ -602,6 +625,34 @@ def API_GetCurrentAdmin():
     return ResponseObject(data=payload)
 
 
+def IsPendingMfaSession() -> bool:
+    """True when the signed-in local administrator still owes its mandatory MFA enrolment.
+
+    Used to keep a half-authenticated session (signed in, MFA not enrolled yet) on its own
+    account: the setup routes are reachable during enrolment, so they must not become a way
+    to touch another administrator's MFA or recovery codes.
+    """
+    if session.get('signInMethod') != 'local' or session.get('admin_id') is None:
+        return False
+    if not DashboardConfig.GetConfig("Server", "require_mfa")[1] or session.get('mfa_postponed'):
+        return False
+    try:
+        admin = DashboardAdmins.GetAdmin(session.get('admin_id'))
+    except Exception:
+        return True  # fail closed
+    if admin is None:
+        return True
+    return not (admin.get("TotpKey") and int(admin.get("TotpVerified") or 0) == 1)
+
+
+def DenyAdminChangeWhileMfaPending(adminID: str):
+    """Reject a mutation of another administrator while this session still owes its enrolment."""
+    if IsPendingMfaSession() and adminID != session.get('admin_id'):
+        return ResponseObject(
+            False, "Multi-factor authentication setup is required before managing another administrator.")
+    return None
+
+
 @app.post(f'{APP_PREFIX}/api/admins/add')
 def API_AddAdmin():
     data = request.get_json() or {}
@@ -674,6 +725,9 @@ Administrators - multi-factor authentication (TOTP)
 @app.post(f'{APP_PREFIX}/api/admins/totp/start')
 def API_StartAdminTotp():
     data = request.get_json() or {}
+    denied = DenyAdminChangeWhileMfaPending(data.get('AdminID', ''))
+    if denied is not None:
+        return denied
     status, message, payload = DashboardAdmins.StartTotp(data.get('AdminID', ''))
     return ResponseObject(status, message, data=payload)
 
@@ -681,6 +735,9 @@ def API_StartAdminTotp():
 @app.post(f'{APP_PREFIX}/api/admins/totp/verify')
 def API_VerifyAdminTotp():
     data = request.get_json() or {}
+    denied = DenyAdminChangeWhileMfaPending(data.get('AdminID', ''))
+    if denied is not None:
+        return denied
     admin = DashboardAdmins.GetAdmin(data.get('AdminID', ''))
     status, message = DashboardAdmins.VerifyTotp(data.get('AdminID', ''), data.get('code', ''))
     if status and admin is not None:
@@ -752,6 +809,9 @@ def API_PostponeAdminMfa():
 def API_GenerateAdminRecoveryCodes():
     data = request.get_json() or {}
     adminID = data.get('AdminID', '')
+    denied = DenyAdminChangeWhileMfaPending(adminID)
+    if denied is not None:
+        return denied
     admin = DashboardAdmins.GetAdmin(adminID)
     if admin is None:
         return ResponseObject(False, "Administrator does not exist")
@@ -776,6 +836,9 @@ def API_GenerateAdminRecoveryCodes():
 def API_RevokeAdminRecoveryCodes():
     data = request.get_json() or {}
     adminID = data.get('AdminID', '')
+    denied = DenyAdminChangeWhileMfaPending(adminID)
+    if denied is not None:
+        return denied
     admin = DashboardAdmins.GetAdmin(adminID)
     if admin is None:
         return ResponseObject(False, "Administrator does not exist")
@@ -1109,6 +1172,19 @@ def API_updateDashboardConfigurationItem():
         existing = DashboardAdmins.GetAdminByUsername(newUsername) if newUsername else None
         if existing is not None and existing.get("CreatedBy") != "wg-dashboard.ini":
             return ResponseObject(False, "This username is already used by another administrator.")
+    if (data['section'] == "Account" and data['key'] in ("enable_totp", "totp_verified")
+            and str(data['value']).strip().lower() in ("false", "0", "")):
+        # The legacy "reset MFA" control only ever targets the wg-dashboard.ini account, while
+        # /2FASetup enrols the signed-in administrator. When the two differ, applying the reset
+        # would wipe the INI account's MFA and then fail to enrol the other account, so refuse it
+        # before the ini is modified and let the Administrators page handle per-account MFA.
+        mirrored = DashboardAdmins.GetAdminByUsername(
+            DashboardConfig.GetConfig("Account", "username")[1])
+        if (mirrored is not None and session.get('admin_id') is not None
+                and mirrored.get("AdminID") != session.get('admin_id')):
+            return ResponseObject(
+                False, "This reset only applies to the account of wg-dashboard.ini. "
+                       "Use Settings -> Administrators to change the MFA of another account.")
     valid, msg = DashboardConfig.SetConfig(
         data["section"], data["key"], data['value'])
     if not valid:
