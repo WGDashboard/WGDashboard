@@ -272,18 +272,34 @@ class DashboardAdmins:
             self.DashboardConfig.SetConfig("Account", "password", NewPassword, init=True)
         return True, None
 
+    def __AdminCount(self):
+        """SQL expression: total number of administrator rows.
+
+        The count is wrapped in an aliased *derived table* on purpose: MySQL refuses a
+        subquery that reads the table targeted by the enclosing UPDATE/DELETE
+        ("You can't specify target table ... for update in FROM clause", error 1093),
+        while a materialised derived table is accepted. PostgreSQL and SQLite accept both,
+        so this form is the portable one.
+        """
+        allAdmins = (db.select(db.literal(1))
+                     .select_from(self.adminsTable)
+                     .subquery("all_administrators"))
+        return db.select(db.func.count()).select_from(allAdmins).scalar_subquery()
+
     def __OtherEnabledAdmins(self, AdminID: str):
         """SQL condition: at least one *other* administrator is enabled.
 
         The rule "one enabled administrator must remain" is evaluated inside the UPDATE/DELETE
         statement itself, so two concurrent requests cannot both pass a separate count check and
-        leave the installation without a usable account.
+        leave the installation without a usable account. Same derived-table form as
+        __AdminCount() for MySQL compatibility.
         """
-        return (db.select(db.func.count())
-                .select_from(self.adminsTable)
-                .where(db.and_(self.adminsTable.c.Enabled == 1,
-                               self.adminsTable.c.AdminID != AdminID))
-                .scalar_subquery()) >= 1
+        otherEnabled = (db.select(db.literal(1))
+                        .select_from(self.adminsTable)
+                        .where(db.and_(self.adminsTable.c.Enabled == 1,
+                                       self.adminsTable.c.AdminID != AdminID))
+                        .subquery("other_enabled_administrators"))
+        return db.select(db.func.count()).select_from(otherEnabled).scalar_subquery() >= 1
 
     def SetEnabled(self, AdminID: str, Enabled: bool, CurrentAdminID: str | None = None) -> tuple[bool, str | None]:
         admin = self.GetAdmin(AdminID)
@@ -316,8 +332,7 @@ class DashboardAdmins:
             result = conn.execute(
                 self.adminsTable.delete().where(db.and_(
                     self.adminsTable.c.AdminID == AdminID,
-                    (db.select(db.func.count()).select_from(self.adminsTable)
-                     .scalar_subquery()) > 1,
+                    self.__AdminCount() > 1,
                     db.or_(self.adminsTable.c.Enabled != 1,
                            self.__OtherEnabledAdmins(AdminID)),
                 ))
