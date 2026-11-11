@@ -1,0 +1,46 @@
+name: Tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'main'
+      - 'development'
+      - '**dev'
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - '.github/workflows/tests.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - '.github/workflows/tests.yml'
+
+jobs:
+  pytest:
+    name: pytest (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: src/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r src/requirements.txt pytest
+
+      - name: Run the test suite
+        run: python -m pytest tests/ -q
