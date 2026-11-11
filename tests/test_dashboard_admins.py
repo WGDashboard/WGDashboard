@@ -507,5 +507,40 @@ class TestIniSynchronisation:
         assert admins.SyncTotpFromConfig() is False
 
 
+class TestCredentialSynchronisation:
+    """Docker rewrites the ini credentials on every start: the table must follow."""
+
+    def test_a_username_rotation_reaches_the_login(self, admins, config):
+        config.values[("Account", "username")] = "rotated"
+        DashboardAdmins(config)  # simulates the next start, after entrypoint.sh rewrote the ini
+        assert admins.GetAdminByUsername("root") is None
+        status, message, _ = admins.SignIn("rotated", INI_PASSWORD)
+        assert status, message
+
+    def test_a_password_rotation_reaches_the_login(self, admins, config):
+        config.values[("Account", "password")] = bcrypt.hashpw(
+            b"Rotated1!", bcrypt.gensalt()).decode("utf-8")
+        DashboardAdmins(config)
+        assert admins.SignIn("root", "Rotated1!")[0] is True
+        assert admins.SignIn("root", INI_PASSWORD)[0] is False
+
+    def test_a_username_belonging_to_another_administrator_is_not_taken_over(self, admins, config,
+                                                                            second_admin):
+        config.values[("Account", "username")] = "second"
+        assert admins.SyncCredentialsFromConfig() is False
+        assert admins.GetAdminByUsername("root") is not None
+        assert admins.GetAdminByUsername("second") is not None
+
+    def test_unchanged_credentials_are_a_no_op(self, admins, config):
+        assert admins.SyncCredentialsFromConfig() is False
+
+    def test_other_administrators_are_not_touched(self, admins, config, second_admin):
+        config.values[("Account", "password")] = bcrypt.hashpw(
+            b"Rotated1!", bcrypt.gensalt()).decode("utf-8")
+        assert admins.SyncCredentialsFromConfig() is True
+        assert admins.CheckPassword(second_admin["AdminID"], "Second1!x") is True
+
+
+
 
 

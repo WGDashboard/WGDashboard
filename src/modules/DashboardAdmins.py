@@ -59,6 +59,9 @@ class DashboardAdmins:
         )
         self.metadata.create_all(self.engine)
         self.BootstrapFromConfig()
+        # Docker rewrites the ini credentials on every start: the table must follow, otherwise
+        # rotating WGD_PASSWORD would update the file while the old password kept working.
+        self.SyncCredentialsFromConfig()
 
     # ------------------------------------------------------------------ helpers
     def Public(self, admin: dict | None) -> dict | None:
@@ -148,6 +151,51 @@ class DashboardAdmins:
             current_app.logger.error(f"[DashboardAdmins] Cannot import administrator from wg-dashboard.ini: {e}")
             return False
         current_app.logger.info(f"[DashboardAdmins] Administrator '{username}' imported from wg-dashboard.ini")
+        return True
+
+    def SyncCredentialsFromConfig(self) -> bool:
+        """Propagate the wg-dashboard.ini credentials to the imported administrator.
+
+        Docker rewrites the ini from its environment variables on every start
+        (docker/entrypoint.sh). The administrator table is what SignIn() reads, so without
+        this the file would change while the old password kept working. Only the account
+        imported from the ini (CreatedBy = "wg-dashboard.ini") is touched.
+        """
+        iniUsername = str(self.DashboardConfig.GetConfig("Account", "username")[1] or "").strip()
+        iniPassword = str(self.DashboardConfig.GetConfig("Account", "password")[1] or "").strip()
+        if not iniUsername or not iniPassword:
+            return False
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                db.select(self.adminsTable).where(self.adminsTable.c.CreatedBy == "wg-dashboard.ini")
+            ).mappings().fetchone()
+        if row is None:
+            return False
+        updates = {}
+        if row["Username"] != iniUsername:
+            # Never take over the username of another administrator: the ini would silently
+            # hijack that account.
+            existing = self.GetAdminByUsername(iniUsername)
+            if existing is not None and existing["AdminID"] != row["AdminID"]:
+                current_app.logger.warning(
+                    f"[DashboardAdmins] Cannot rename the imported administrator to '{iniUsername}': "
+                    "this username belongs to another administrator")
+                return False
+            updates["Username"] = iniUsername
+        if (row["Password"] or "") != iniPassword:
+            updates["Password"] = iniPassword
+        if not updates:
+            return False
+        updates["UpdatedDate"] = datetime.datetime.now()
+        try:
+            with self.engine.begin() as conn:
+                conn.execute(self.adminsTable.update().values(**updates).where(
+                    self.adminsTable.c.AdminID == row["AdminID"]))
+        except Exception as e:
+            current_app.logger.error(f"[DashboardAdmins] Cannot synchronize the ini credentials: {e}")
+            return False
+        current_app.logger.info(
+            "[DashboardAdmins] Credentials of the imported administrator synchronized from wg-dashboard.ini")
         return True
 
     # ------------------------------------------------------------------ sign in
