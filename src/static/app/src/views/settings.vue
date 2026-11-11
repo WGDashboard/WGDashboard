@@ -1,15 +1,12 @@
 <script>
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
 import PeersDefaultSettingsInput from "@/components/settingsComponent/peersDefaultSettingsInput.vue";
-import AccountSettingsInputUsername from "@/components/settingsComponent/accountSettingsInputUsername.vue";
-import AccountSettingsInputPassword from "@/components/settingsComponent/accountSettingsInputPassword.vue";
 import DashboardSettingsInputWireguardConfigurationPath
 	from "@/components/settingsComponent/dashboardSettingsInputWireguardConfigurationPath.vue";
 import DashboardTheme from "@/components/settingsComponent/dashboardTheme.vue";
 import DashboardSettingsInputIPAddressAndPort
 	from "@/components/settingsComponent/dashboardSettingsInputIPAddressAndPort.vue";
 import DashboardAPIKeys from "@/components/settingsComponent/dashboardAPIKeys.vue";
-import AccountSettingsMFA from "@/components/settingsComponent/accountSettingsMFA.vue";
 import LocaleText from "@/components/text/localeText.vue";
 import DashboardLanguage from "@/components/settingsComponent/dashboardLanguage.vue";
 import DashboardIPPortInput from "@/components/settingsComponent/dashboardIPPortInput.vue";
@@ -25,12 +22,11 @@ export default {
 		DashboardIPPortInput,
 		DashboardLanguage,
 		LocaleText,
-		AccountSettingsMFA,
 		DashboardAPIKeys,
 		DashboardSettingsInputIPAddressAndPort,
 		DashboardTheme,
 		DashboardSettingsInputWireguardConfigurationPath,
-		AccountSettingsInputPassword, AccountSettingsInputUsername, PeersDefaultSettingsInput},
+		PeersDefaultSettingsInput},
 	setup(){
 		const dashboardConfigurationStore = DashboardConfigurationStore()
 		return {dashboardConfigurationStore}
