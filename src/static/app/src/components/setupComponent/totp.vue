@@ -24,7 +24,9 @@ export default {
 			codes: [],
 			busy: true,
 			message: "",
-			welcomePending: false
+			welcomePending: false,
+			codesReady: false,
+			codesError: ""
 		}
 	},
 	computed: {
@@ -49,6 +51,9 @@ export default {
 					// MFA is only compulsory when the server asks for it: with the default
 					// require_mfa=false the page must stay skippable.
 					this.setupRequired = me.data.MfaSetupRequired === true;
+					// The query flag is only a hint: the server knows whether the first-run
+					// password change is still pending, whichever page resumed the enrolment.
+					this.welcomePending = this.welcomePending || me.data.WelcomeSession === true;
 					fetchPost("/api/admins/totp/start", {AdminID: this.adminID}, (res) => {
 						this.busy = false;
 						if (res.status && res.data){
@@ -108,13 +113,25 @@ export default {
 			}
 		},
 		generateCodes(){
+			// The plain codes exist only in this answer: completion stays blocked until they
+			// are on screen, otherwise clicking Complete would unmount the last copy.
+			this.codesError = "";
+			this.codesReady = false;
 			fetchPost("/api/admins/totp/recoveryCodes", {AdminID: this.adminID}, (res) => {
 				if (res.status && res.data){
 					this.codes = res.data.Codes || [];
+					this.codesReady = true;
+				}else{
+					this.codesError = res.message || "The recovery codes could not be generated.";
 				}
 			});
 		},
 		finish(){
+			if (this.mode === "admin" && !this.codesReady){
+				// Never leave before the recovery codes have been displayed: they exist only
+				// in that answer.
+				return;
+			}
 			this.$router.push(this.nextRoute);
 		},
 		signOut(){
@@ -233,6 +250,17 @@ export default {
 						<i class="bi bi-shield-check me-1"></i>
 						<LocaleText t="MFA is now enabled for your account"></LocaleText>
 					</div>
+					<div v-if="this.codesError" class="alert alert-danger py-2">
+						{{ this.codesError }}
+						<button class="btn btn-sm btn-outline-danger ms-2 rounded-3 px-2"
+						        @click="this.generateCodes()">
+							<i class="bi bi-arrow-clockwise me-1"></i><LocaleText t="Retry"></LocaleText>
+						</button>
+					</div>
+					<div v-else-if="this.mode === 'admin' && !this.codesReady" class="d-flex align-items-center gap-2 text-muted">
+						<div class="spinner-border spinner-border-sm"></div>
+						<LocaleText t="Generating your recovery codes..."></LocaleText>
+					</div>
 					<div v-if="this.codes.length > 0">
 						<p class="mb-2">
 							<small class="text-muted">
@@ -268,7 +296,7 @@ export default {
 				</RouterLink>
 				<RouterLink
 					:to="this.nextRoute"
-					v-if="this.verified"
+					v-if="this.verified && (this.mode !== 'admin' || this.codesReady)"
 					class="btn btn-dark btn-lg d-flex btn-brand shadow align-items-center flex-grow-1 rounded-3">
 					<LocaleText t="Complete"></LocaleText>
 					<i class="bi bi-chevron-right ms-auto"></i>

@@ -194,6 +194,7 @@ export default {
 			this.mfaCode = "";
 			this.mfaPassword = "";
 			this.recoveryCodes = [];
+			this.mfaBusy = false;
 			if (admin.TotpEnabled !== true) {
 				this.startMfa();
 			}
@@ -208,8 +209,15 @@ export default {
 			this.recoveryCodes = [];
 		},
 		startMfa() {
+			const requestedID = this.mfaAdminID;
 			this.mfaBusy = true;
-			fetchPost("/api/admins/totp/start", {AdminID: this.mfaAdminID}, (res) => {
+			fetchPost("/api/admins/totp/start", {AdminID: requestedID}, (res) => {
+				// The panel may have been switched to another administrator while this request
+				// was in flight: its (slower) answer must not overwrite the new panel's QR code
+				// and secret, otherwise the displayed code can never verify.
+				if (this.mfaAdminID !== requestedID) {
+					return;
+				}
 				this.mfaBusy = false;
 				if (res.status && res.data) {
 					this.mfaLink = res.data.Link;
@@ -231,8 +239,12 @@ export default {
 				this.store.newMessage("Server", "The code must contain 6 digits", "danger");
 				return;
 			}
+			const requestedID = this.mfaAdminID;
 			this.mfaBusy = true;
-			fetchPost("/api/admins/totp/verify", {AdminID: this.mfaAdminID, code: this.mfaCode}, (res) => {
+			fetchPost("/api/admins/totp/verify", {AdminID: requestedID, code: this.mfaCode}, (res) => {
+				if (this.mfaAdminID !== requestedID) {
+					return;
+				}
 				this.mfaBusy = false;
 				if (res.status) {
 					this.store.newMessage("Server", "MFA enabled for this administrator", "success");

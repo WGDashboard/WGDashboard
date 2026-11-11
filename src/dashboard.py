@@ -685,6 +685,9 @@ def API_GetCurrentAdmin():
         and DashboardConfig.GetConfig("Server", "require_mfa")[1] \
         and DashboardConfig.GetConfig("Server", "allow_mfa_postpone")[1] \
         and not session.get("mfa_postponed")
+    # The enrolment page resumes from several places (redirect at start-up, sign-in redirect):
+    # only the server knows whether the first-run password change is still pending.
+    payload["WelcomeSession"] = bool(DashboardConfig.GetConfig("Other", "welcome_session")[1])
     return ResponseObject(data=payload)
 
 
