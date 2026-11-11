@@ -121,8 +121,10 @@ export default {
 								(typeof remaining === "number" ? " " + remaining + " code(s) left." : ""), "warning")
 						}
 						if (response.mfaSetupRequired){
-							// MFA is mandatory: the account must enrol before using the dashboard
-							this.$router.push('/2FASetup')
+							// MFA is mandatory: the account must enrol before using the dashboard.
+							// On a first-run installation the initial password change is pending too,
+							// so carry it through: enrolment must not send the user straight to "/".
+							this.$router.push(response.message ? '/2FASetup?welcome=1' : '/2FASetup')
 						}else if (response.message){
 							this.$router.push('/welcome')
 						}else{

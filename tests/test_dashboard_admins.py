@@ -363,6 +363,35 @@ class TestTotp:
         assert admins.CountRecoveryCodes(admin["AdminID"]) == 0
 
 
+    def test_a_code_from_a_superseded_secret_is_refused(self, admins):
+        """A second enrolment tab replaces the pending secret: the old code must not verify."""
+        admin = admins.GetAdminByUsername("root")
+        _, _, first = admins.StartTotp(admin["AdminID"])
+        admins.StartTotp(admin["AdminID"])
+        status, _ = admins.VerifyTotp(admin["AdminID"], pyotp.TOTP(first["Secret"]).now())
+        assert status is False
+        assert admins.GetAdmin(admin["AdminID"])["TotpVerified"] == 0
+
+    def test_the_ini_fallback_follows_a_confirmed_enrolment(self, admins, config):
+        admin = admins.GetAdminByUsername("root")
+        secret = enable_totp(admins, admin["AdminID"])
+        assert config.GetConfig("Account", "enable_totp")[1] == "true"
+        assert config.GetConfig("Account", "totp_verified")[1] == "true"
+        assert config.GetConfig("Account", "totp_key")[1] == secret
+
+    def test_the_ini_fallback_follows_a_disable(self, admins, config):
+        admin = admins.GetAdminByUsername("root")
+        enable_totp(admins, admin["AdminID"])
+        admins.DisableTotp(admin["AdminID"])
+        assert config.GetConfig("Account", "enable_totp")[1] == "false"
+        assert config.GetConfig("Account", "totp_verified")[1] == "false"
+        assert config.GetConfig("Account", "totp_key")[1] == ""
+
+    def test_another_account_does_not_touch_the_ini_fallback(self, admins, config, second_admin):
+        enable_totp(admins, second_admin["AdminID"])
+        assert config.GetConfig("Account", "enable_totp")[1] is False
+
+
 class TestRecoveryCodes:
     def test_codes_require_mfa_to_be_enabled(self, admins):
         admin = admins.GetAdminByUsername("root")

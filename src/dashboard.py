@@ -708,6 +708,10 @@ def API_UpdateAdmin():
 @app.post(f'{APP_PREFIX}/api/admins/setPassword')
 def API_SetAdminPassword():
     data = request.get_json() or {}
+    if data.get('AdminID', '') == session.get('admin_id'):
+        # Changing your own password must go through the verified flow: otherwise a session
+        # could pick a new password and then use it to pass the MFA / recovery-code checks.
+        return API_SetOwnAdminPassword()
     status, message = DashboardAdmins.SetPassword(
         data.get('AdminID', ''), data.get('newPassword', ''), data.get('confirmPassword', ''))
     if status:
@@ -2046,6 +2050,15 @@ def API_Welcome_Finish():
 
         if data["newPassword"] == "" or len(data["newPassword"]) < 8:
             return ResponseObject(False, "Password must be at least 8 characters")
+
+        # Refuse a collision *before* writing the ini: on a taken username, RenameFromConfig()
+        # fails while SyncPasswordFromConfig() would still change that other account's password,
+        # and the wizard would report success with the imported account left on admin/admin.
+        requestedUsername = str(data["username"]).strip()
+        iniUsername = DashboardConfig.GetConfig("Account", "username")[1]
+        existing = DashboardAdmins.GetAdminByUsername(requestedUsername)
+        if existing is not None and existing.get("Username") != iniUsername:
+            return ResponseObject(False, "This username is already used by another administrator.")
 
         updateUsername, updateUsernameErr = DashboardConfig.SetConfig("Account", "username", data["username"])
         updatePassword, updatePasswordErr = DashboardConfig.SetConfig("Account", "password",

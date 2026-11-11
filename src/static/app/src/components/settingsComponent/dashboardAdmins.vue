@@ -32,6 +32,7 @@ export default {
 			},
 			passwordAdmin: null,
 			passwordForm: {
+				currentPassword: "",
 				newPassword: "",
 				confirmPassword: ""
 			},
@@ -123,24 +124,32 @@ export default {
 			this.resetMessages();
 			this.editAdmin = null;
 			this.passwordAdmin = admin.AdminID;
-			this.passwordForm = {newPassword: "", confirmPassword: ""};
+			this.passwordForm = {currentPassword: "", newPassword: "", confirmPassword: ""};
 		},
 		savePassword() {
 			if (this.passwordForm.newPassword !== this.passwordForm.confirmPassword) {
 				this.store.newMessage("Server", "Passwords do not match", "danger");
 				return;
 			}
-			this.saving = true;
-			fetchPost("/api/admins/setPassword", {
+			// Changing your own password goes through the verified flow (current password),
+			// which the server enforces for /api/admins/setPassword as well.
+			const ownAccount = this.passwordAdmin === this.currentAdminID;
+			const endpoint = ownAccount ? "/api/admins/me/password" : "/api/admins/setPassword";
+			const payload = {
 				AdminID: this.passwordAdmin,
 				newPassword: this.passwordForm.newPassword,
 				confirmPassword: this.passwordForm.confirmPassword
-			}, (res) => {
+			};
+			if (ownAccount) {
+				payload.currentPassword = this.passwordForm.currentPassword;
+			}
+			this.saving = true;
+			fetchPost(endpoint, payload, (res) => {
 				this.saving = false;
 				if (res.status) {
 					this.store.newMessage("Server", "Password updated", "success");
 					this.passwordAdmin = null;
-					this.passwordForm = {newPassword: "", confirmPassword: ""};
+					this.passwordForm = {currentPassword: "", newPassword: "", confirmPassword: ""};
 				} else {
 					this.store.newMessage("Server", res.message, "danger");
 				}
@@ -409,6 +418,12 @@ export default {
 				<button type="button" class="btn-close ms-auto" @click="this.passwordAdmin = null"></button>
 			</div>
 			<div class="card-body d-flex flex-column gap-3">
+				<div class="row gy-2" v-if="this.passwordAdmin === this.currentAdminID">
+					<div class="col-md-6">
+						<label class="form-label mb-1"><small class="text-muted"><LocaleText t="Current password"></LocaleText></small></label>
+						<input type="password" class="form-control form-control-sm rounded-3" autocomplete="current-password" v-model="this.passwordForm.currentPassword">
+					</div>
+				</div>
 				<div class="row gy-2">
 					<div class="col-md-6">
 						<label class="form-label mb-1"><small class="text-muted"><LocaleText t="New Password"></LocaleText></small></label>

@@ -23,10 +23,19 @@ export default {
 			verified: false,
 			codes: [],
 			busy: true,
-			message: ""
+			message: "",
+			welcomePending: false
+		}
+	},
+	computed: {
+		nextRoute(){
+			// A first-run installation still owes its initial password change: after (or instead
+			// of) the enrolment, the welcome flow must run before reaching the dashboard.
+			return this.welcomePending ? "/welcome" : "/";
 		}
 	},
 	mounted() {
+		this.welcomePending = String(this.$route && this.$route.query ? this.$route.query.welcome : "") === "1";
 		this.init();
 	},
 	methods: {
@@ -106,7 +115,7 @@ export default {
 			});
 		},
 		finish(){
-			this.$router.push("/");
+			this.$router.push(this.nextRoute);
 		},
 		signOut(){
 			fetchGet("/api/signout", {}, () => {
@@ -120,7 +129,7 @@ export default {
 					this.store.newMessage("WGDashboard",
 						"MFA setup postponed for this session only: you will be asked again at your next sign in.",
 						"warning");
-					this.$router.push("/");
+					this.$router.push(this.nextRoute);
 				}else{
 					this.store.newMessage("Server", res.message, "danger");
 				}
@@ -258,7 +267,7 @@ export default {
 					<i class="bi bi-chevron-right ms-auto"></i>
 				</RouterLink>
 				<RouterLink
-					to="/"
+					:to="this.nextRoute"
 					v-if="this.verified"
 					class="btn btn-dark btn-lg d-flex btn-brand shadow align-items-center flex-grow-1 rounded-3">
 					<LocaleText t="Complete"></LocaleText>

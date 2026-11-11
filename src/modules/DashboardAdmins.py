@@ -427,6 +427,24 @@ class DashboardAdmins:
         except Exception:
             return False
 
+    def __SyncIniMfa(self, admin: dict | None, enabled: bool, totpKey: str = "") -> None:
+        """Keep the wg-dashboard.ini fallback in sync with a confirmed MFA change.
+
+        The ini account is re-imported when the database is recreated: without this, the
+        fallback would restore an obsolete secret (or an MFA that was disabled since).
+        """
+        if admin is None:
+            return
+        if admin.get("Username") != self.DashboardConfig.GetConfig("Account", "username")[1]:
+            return
+        try:
+            self.DashboardConfig.SetConfig("Account", "enable_totp", "true" if enabled else "false")
+            self.DashboardConfig.SetConfig("Account", "totp_verified", "true" if enabled else "false")
+            # totp_key is a hidden attribute: writing it requires init=True
+            self.DashboardConfig.SetConfig("Account", "totp_key", totpKey if enabled else "", True)
+        except Exception as e:
+            current_app.logger.error(f"[DashboardAdmins] Cannot synchronize the ini MFA state: {e}")
+
     def StartTotp(self, AdminID: str) -> tuple[bool, str | None, dict | None]:
         """Generate a new TOTP secret for an administrator and return the provisioning link.
 
@@ -440,11 +458,19 @@ class DashboardAdmins:
             return False, "MFA is already enabled for this administrator", None
         secret = pyotp.random_base32()
         with self.engine.begin() as conn:
-            conn.execute(self.adminsTable.update().values({
+            # Conditional on the account still being unverified: two enrolment tabs must not
+            # overwrite each other's pending secret (nor replace a verified one).
+            result = conn.execute(self.adminsTable.update().values({
                 "TotpKey": secret,
                 "TotpVerified": 0,
                 "UpdatedDate": datetime.datetime.now(),
-            }).where(self.adminsTable.c.AdminID == AdminID))
+            }).where(db.and_(
+                self.adminsTable.c.AdminID == AdminID,
+                db.or_(self.adminsTable.c.TotpVerified.is_(None),
+                       self.adminsTable.c.TotpVerified != 1),
+            )))
+            if result.rowcount != 1:
+                return False, "MFA is already enabled for this administrator", None
         link = pyotp.TOTP(secret).provisioning_uri(
             name=admin.get("Username"), issuer_name="WGDashboard")
         return True, None, {"Secret": secret, "Link": link}
@@ -457,13 +483,24 @@ class DashboardAdmins:
             return False, "No MFA setup in progress, please start again"
         if int(admin.get("TotpVerified") or 0) == 1:
             return False, "MFA is already enabled for this administrator"
-        if not pyotp.TOTP(admin["TotpKey"]).verify(str(Code or "").strip(), valid_window=1):
+        pendingSecret = admin["TotpKey"]
+        if not pyotp.TOTP(pendingSecret).verify(str(Code or "").strip(), valid_window=1):
             return False, "This code is not valid, please try again"
         with self.engine.begin() as conn:
-            conn.execute(self.adminsTable.update().values({
+            # Only the secret that was just verified may be marked as enabled: another tab may
+            # have replaced it in the meantime, and the submitted code would not match it.
+            result = conn.execute(self.adminsTable.update().values({
                 "TotpVerified": 1,
                 "UpdatedDate": datetime.datetime.now(),
-            }).where(self.adminsTable.c.AdminID == AdminID))
+            }).where(db.and_(
+                self.adminsTable.c.AdminID == AdminID,
+                self.adminsTable.c.TotpKey == pendingSecret,
+                db.or_(self.adminsTable.c.TotpVerified.is_(None),
+                       self.adminsTable.c.TotpVerified != 1),
+            )))
+            if result.rowcount != 1:
+                return False, "The MFA setup changed while this code was verified, please try again"
+        self.__SyncIniMfa(admin, True, pendingSecret)
         return True, None
 
     def DisableTotp(self, AdminID: str) -> tuple[bool, str | None]:
@@ -477,6 +514,7 @@ class DashboardAdmins:
                 "UpdatedDate": datetime.datetime.now(),
             }).where(self.adminsTable.c.AdminID == AdminID))
         self.RevokeRecoveryCodes(AdminID)
+        self.__SyncIniMfa(admin, False)
         return True, None
 
     # ------------------------------------------------------------------ recovery codes
