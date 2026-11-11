@@ -541,6 +541,43 @@ class TestCredentialSynchronisation:
         assert admins.CheckPassword(second_admin["AdminID"], "Second1!x") is True
 
 
+class TestMfaSynchronisation:
+    """Docker also writes the MFA flags: the table must follow them as well."""
+
+    def test_disabling_mfa_in_the_ini_disables_it_and_revokes_the_codes(self, admins, config):
+        admin = admins.GetAdminByUsername("root")
+        enable_totp(admins, admin["AdminID"])
+        admins.GenerateRecoveryCodes(admin["AdminID"])
+        config.values[("Account", "enable_totp")] = False
+        config.values[("Account", "totp_verified")] = False
+        assert admins.SyncMfaFromConfig() is True
+        stored = admins.GetAdmin(admin["AdminID"])
+        assert stored["TotpKey"] is None
+        assert stored["TotpVerified"] == 0
+        assert admins.CountRecoveryCodes(admin["AdminID"]) == 0
+
+    def test_a_rotated_secret_replaces_the_previous_one(self, admins, config):
+        admin = admins.GetAdminByUsername("root")
+        enable_totp(admins, admin["AdminID"])
+        admins.GenerateRecoveryCodes(admin["AdminID"])
+        config.values[("Account", "enable_totp")] = True
+        config.values[("Account", "totp_verified")] = True
+        config.values[("Account", "totp_key")] = "MFRGGZDFMZTWQ2LK"
+        assert admins.SyncMfaFromConfig() is True
+        stored = admins.GetAdmin(admin["AdminID"])
+        assert stored["TotpKey"] == "MFRGGZDFMZTWQ2LK"
+        assert stored["TotpVerified"] == 1
+        # the old recovery codes belonged to the replaced secret
+        assert admins.CountRecoveryCodes(admin["AdminID"]) == 0
+
+    def test_unchanged_mfa_is_a_no_op(self, admins, config):
+        admin = admins.GetAdminByUsername("root")
+        secret = enable_totp(admins, admin["AdminID"])
+        config.values[("Account", "totp_key")] = secret
+        assert admins.SyncMfaFromConfig() is False
+
+
+
 
 
 

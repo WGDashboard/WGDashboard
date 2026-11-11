@@ -374,15 +374,33 @@ def auth_req():
                     return response
 
             # MFA is mandatory only when the setting is enabled: a local administrator without a
-            # verified TOTP can then reach nothing but the endpoints needed to enrol.
+            # verified TOTP can then reach nothing but the endpoints needed to enrol, and an
+            # enrolled account must have proven the second factor *in this session*.
             if (DashboardConfig.GetConfig("Server", "require_mfa")[1]
-                    and not session.get("mfa_postponed")
                     and session.get("admin_id") is not None
                     and session.get("signInMethod") == "local"):
                 try:
                     currentAdmin = DashboardAdmins.GetAdmin(session.get("admin_id"))
-                    if currentAdmin is not None and not (currentAdmin.get("TotpKey") and
-                                                         int(currentAdmin.get("TotpVerified") or 0) == 1):
+                    enrolled = currentAdmin is not None and bool(currentAdmin.get("TotpKey")) and \
+                        int(currentAdmin.get("TotpVerified") or 0) == 1
+                    if enrolled and not session.get("mfa_verified"):
+                        # The account has MFA but this session never presented it: it was opened
+                        # with the password alone, before the enrolment completed (possibly in
+                        # another browser). Force a fresh sign-in, which requires the code.
+                        session.clear()
+                        response = Flask.make_response(app, {
+                            "status": False,
+                            "message": "This session must confirm multi-factor authentication again.",
+                            "data": None,
+                            "mfaReauthenticationRequired": True
+                        })
+                        response.content_type = "application/json"
+                        response.status_code = 401
+                        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+                        response.headers["Pragma"] = "no-cache"
+                        return response
+                    if (currentAdmin is not None and not enrolled
+                            and not session.get("mfa_postponed")):
                         # The legacy Welcome_* routes are deliberately absent: this block only runs
                         # for sessions that already have an admin_id, and those routes write the
                         # wg-dashboard.ini account (SyncTotpFromConfig) — a pending administrator
@@ -395,6 +413,10 @@ def auth_req():
                             f'{appPrefix}/api/admins/totp/recoveryCodes',
                             f'{appPrefix}/api/admins/totp/postpone',
                             f'{appPrefix}/api/admins/totp/required',
+                            # Signing in again must stay possible during the enrolment: if the
+                            # authToken cookie is lost, the SPA is sent to the sign-in page and
+                            # this gate would otherwise answer 403 to the login itself (loop).
+                            f'{appPrefix}/api/authenticate',
                             f'{appPrefix}/api/signout',
                             f'{appPrefix}/api/validateAuthentication',
                             f'{appPrefix}/api/requireAuthentication',
@@ -548,10 +570,16 @@ def API_AuthenticateLogin():
     # inflate the map, and PruneLoginAttempts() keeps it size-bounded.
     attemptKey = f"{username[:255].lower()}|{request.remote_addr}"
     PruneLoginAttempts()
+    attempts = datetime.now()
     failures, lastAttempt, lockedUntil = LOGIN_ATTEMPTS.get(attemptKey, (0, None, None))
-    if lockedUntil is not None and datetime.now() < lockedUntil:
-        remaining = max(1, int((lockedUntil - datetime.now()).total_seconds()))
+    if lockedUntil is not None and attempts < lockedUntil:
+        remaining = max(1, int((lockedUntil - attempts).total_seconds()))
         return ResponseObject(False, f"Too many failed attempts. Please try again in {remaining} second(s).")
+    # A counter whose last attempt falls outside the window no longer counts: five failures
+    # spread over hours must not lock the account (the window is a window, not a total).
+    if lastAttempt is not None and (attempts - lastAttempt).total_seconds() >= LOGIN_ATTEMPTS_WINDOW:
+        failures, lockedUntil = 0, None
+        LOGIN_ATTEMPTS.pop(attemptKey, None)
 
     valid, message, admin = DashboardAdmins.SignIn(username, password, totpCode)
     if valid:
@@ -566,6 +594,10 @@ def API_AuthenticateLogin():
         session['admin_id'] = admin.get('AdminID')
         session['admin_username'] = admin.get('Username')
         session['signInMethod'] = 'local'
+        # The MFA gate is verified per session: an account that already has a verified TOTP
+        # could only sign in by presenting it (or a recovery code), so this session has
+        # proven the second factor. Accounts still enrolling keep False until they finish.
+        session['mfa_verified'] = not bool(admin.get("MfaSetupRequired"))
         body = {
             "status": True,
             "message": DashboardConfig.GetConfig("Other", "welcome_session")[1],
@@ -776,6 +808,9 @@ def API_VerifyAdminTotp():
     admin = DashboardAdmins.GetAdmin(data.get('AdminID', ''))
     status, message = DashboardAdmins.VerifyTotp(data.get('AdminID', ''), data.get('code', ''))
     if status and admin is not None:
+        if admin.get("AdminID") == session.get('admin_id'):
+            # The enrolment of this very session is complete: its second factor is proven
+            session['mfa_verified'] = True
         DashboardLogger.log(str(request.url), str(request.remote_addr),
                             Message=f"MFA enabled for administrator: {admin.get('Username')}")
     return ResponseObject(status, message)

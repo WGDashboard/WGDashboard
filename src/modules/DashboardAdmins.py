@@ -62,6 +62,9 @@ class DashboardAdmins:
         # Docker rewrites the ini credentials on every start: the table must follow, otherwise
         # rotating WGD_PASSWORD would update the file while the old password kept working.
         self.SyncCredentialsFromConfig()
+        # ... and so do the MFA flags, so disabling MFA from Docker can recover a lost
+        # authenticator and a rotated secret replaces the previous one.
+        self.SyncMfaFromConfig()
 
     # ------------------------------------------------------------------ helpers
     def Public(self, admin: dict | None) -> dict | None:
@@ -151,6 +154,49 @@ class DashboardAdmins:
             current_app.logger.error(f"[DashboardAdmins] Cannot import administrator from wg-dashboard.ini: {e}")
             return False
         current_app.logger.info(f"[DashboardAdmins] Administrator '{username}' imported from wg-dashboard.ini")
+        return True
+
+    def SyncMfaFromConfig(self) -> bool:
+        """Propagate an MFA change made in wg-dashboard.ini (Docker) to the imported account.
+
+        docker/entrypoint.sh also writes enable_totp / totp_verified / totp_key: disabling MFA
+        there must be able to recover a lost authenticator, and a rotated secret must replace
+        the previous one. The recovery codes belong to the enrolment they were issued for, so
+        they are invalidated whenever the secret changes.
+        """
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                db.select(self.adminsTable).where(self.adminsTable.c.CreatedBy == "wg-dashboard.ini")
+            ).mappings().fetchone()
+        if row is None:
+            return False
+        enabled = bool(self.DashboardConfig.GetConfig("Account", "enable_totp")[1]) and \
+            bool(self.DashboardConfig.GetConfig("Account", "totp_verified")[1])
+        iniKey = str(self.DashboardConfig.GetConfig("Account", "totp_key")[1] or "").strip()
+        enrolled = bool(row["TotpKey"]) and int(row["TotpVerified"] or 0) == 1
+        if not enabled or not iniKey:
+            if not enrolled:
+                return False
+            # Clears the secret and the flag, revokes the recovery codes and updates the ini
+            self.DisableTotp(row["AdminID"])
+            current_app.logger.info(
+                "[DashboardAdmins] MFA of the imported administrator disabled from wg-dashboard.ini")
+            return True
+        if enrolled and row["TotpKey"] == iniKey:
+            return False
+        try:
+            with self.engine.begin() as conn:
+                conn.execute(self.adminsTable.update().values({
+                    "TotpKey": iniKey,
+                    "TotpVerified": 1,
+                    "UpdatedDate": datetime.datetime.now(),
+                }).where(self.adminsTable.c.AdminID == row["AdminID"]))
+        except Exception as e:
+            current_app.logger.error(f"[DashboardAdmins] Cannot synchronize the ini MFA state: {e}")
+            return False
+        self.RevokeRecoveryCodes(row["AdminID"])
+        current_app.logger.info(
+            "[DashboardAdmins] MFA of the imported administrator synchronized from wg-dashboard.ini")
         return True
 
     def SyncCredentialsFromConfig(self) -> bool:
