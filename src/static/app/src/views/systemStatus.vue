@@ -5,6 +5,13 @@ import LocaleText from "@/components/text/localeText.vue";
 import CpuCore from "@/components/systemStatusComponents/cpuCore.vue";
 import StorageMount from "@/components/systemStatusComponents/storageMount.vue";
 import Process from "@/components/systemStatusComponents/process.vue";
+import CpuFrequency from "@/components/systemStatusComponents/cpuFrequency.vue";
+import LoadAverage from "@/components/systemStatusComponents/loadAverage.vue";
+import SystemInfo from "@/components/systemStatusComponents/systemInfo.vue";
+import SystemTemperature from "@/components/systemStatusComponents/systemTemperature.vue";
+import Gpu from "@/components/systemStatusComponents/gpu.vue";
+import DiskIO from "@/components/systemStatusComponents/diskIO.vue";
+import FanSpeed from "@/components/systemStatusComponents/fanSpeed.vue";
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
 
 const dashboardStore = DashboardConfigurationStore()
@@ -360,7 +367,32 @@ const memoryHistoricalChartData = computed(() => {
 			</div>
 		</div>
 	</div>
-	
+	<!-- System Information & Load Average -->
+	<div class="col-sm-6" v-if="data?.SystemInfo">
+		<SystemInfo :data="data.SystemInfo"></SystemInfo>
+	</div>
+	<div class="col-sm-6" v-if="data?.CPU?.load_average">
+		<LoadAverage :data="data.CPU"></LoadAverage>
+	</div>
+	<!-- CPU Frequency -->
+	<div class="col-sm-12" v-if="data?.CPU?.cpu_frequencies && data.CPU.cpu_frequencies.length">
+		<CpuFrequency :data="data.CPU"></CpuFrequency>
+	</div>
+	<!-- GPU -->
+	<div class="col-sm-12" v-if="data?.GPU && ((data.GPU.nvidia && data.GPU.nvidia.length) || (data.GPU.amd && data.GPU.amd.length))">
+		<Gpu :gpu="data.GPU"></Gpu>
+	</div>
+	<!-- Temperatures & Disk I/O -->
+	<div class="col-sm-6" v-if="data?.SystemTemperature && Object.keys(data.SystemTemperature).length">
+		<SystemTemperature :temperatures="data.SystemTemperature"></SystemTemperature>
+	</div>
+	<div class="col-sm-6" v-if="data?.DiskIO?.realtime && Object.keys(data.DiskIO.realtime).length">
+		<DiskIO :data="data.DiskIO"></DiskIO>
+	</div>
+	<!-- Fans (full width, only when present) -->
+	<div class="col-sm-12" v-if="data?.FanSpeed && Object.keys(data.FanSpeed).length">
+		<FanSpeed :fans="data.FanSpeed"></FanSpeed>
+	</div>
 </div>
 </template>
 
