@@ -617,6 +617,7 @@ class Power:
         self.week = {"kwh": 0.0, "cost": 0.0}
         self.month = {"kwh": 0.0, "cost": 0.0}
         self.days = []
+        self.hours_today = []
         self.source = "/var/log/powerlog.csv"
 
     def _log(self, msg):
@@ -658,6 +659,9 @@ class Power:
                 return
             rate = self.rate_eur_kwh; base = self.base_w
             per_day = {}
+            hour_today = {}
+            today = datetime.date.today()
+            today_iso = today.isoformat()
             for i in range(1, len(rows)):
                 ts0, d0, g00, g10, c0 = rows[i - 1]
                 ts1, d1, g01, g11, c1 = rows[i]
@@ -667,16 +671,19 @@ class Power:
                 gpu_wh = (g01 + g11) * dt / 3600.0
                 cpu_wh = max(0.0, (c1 - c0)) / 3.6e9
                 base_wh = base * dt / 3600.0
+                energy_kwh = (gpu_wh + cpu_wh + base_wh) / 1000.0
                 day = d1[0:10]
-                per_day[day] = per_day.get(day, 0.0) + (gpu_wh + cpu_wh + base_wh) / 1000.0
+                per_day[day] = per_day.get(day, 0.0) + energy_kwh
+                if day == today_iso:
+                    hh = d1[11:13]
+                    hour_today[hh] = hour_today.get(hh, 0.0) + energy_kwh
             last = rows[-1]; prev = rows[-2]
             ldt = last[0] - prev[0]
             cpu_w = (max(0.0, (last[4] - prev[4])) / ldt / 1e6) if ldt > 0 else 0.0
             self.current_w = round(last[2] + last[3] + cpu_w + base, 1)
-            today = datetime.date.today()
             td = (today - datetime.timedelta(days=6)).isoformat()
             tm = (today - datetime.timedelta(days=29)).isoformat()
-            tk = per_day.get(today.isoformat(), 0.0)
+            tk = per_day.get(today_iso, 0.0)
             wk = sum(v for k, v in per_day.items() if k >= td)
             mk = sum(v for k, v in per_day.items() if k >= tm)
             self.today = {"kwh": round(tk, 4), "cost": round(tk * rate, 4)}
@@ -688,6 +695,12 @@ class Power:
                 wh = per_day.get(k, 0.0)
                 days.append({"date": k, "kwh": round(wh, 4), "cost": round(wh * rate, 4)})
             self.days = days
+            hours = []
+            for hh in range(24):
+                key = "%02d" % hh
+                wh = hour_today.get(key, 0.0)
+                hours.append({"hour": key, "kwh": round(wh, 4), "cost": round(wh * rate, 4)})
+            self.hours_today = hours
             self.available = True
         except Exception as e:
             self._log("getData error %s" % e)
@@ -702,4 +715,5 @@ class Power:
             "week": self.week,
             "month": self.month,
             "days": self.days,
+            "hours_today": self.hours_today,
         }
