@@ -57,3 +57,9 @@ enable = true
 
 [WireGuardConfiguration]
 autostart =
+
+[Power]
+# price per kWh (EUR) - configurable, re-read every refresh
+rate_eur_kwh = 0.157
+# base fixed draw in W (PSU losses + RAM + disks + fans estimate)
+base_w = 100

@@ -10,6 +10,7 @@ import LoadAverage from "@/components/systemStatusComponents/loadAverage.vue";
 import SystemInfo from "@/components/systemStatusComponents/systemInfo.vue";
 import SystemTemperature from "@/components/systemStatusComponents/systemTemperature.vue";
 import Gpu from "@/components/systemStatusComponents/gpu.vue";
+import Power from "@/components/systemStatusComponents/power.vue";
 import DiskIO from "@/components/systemStatusComponents/diskIO.vue";
 import FanSpeed from "@/components/systemStatusComponents/fanSpeed.vue";
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
@@ -381,6 +382,10 @@ const memoryHistoricalChartData = computed(() => {
 	<!-- GPU -->
 	<div class="col-sm-12" v-if="data?.GPU && ((data.GPU.nvidia && data.GPU.nvidia.length) || (data.GPU.amd && data.GPU.amd.length))">
 		<Gpu :gpu="data.GPU"></Gpu>
+	</div>
+	<!-- Power / Energy -->
+	<div class="col-sm-12" v-if="data?.Power?.available">
+		<Power :power="data.Power"></Power>
 	</div>
 	<!-- Temperatures & Disk I/O -->
 	<div class="col-sm-6" v-if="data?.SystemTemperature && Object.keys(data.SystemTemperature).length">

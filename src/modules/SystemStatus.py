@@ -15,6 +15,7 @@ class SystemStatus:
         self.DiskIO = DiskIO()
         self.FanSpeed = FanSpeed()
         self.SystemInfo = SystemInfo()
+        self.Power = Power()
         
     def toJson(self):
         process = [
@@ -28,7 +29,8 @@ class SystemStatus:
             threading.Thread(target=self.SystemTemperature.getData),
             threading.Thread(target=self.DiskIO.getData),
             threading.Thread(target=self.FanSpeed.getData),
-            threading.Thread(target=self.SystemInfo.getData)
+            threading.Thread(target=self.SystemInfo.getData),
+            threading.Thread(target=self.Power.getData)
         ]
         for p in process:
             p.start()
@@ -50,7 +52,8 @@ class SystemStatus:
             "SystemTemperature": self.SystemTemperature,
             "DiskIO": self.DiskIO,
             "FanSpeed": self.FanSpeed,
-            "SystemInfo": self.SystemInfo
+            "SystemInfo": self.SystemInfo,
+            "Power": self.Power
         }
         
 
@@ -601,3 +604,102 @@ class SystemInfo:
     
     def toJson(self):
         return self.__dict__
+
+import configparser
+
+class Power:
+    def __init__(self):
+        self.available = False
+        self.rate_eur_kwh = 0.157
+        self.base_w = 100.0
+        self.current_w = 0.0
+        self.today = {"kwh": 0.0, "cost": 0.0}
+        self.week = {"kwh": 0.0, "cost": 0.0}
+        self.month = {"kwh": 0.0, "cost": 0.0}
+        self.days = []
+        self.source = "/var/log/powerlog.csv"
+
+    def _log(self, msg):
+        try:
+            current_app.logger.debug("Power: %s" % msg)
+        except Exception:
+            pass
+
+    def _read_config(self):
+        try:
+            ini = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "wg-dashboard.ini")
+            cp = configparser.ConfigParser()
+            cp.read(ini)
+            if cp.has_section("Power"):
+                self.rate_eur_kwh = float(cp.get("Power", "rate_eur_kwh", fallback=str(self.rate_eur_kwh)))
+                self.base_w = float(cp.get("Power", "base_w", fallback=str(self.base_w)))
+        except Exception as e:
+            self._log("config error %s" % e)
+
+    def getData(self):
+        import datetime
+        try:
+            self._read_config()
+            if not os.path.exists(self.source):
+                return
+            rows = []
+            with open(self.source) as fh:
+                for ln in fh:
+                    parts = ln.strip().split(",")
+                    if len(parts) < 5:
+                        continue
+                    try:
+                        ts = float(parts[0]); g0 = float(parts[2] or 0); g1 = float(parts[3] or 0); cu = int(float(parts[4]))
+                    except Exception:
+                        continue
+                    rows.append((ts, parts[1], g0, g1, cu))
+            rows.sort()
+            if len(rows) < 2:
+                return
+            rate = self.rate_eur_kwh; base = self.base_w
+            per_day = {}
+            for i in range(1, len(rows)):
+                ts0, d0, g00, g10, c0 = rows[i - 1]
+                ts1, d1, g01, g11, c1 = rows[i]
+                dt = ts1 - ts0
+                if dt <= 0 or dt > 120:
+                    continue
+                gpu_wh = (g01 + g11) * dt / 3600.0
+                cpu_wh = max(0.0, (c1 - c0)) / 3.6e9
+                base_wh = base * dt / 3600.0
+                day = d1[0:10]
+                per_day[day] = per_day.get(day, 0.0) + (gpu_wh + cpu_wh + base_wh) / 1000.0
+            last = rows[-1]; prev = rows[-2]
+            ldt = last[0] - prev[0]
+            cpu_w = (max(0.0, (last[4] - prev[4])) / ldt / 1e6) if ldt > 0 else 0.0
+            self.current_w = round(last[2] + last[3] + cpu_w + base, 1)
+            today = datetime.date.today()
+            td = (today - datetime.timedelta(days=6)).isoformat()
+            tm = (today - datetime.timedelta(days=29)).isoformat()
+            tk = per_day.get(today.isoformat(), 0.0)
+            wk = sum(v for k, v in per_day.items() if k >= td)
+            mk = sum(v for k, v in per_day.items() if k >= tm)
+            self.today = {"kwh": round(tk, 4), "cost": round(tk * rate, 4)}
+            self.week = {"kwh": round(wk, 4), "cost": round(wk * rate, 4)}
+            self.month = {"kwh": round(mk, 4), "cost": round(mk * rate, 4)}
+            days = []
+            for n in range(13, -1, -1):
+                k = (today - datetime.timedelta(days=n)).isoformat()
+                wh = per_day.get(k, 0.0)
+                days.append({"date": k, "kwh": round(wh, 4), "cost": round(wh * rate, 4)})
+            self.days = days
+            self.available = True
+        except Exception as e:
+            self._log("getData error %s" % e)
+
+    def toJson(self):
+        return {
+            "available": self.available,
+            "rate_eur_kwh": self.rate_eur_kwh,
+            "base_w": self.base_w,
+            "current_w": self.current_w,
+            "today": self.today,
+            "week": self.week,
+            "month": self.month,
+            "days": self.days,
+        }
