@@ -41,7 +41,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.10",
-    "vite": "^8.3.5"
+    "vite": "^8.3.8"
   },
   "overrides": {
     "tar": "^7.5.6"
