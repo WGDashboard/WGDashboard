@@ -491,7 +491,7 @@ def API_addWireguardConfiguration():
             os.path.join(path[protocol], f'{data["ConfigurationName"]}.conf')
         )
         WireguardConfigurations[data['ConfigurationName']] = (
-            WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, data=data, name=data['ConfigurationName'])) if protocol == 'wg' else (
+            WireguardConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data, name=data['ConfigurationName'])) if protocol == 'wg' else (
             AmneziaConfiguration(DashboardConfig, AllPeerJobs, AllPeerShareLinks, DashboardWebHooks, data=data, name=data['ConfigurationName']))
     else:
         WireguardConfigurations[data['ConfigurationName']] = (
