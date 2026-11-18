@@ -9,7 +9,7 @@ from zipfile import ZipFile
 from datetime import datetime, timedelta
 
 import sqlalchemy
-from flask import Flask, request, render_template, session, send_file, current_app
+from flask import Flask, request, render_template, session, send_file, current_app, g
 from flask_cors import CORS
 from icmplib import ping, traceroute
 from flask.json.provider import DefaultJSONProvider
@@ -248,7 +248,7 @@ def auth_req():
     if request.method.lower() == 'options':
         return ResponseObject(True)        
 
-    DashboardConfig.APIAccessed = False    
+    g.api_key_authenticated = False
     authenticationRequired = DashboardConfig.GetConfig("Server", "auth_req")[1]
     d = request.headers
     if authenticationRequired:
@@ -258,7 +258,6 @@ def auth_req():
             apiKeyExist = len(list(filter(lambda x : x.Key == apiKey, DashboardConfig.DashboardAPIKeys))) == 1
             DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"API Key Access: {('true' if apiKeyExist else 'false')} - Key: {apiKey}")
             if not apiKeyExist:
-                DashboardConfig.APIAccessed = False
                 response = Flask.make_response(app, {
                     "status": False,
                     "message": "API Key does not exist",
@@ -267,9 +266,8 @@ def auth_req():
                 response.content_type = "application/json"
                 response.status_code = 401
                 return response
-            DashboardConfig.APIAccessed = True
+            g.api_key_authenticated = True
         else:
-            DashboardConfig.APIAccessed = False
             appPrefix = APP_PREFIX if len(APP_PREFIX) > 0 else ''
             whiteList = [
                 # f'/static/', 
@@ -358,7 +356,7 @@ def API_AuthenticateLogin():
     if not DashboardConfig.GetConfig("Server", "auth_req")[1]:
         return ResponseObject(True, DashboardConfig.GetConfig("Other", "welcome_session")[1])
     
-    if DashboardConfig.APIAccessed:
+    if getattr(g, 'api_key_authenticated', False):
         authToken = hashlib.sha256(f"{request.headers.get('wg-dashboard-apikey')}{datetime.now()}".encode()).hexdigest()
         session['role'] = 'admin'
         session['username'] = authToken

@@ -98,7 +98,6 @@ class DashboardConfig:
         self.dbMetadata = db.MetaData()
         self.__createAPIKeyTable()
         self.DashboardAPIKeys = self.__getAPIKeys()
-        self.APIAccessed = False
         self.SetConfig("Server", "version", DashboardConfig.DashboardVersion)
 
     def EnsureDatabaseIntegrity(self, wireguardConfigurations):
