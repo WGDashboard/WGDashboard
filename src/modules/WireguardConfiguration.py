@@ -1,6 +1,8 @@
 """
 WireGuard Configuration
 """
+from pathlib import Path
+from threading import RLock
 from typing import Any
 
 import sqlalchemy, random, shutil, configparser, ipaddress, os, subprocess, time, re, uuid, psutil, traceback
@@ -27,6 +29,8 @@ from .DashboardWebHooks import DashboardWebHooks
 
 
 class WireguardConfiguration:
+    _ENDPOINT_HISTORY_HEADER = "-- WGDashboard backup includes endpoint history"
+
     class InvalidConfigurationFileException(Exception):
         def __init__(self, m):
             self.message = m
@@ -44,6 +48,7 @@ class WireguardConfiguration:
                  startup: bool = False,
                  wg: bool = True
                  ):
+        self._backupLock = RLock()
         self.Peers = []
         self.__parser: configparser.ConfigParser = configparser.RawConfigParser(strict=False)
         self.__parser.optionxform = str
@@ -188,6 +193,10 @@ class WireguardConfiguration:
         return open(self.configPath, 'r').read()
 
     def updateRawConfigurationFile(self, newRawConfiguration):
+        with self._backupLock:
+            return self._updateRawConfigurationFile(newRawConfiguration)
+
+    def _updateRawConfigurationFile(self, newRawConfiguration):
         backupStatus, backup = self.backupConfigurationFile()
         if not backupStatus:
             return False, "Cannot create backup"
@@ -248,8 +257,10 @@ class WireguardConfiguration:
                 self.PublicKey = self.__getPublicKey()
             self.Status = self.getStatus()
 
-    def __dropDatabase(self):
-        existingTables = [self.Name, f'{self.Name}_restrict_access', f'{self.Name}_transfer', f'{self.Name}_deleted', f'{self.Name}_history_endpoint']
+    def __dropDatabase(self, *, includeEndpointHistory=True):
+        existingTables = [self.Name, f'{self.Name}_restrict_access', f'{self.Name}_transfer', f'{self.Name}_deleted']
+        if includeEndpointHistory:
+            existingTables.append(f'{self.Name}_history_endpoint')
         try:
             with self.engine.begin() as conn:
                 for name in existingTables:
@@ -339,33 +350,40 @@ class WireguardConfiguration:
 
     def __dumpDatabase(self):
         with self.engine.connect() as conn:
-            tables = [self.peersTable, self.peersRestrictedTable, self.peersTransferTable, self.peersDeletedTable]
-            for i in tables:
-                rows = conn.execute(i.select()).mappings().fetchall()
-                for row in rows:
-                    insert_stmt = i.insert().values(dict(row))
+            tables = [
+                self.peersTable, self.peersRestrictedTable, self.peersTransferTable,
+                self.peersDeletedTable, self.peersHistoryEndpointTable,
+            ]
+            for table in tables:
+                rows = conn.execution_options(yield_per=1000).execute(table.select()).mappings()
+                # The restore screen counts peer records by INSERT line. Batch only traffic history.
+                batchSize = 500 if table in (self.peersTransferTable, self.peersHistoryEndpointTable) else 1
+                for batch in rows.partitions(batchSize):
+                    values = [dict(row) for row in batch]
+                    statement = table.insert().values(values if batchSize > 1 else values[0])
                     yield str(
-                        insert_stmt.compile(
+                        statement.compile(
                             dialect=self.engine.dialect,
                             compile_kwargs={"literal_binds": True},
                         )
                     )
 
     def __importDatabase(self, sqlFilePath, restore = False) -> bool:
-        if not restore:
-            if not self.__dropDatabase():
-                raise RuntimeError(
-                    f"Failed to drop tables for configuration {self.Name}"
-                )
-        self.createDatabase()
-        if not os.path.exists(sqlFilePath):
+        try:
+            sqlFile = open(sqlFilePath, 'r')
+        except FileNotFoundError:
             return False
-        with self.engine.begin() as conn:
-            with open(sqlFilePath, 'r') as f:
-                for l in f.readlines():
-                    l = l.rstrip("\n")
-                    if len(l) > 0:
-                        conn.execute(sqlalchemy.text(l))
+        with sqlFile:
+            hasEndpointHistory = sqlFile.readline().rstrip("\n") == self._ENDPOINT_HISTORY_HEADER
+            if not hasEndpointHistory:
+                sqlFile.seek(0)
+            if not restore and not self.__dropDatabase(includeEndpointHistory=hasEndpointHistory):
+                raise RuntimeError(f"Failed to drop tables for configuration {self.Name}")
+            self.createDatabase()
+            with self.engine.begin() as conn:
+                for line in sqlFile:
+                    if line.strip():
+                        conn.exec_driver_sql(line)
         return True
 
     def __getPublicKey(self) -> str:
@@ -933,100 +951,123 @@ class WireguardConfiguration:
             "Info": self.configurationInfo.model_dump()
         }
 
+    def _backupDirectory(self):
+        return Path(self.__getProtocolPath()) / "WGDashboard_Backup"
+
+    def _backupPath(self, filename):
+        if isinstance(filename, str) and re.fullmatch(rf"{re.escape(self.Name)}_\d+\.conf", filename):
+            path = self._backupDirectory() / filename
+            if path.is_file():
+                return path
+        return None
+
     def backupConfigurationFile(self) -> tuple[bool, dict[str, str]]:
-        if not os.path.exists(os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup')):
-            os.mkdir(os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup'))
-        time = datetime.now().strftime("%Y%m%d%H%M%S")
-        shutil.copy(
-            self.configPath,
-            os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', f'{self.Name}_{time}.conf')
-        )
-        with open(os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', f'{self.Name}_{time}.sql'), 'w+') as f:
-            for l in self.__dumpDatabase():
-                f.write(l + "\n")
+        with self._backupLock:
+            directory = self._backupDirectory()
+            directory.mkdir(exist_ok=True)
+            stamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+            while (directory / f"{self.Name}_{stamp}.conf").exists() or (directory / f"{self.Name}_{stamp}.sql").exists():
+                stamp = str(int(stamp) + 1)
+            conf = directory / f"{self.Name}_{stamp}.conf"
+            sql = conf.with_suffix(".sql")
+            tempConf = conf.with_suffix(".conf.tmp")
+            tempSql = conf.with_suffix(".sql.tmp")
+            try:
+                shutil.copy(self.configPath, tempConf)
+                with tempSql.open("w") as f:
+                    f.write(self._ENDPOINT_HISTORY_HEADER + "\n")
+                    for statement in self.__dumpDatabase():
+                        f.write(statement + "\n")
+                tempSql.replace(sql)
+                try:
+                    tempConf.replace(conf)
+                except OSError:
+                    sql.unlink(missing_ok=True)
+                    raise
+            finally:
+                tempConf.unlink(missing_ok=True)
+                tempSql.unlink(missing_ok=True)
 
-        return True, {
-            "filename": f'{self.Name}_{time}.conf',
-            "backupDate": datetime.now().strftime("%Y%m%d%H%M%S")
-        }
+            return True, {"filename": conf.name, "backupDate": stamp[:14]}
 
-    def getBackups(self, databaseContent: bool = False) -> list[dict[str, str]]:
-        backups = []
+    def getBackups(self, databaseContent=False, *, metadataOnly=False):
+        with self._backupLock:
+            directory = self._backupDirectory()
+            try:
+                with os.scandir(directory) as entries:
+                    files = {entry.name for entry in entries if entry.is_file()}
+            except FileNotFoundError:
+                return []
 
-        directory = os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup')
-        files = [(file, os.path.getctime(os.path.join(directory, file)))
-                 for file in os.listdir(directory) if os.path.isfile(os.path.join(directory, file))]
-        files.sort(key=lambda x: x[1], reverse=True)
-
-        for f, ct in files:
-            if RegexMatch(rf"^({self.Name})_(\d+)\.(conf)$", f):
-                s = re.search(rf"^({self.Name})_(\d+)\.(conf)$", f)
-                date = s.group(2)
-                d = {
-                    "filename": f,
-                    "backupDate": date,
-                    "content": open(os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', f), 'r').read()
+            pattern = re.compile(rf"{re.escape(self.Name)}_(\d+)\.conf")
+            backups = []
+            matches = [(filename, match[1]) for filename in files if (match := pattern.fullmatch(filename))]
+            matches.sort(key=lambda item: item[1], reverse=True)
+            for filename, stamp in matches:
+                path = directory / filename
+                sql = path.with_suffix(".sql")
+                backup = {
+                    "filename": filename,
+                    "backupDate": stamp[:14],
+                    "database": sql.name in files,
                 }
-                if f.replace(".conf", ".sql") in list(os.listdir(directory)):
-                    d['database'] = True
-                    if databaseContent:
-                        d['databaseContent'] = open(os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', f.replace(".conf", ".sql")), 'r').read()
-                backups.append(d)
+                if not metadataOnly:
+                    backup["content"] = path.read_text()
+                if databaseContent and backup["database"]:
+                    backup["databaseContent"] = sql.read_text()
+                backups.append(backup)
+            return backups
 
-        return backups
+    def getBackupContent(self, filename):
+        with self._backupLock:
+            path = self._backupPath(filename)
+            return path.read_text() if path is not None else None
 
     def restoreBackup(self, backupFileName: str) -> bool:
-        backups = list(map(lambda x : x['filename'], self.getBackups()))
-        if backupFileName not in backups:
-            return False
-        if self.Status:
-            self.toggleConfiguration()
-        target = os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', backupFileName)
-        targetSQL = os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', backupFileName.replace(".conf", ".sql"))
-        if not os.path.exists(target):
-            return False
-        targetContent = open(target, 'r').read()
-        try:
-            with open(self.configPath, 'w') as f:
-                f.write(targetContent)
-        except Exception as e:
-            return False
-        self.__parseConfigurationFile()
-        self.__importDatabase(targetSQL)
-        self.__initPeersList()
-        return True
+        with self._backupLock:
+            target = self._backupPath(backupFileName)
+            if target is None:
+                return False
+            if self.Status:
+                self.toggleConfiguration()
+            targetContent = target.read_text()
+            try:
+                with open(self.configPath, 'w') as f:
+                    f.write(targetContent)
+            except OSError:
+                return False
+            self.__parseConfigurationFile()
+            self.__importDatabase(target.with_suffix(".sql"))
+            self.__initPeersList()
+            return True
+
+    def _removeBackupFiles(self, path):
+        path.unlink()
+        path.with_suffix(".sql").unlink(missing_ok=True)
 
     def deleteBackup(self, backupFileName: str) -> bool:
-        backups = list(map(lambda x : x['filename'], self.getBackups()))
-        if backupFileName not in backups:
-            return False
-        try:
-            backupPath = os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup')
-            for ext in ('.conf', '.sql'):
-                f = os.path.join(backupPath, os.path.splitext(backupFileName)[0] + ext)
-                if os.path.exists(f):
-                    os.remove(f)
-        except Exception as e:
-            return False
-        return True
+        with self._backupLock:
+            path = self._backupPath(backupFileName)
+            if path is None:
+                return False
+            try:
+                self._removeBackupFiles(path)
+            except OSError:
+                return False
+            return True
 
     def downloadBackup(self, backupFileName: str) -> tuple[bool, str] | tuple[bool, None]:
-        backup = list(filter(lambda x : x['filename'] == backupFileName, self.getBackups()))
-        if len(backup) == 0:
-            return False, None
-        zip = f'{str(uuid.UUID(int=random.Random().getrandbits(128), version=4))}.zip'
-        with ZipFile(os.path.join('download', zip), 'w') as zipF:
-            zipF.write(
-                os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', backup[0]['filename']),
-                os.path.basename(os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', backup[0]['filename']))
-            )
-            if backup[0]['database']:
-                zipF.write(
-                    os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', backup[0]['filename'].replace('.conf', '.sql')),
-                    os.path.basename(os.path.join(self.__getProtocolPath(), 'WGDashboard_Backup', backup[0]['filename'].replace('.conf', '.sql')))
-                )
-
-        return True, zip
+        with self._backupLock:
+            path = self._backupPath(backupFileName)
+            if path is None:
+                return False, None
+            archive = f"{uuid.uuid4()}.zip"
+            with ZipFile(os.path.join("download", archive), "w") as zipFile:
+                zipFile.write(path, path.name)
+                sql = path.with_suffix(".sql")
+                if sql.is_file():
+                    zipFile.write(sql, sql.name)
+            return True, archive
 
     def updateConfigurationSettings(self, newData: dict) -> tuple[bool, str]:
         if self.Status:

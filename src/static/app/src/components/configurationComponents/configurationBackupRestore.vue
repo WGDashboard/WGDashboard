@@ -1,38 +1,50 @@
 <script setup>
-import {onBeforeUnmount, onMounted, reactive, ref} from "vue";
-import {fetchGet} from "@/utilities/fetch.js";
+import {onMounted, ref} from "vue";
+import {fetchBackup} from "@/utilities/fetch.js";
 import {useRoute} from "vue-router";
-import dayjs from "dayjs";
+import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
 import LocaleText from "@/components/text/localeText.vue";
 import Backup from "@/components/configurationComponents/backupRestoreComponents/backup.vue";
 
 const route = useRoute()
+const store = DashboardConfigurationStore()
 const backups = ref([])
 const loading = ref(true)
+const creating = ref(false)
+const error = ref("")
 const emit = defineEmits(["close", "refreshPeersList"])
 
-onMounted(() => {
-	loadBackup();
-})
+const params = () => ({configurationName: route.params.id})
 
-const loadBackup = () => {
+const loadBackup = async () => {
 	loading.value = true
-	fetchGet("/api/getWireguardConfigurationBackup", {
-		configurationName: route.params.id
-	}, (res) => {
-		backups.value = res.data;
-		loading.value = false;
-	})
+	error.value = ""
+	try {
+		const result = await fetchBackup("/api/getWireguardConfigurationBackup", {...params(), metadata: 1})
+		backups.value = result.backups
+	} catch (err) {
+		error.value = err.message
+	} finally {
+		loading.value = false
+	}
 }
 
-const createBackup = () => {
-	fetchGet("/api/createWireguardConfigurationBackup", {
-		configurationName: route.params.id
-	}, (res) => {
-		backups.value = res.data;
-		loading.value = false;
-	})
+onMounted(loadBackup)
+
+const createBackup = async () => {
+	if (creating.value || loading.value) return
+	creating.value = true
+	error.value = ""
+	try {
+		backups.value = await fetchBackup("/api/createWireguardConfigurationBackup", params(), {})
+		store.newMessage("Server", "Backup created", "success")
+	} catch (err) {
+		error.value = err.message
+	} finally {
+		creating.value = false
+	}
 }
+
 </script>
 
 <template>
@@ -49,10 +61,13 @@ const createBackup = () => {
 					</div>
 					<button 
 						@click="createBackup()"
+						:disabled="loading || creating"
 						class="btn bg-primary-subtle text-primary-emphasis border-primary-subtle rounded-3 w-100">
-						<i class="bi bi-plus-circle-fill me-2"></i>
-						<LocaleText t="Create Backup"></LocaleText>
+						<span v-if="creating" class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+						<i v-else class="bi bi-plus-circle-fill me-2"></i>
+						<LocaleText :t="creating ? 'Creating backup…' : 'Create Backup'"></LocaleText>
 					</button>
+					<div v-if="error" class="alert alert-danger mt-3 mb-0" role="alert">{{error}}</div>
 				</div>
 				<div class="position-relative d-flex flex-column gap-3">
 					<TransitionGroup name="list1" >
@@ -62,7 +77,7 @@ const createBackup = () => {
 							<div class="spinner-border"></div>
 						</div>
 						<div class="card my-0 rounded-3"
-						     v-else-if="!loading && backups.length === 0"
+						     v-else-if="!loading && !error && backups.length === 0"
 						     key="noBackups"
 						>
 							<div class="card-body text-center text-muted">
@@ -72,6 +87,7 @@ const createBackup = () => {
 						</div>
 						<Backup
 							@refresh="loadBackup()"
+							:busy="loading || creating"
 							@refreshPeersList="emit('refreshPeersList')"
 							:b="b" v-for="b in backups"
 							:key="b.filename"
