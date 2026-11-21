@@ -59,6 +59,14 @@ const router = createRouter({
                             }
                         },
                         {
+                            name: "Administrators",
+                            path: "administrators",
+                            component: () => import("@/components/settingsComponent/dashboardAdmins.vue"),
+                            meta: {
+                                title: "Administrators"
+                            }
+                        },
+                        {
                             name: "WireGuard Configuration Settings",
                             path: "wireguard_settings",
                             component: () => import("@/components/settingsComponent/wireguardConfigurationSettings.vue"),
@@ -201,9 +209,25 @@ router.beforeEach(async (to, from, next) => {
 	document.querySelector(".loadingBar").classList.remove("loadingDone")
 	document.querySelector(".loadingBar").classList.add("loading")
 	if (to.meta.requiresAuth){
+		// The MFA enrolment page must not load the dashboard configuration:
+		// the API is blocked (403) until the MFA is verified.
+		if (to.path === '/2FASetup'){
+			if (await checkAuth()){
+				next()
+			}else{
+				dashboardConfigurationStore.Redirect = to;
+				next("/signin")
+			}
+			return
+		}
 		if (!dashboardConfigurationStore.getActiveCrossServer()){
 			if (await checkAuth()){
 				await dashboardConfigurationStore.getConfiguration()
+				if (!dashboardConfigurationStore.Configuration){
+					// The API is blocked (403 mfaSetupRequired): the account must enrol its MFA first
+					next('/2FASetup')
+					return
+				}
 				if (!wireguardConfigurationsStore.Configurations && to.name !== "Configuration List"){
 					await wireguardConfigurationsStore.getConfigurations();
 				}

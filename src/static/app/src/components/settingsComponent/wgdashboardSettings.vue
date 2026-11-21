@@ -1,18 +1,13 @@
 <script setup lang="ts">
-import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
 
 import LocaleText from "@/components/text/localeText.vue";
 import DashboardLanguage from "@/components/settingsComponent/dashboardLanguage.vue";
-import AccountSettingsInputPassword from "@/components/settingsComponent/accountSettingsInputPassword.vue";
 import DashboardTheme from "@/components/settingsComponent/dashboardTheme.vue";
 import DashboardAPIKeys from "@/components/settingsComponent/dashboardAPIKeys.vue";
 import DashboardIPPortInput from "@/components/settingsComponent/dashboardIPPortInput.vue";
-import AccountSettingsMFA from "@/components/settingsComponent/accountSettingsMFA.vue";
-import AccountSettingsInputUsername from "@/components/settingsComponent/accountSettingsInputUsername.vue";
 import DashboardEmailSettings from "@/components/settingsComponent/dashboardEmailSettings.vue";
 import DashboardWebHooks from "@/components/settingsComponent/dashboardWebHooks.vue";
 
-const dashboardConfigurationStore = DashboardConfigurationStore()
 
 </script>
 
@@ -47,35 +42,6 @@ const dashboardConfigurationStore = DashboardConfigurationStore()
 				<DashboardIPPortInput></DashboardIPPortInput>
 			</div>
 		</div>
-		<div class="card rounded-3">
-			<div class="card-header">
-				<h6 class="my-2">
-					<i class="bi bi-people-fill me-2"></i>
-					<LocaleText t="Account Settings"></LocaleText>
-				</h6>
-			</div>
-			<div class="card-body d-flex flex-column gap-3">
-				<div>
-					<AccountSettingsInputUsername targetData="username"
-												  title="Username"
-					></AccountSettingsInputUsername>
-				</div>
-				<hr>
-				<div>
-					<AccountSettingsInputPassword
-						targetData="password">
-					</AccountSettingsInputPassword>
-				</div>
-				<hr>
-				<div>
-					<h6 >
-						<LocaleText t="Multi-Factor Authentication (MFA)"></LocaleText>
-					</h6>
-					<AccountSettingsMFA v-if="!dashboardConfigurationStore.getActiveCrossServer()"></AccountSettingsMFA>
-				</div>
-			</div>
-		</div>
-
 		<DashboardAPIKeys></DashboardAPIKeys>
 		<DashboardEmailSettings></DashboardEmailSettings>
 	</div>

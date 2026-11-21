@@ -42,7 +42,8 @@ export default {
 			},
 			loginError: false,
 			loginErrorMessage: "",
-			loading: false
+			loading: false,
+			build: (typeof window !== "undefined" && window.__BUILD__) ? window.__BUILD__ : ""
 		}
 	},
 	computed: {
@@ -53,11 +54,59 @@ export default {
 			return GetLocale(key)
 		},
 		formValid(){
-			return this.data.username && this.data.password && ((this.totpEnabled && this.data.totp) || !this.totpEnabled)
+			// The TOTP code is only required by the server when the account has MFA enabled,
+			// so the field is always visible but never blocking here.
+			return !!(this.data.username && this.data.password)
+		},
+		totpRequired(){
+			// Offered as soon as a username is typed, and never required here. Asking the
+			// server would disclose whether the account exists and whether it uses MFA
+			// (see /api/admins/totp/required, answered uniformly for that reason).
+			return String(this.data.username || "").trim().length > 0
+		}
+	},
+	mounted() {
+		this.checkMfaRedirect();
+	},
+	watch: {
+		'data.username'(value){
+			// The OTP field is offered for any non-empty username; drop a code that was
+			// typed for a previous account. No server lookup: it would disclose the account.
+			if (String(value || "").trim().length === 0){
+				this.data.totp = "";
+			}
+		},
+		'data.totp'(value){
+			const formatted = this.formatOtp(value);
+			if (formatted !== value){
+				this.data.totp = formatted;
+			}
 		}
 	},
 	methods: {
 		GetLocale,
+		formatOtp(value){
+			// The field accepts either a 6 digit TOTP or a recovery code (16 characters,
+			// displayed as XXXX-XXXX-XXXX-XXXX). Recovery codes contain letters.
+			const clean = String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+			if (/[A-Z]/.test(clean) || clean.length > 6){
+				return clean.slice(0, 16).replace(/(.{4})/g, "$1-").replace(/-$/, "");
+			}
+			return clean.slice(0, 6);
+		},
+		checkMfaRedirect(){
+			// If a session is already open on an account without MFA, go straight to the enrolment.
+			// validateAuthentication is called first: it avoids a 401 (and a "session ended" toast)
+			// when nobody is signed in yet.
+			fetchGet("/api/validateAuthentication", {}, (auth) => {
+				if (!auth.status) return;
+				fetchGet("/api/admins/me", {}, (res) => {
+					if (res.status && res.data && res.data.MfaSetupRequired === true){
+						this.$router.push("/2FASetup");
+					}
+				});
+			});
+		},
 		async auth(){
 			if (this.formValid){
 				this.loading = true
@@ -65,7 +114,18 @@ export default {
 					if (response.status){
 						this.loginError = false;
 						this.$refs["signInBtn"].classList.add("signedIn")
-						if (response.message){
+						if (response.usedRecoveryCode){
+							const remaining = response.recoveryCodesRemaining;
+							this.store.newMessage("Server",
+								"Signed in with a recovery code: it has been consumed and cannot be used again." +
+								(typeof remaining === "number" ? " " + remaining + " code(s) left." : ""), "warning")
+						}
+						if (response.mfaSetupRequired){
+							// MFA is mandatory: the account must enrol before using the dashboard.
+							// On a first-run installation the initial password change is pending too,
+							// so carry it through: enrolment must not send the user straight to "/".
+							this.$router.push(response.message ? '/2FASetup?welcome=1' : '/2FASetup')
+						}else if (response.message){
 							this.$router.push('/welcome')
 						}else{
 							if (this.store.Redirect !== undefined){
@@ -141,22 +201,25 @@ export default {
 							<LocaleText t="Password"></LocaleText>	
 						</label>
 					</div>
-					<div class="form-floating mb-2" v-if="this.totpEnabled">
+					<div class="form-floating mb-2" v-if="this.totpRequired">
 						<input type="text"
 						       id="totp"
-						       required
 						       :disabled="loading"
 						       placeholder="totp"
 						       v-model="this.data.totp"
-						       class="form-control rounded-3" 
-						       maxlength="6" 
-						       inputmode="numeric" 
+						       class="form-control rounded-3"
+						       maxlength="19"
+						       inputmode="text"
 						       autocomplete="one-time-code">
 						<label for="floatingInput" class="d-flex">
 							<i class="bi bi-lock-fill me-2"></i>
 							<LocaleText t="OTP from your authenticator"></LocaleText>
 						</label>
 					</div>
+					<small class="text-muted d-block mb-1" style="font-size: 0.75rem" v-if="this.totpRequired">
+						<i class="bi bi-life-preserver me-1"></i>
+						<LocaleText t="6 digits from your application, or one of your recovery codes"></LocaleText>
+					</small>
 					<button class="btn btn-lg btn-dark ms-auto mt-5 w-100 d-flex btn-brand signInBtn rounded-3" 
 					        :disabled="this.loading || !this.formValid"
 					        ref="signInBtn">
@@ -192,7 +255,9 @@ export default {
 		</div>
 		<div class="d-flex container-fluid align-items-center my-1 w-100">
 			<small class="text-muted">
-				WGDashboard <strong>{{ this.version }}</strong> | Made with ❤️ by
+				WGDashboard <strong>{{ this.version }}</strong>
+				<span v-if="this.build">· build <code>{{ this.build }}</code></span>
+				| Made with ❤️ by
 				<a href="https://github.com/WGDashboard"
 				   class="text-decoration-none text-body"
 				   target="_blank"><strong>WGDashboard</strong></a>
