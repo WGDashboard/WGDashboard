@@ -339,7 +339,7 @@ class WireguardConfiguration:
 
     def __dumpDatabase(self):
         with self.engine.connect() as conn:
-            tables = [self.peersTable, self.peersRestrictedTable, self.peersTransferTable, self.peersDeletedTable]
+            tables = [self.peersTable, self.peersRestrictedTable, self.peersTransferTable, self.peersDeletedTable, self.peersHistoryEndpointTable]
             for i in tables:
                 rows = conn.execute(i.select()).mappings().fetchall()
                 for row in rows:
